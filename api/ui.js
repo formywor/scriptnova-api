@@ -54,14 +54,11 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-// token from:
-// 1) Authorization header
-// 2) GET query token (this is what HTA will use)
-// 3) POST body token
 function getToken(req) {
   const auth = (req.headers.authorization || "").toString();
   if (auth.toLowerCase().indexOf("bearer ") === 0) return auth.slice(7).trim();
 
+  // HTA uses GET by default
   if (req.method === "GET") return (req.query.token || "").toString();
 
   const b = req.body;
@@ -78,7 +75,7 @@ module.exports = function handler(req, res) {
 
   const secret = (process.env.SECRET_SALT || "").toString();
   if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured" });
+    return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
   const token = getToken(req);
@@ -87,11 +84,12 @@ module.exports = function handler(req, res) {
 
   const { lic, plan } = vt.payload;
 
-  // If key removed from LICENSES, token is rejected
   const list = getLicenseList();
-  if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
+  if (!list.includes(lic)) {
+    return res.status(403).json({ ok: false, error: "license_revoked" });
+  }
 
-  // Server-controlled UI
+  // Server UI controls
   const ui = {
     showProModeToggle: plan === "pro",
     showMediaModeToggle: true,
@@ -102,8 +100,7 @@ module.exports = function handler(req, res) {
     showThemePicker: true
   };
 
-  // “Hidden” flags live here (but can still be discovered if someone inspects launched Chrome)
-  // For BASIC we keep it minimal. For PRO we can add UA/DoH.
+  // NOTE: these are not truly “secret” once Chrome launches
   const config = {
     defaults: {
       t_kill: plan === "pro",
@@ -116,10 +113,6 @@ module.exports = function handler(req, res) {
       t_fps: false,
       t_mute: false
     },
-
-    // IMPORTANT:
-    // UA/DoH flags are visible on the client and in the command line.
-    // This is “server-side managed”, not truly secret.
     chromeFlags: plan === "pro"
       ? [
           "--no-first-run",
