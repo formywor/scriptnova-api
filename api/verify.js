@@ -6,8 +6,8 @@ function cors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-function b64urlEncode(input) {
-  return Buffer.from(input, "utf8")
+function b64urlEncodeUtf8(str) {
+  return Buffer.from(String(str), "utf8")
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -16,7 +16,7 @@ function b64urlEncode(input) {
 
 function signToken(payloadObj, secret) {
   const payloadJson = JSON.stringify(payloadObj);
-  const payloadB64 = b64urlEncode(payloadJson);
+  const payloadB64 = b64urlEncodeUtf8(payloadJson);
   const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
   const sigB64 = sig
     .toString("base64")
@@ -50,21 +50,19 @@ module.exports = function handler(req, res) {
 
   const secret = (process.env.SECRET_SALT || "").toString();
   if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured" });
+    return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
   const license = getLicense(req);
   const list = getLicenseList();
-
   const ok = list.includes(license);
+
   if (!ok) return res.status(200).json({ ok: false, plan: "none" });
 
   const plan = license.startsWith("PRO-") ? "pro" : "basic";
-
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + 10 * 60; // 10 minutes
+  const exp = now + 10 * 60;
 
   const token = signToken({ lic: license, plan, exp }, secret);
-
   return res.status(200).json({ ok: true, plan, token, exp });
 };
