@@ -1,26 +1,96 @@
-module.exports = function handler(req, res) {
+const crypto = require("crypto");
+
+// --- helpers ---
+function b64urlToBuffer(s) {
+  s = (s || "").toString().replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64");
+}
+
+function safeJsonParse(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
+function verifyToken(token, secret) {
+  if (!token || token.indexOf(".") === -1) return { ok: false, error: "bad_token" };
+
+  const parts = token.split(".");
+  if (parts.length !== 2) return { ok: false, error: "bad_token" };
+
+  const payloadB64 = parts[0];
+  const sigB64 = parts[1];
+
+  // recompute signature
+  const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
+  const expectedB64 = expected
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+
+  // constant-time compare
+  const a = Buffer.from(expectedB64);
+  const b = Buffer.from(sigB64);
+  if (a.length !== b.length) return { ok: false, error: "bad_sig" };
+  if (!crypto.timingSafeEqual(a, b)) return { ok: false, error: "bad_sig" };
+
+  // decode payload
+  const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
+  const payload = safeJsonParse(payloadJson);
+  if (!payload || !payload.lic || !payload.exp) return { ok: false, error: "bad_payload" };
+
+  const now = Math.floor(Date.now() / 1000);
+  // small clock-skew allowance (60s)
+  if (now > (payload.exp + 60)) return { ok: false, error: "expired" };
+
+  return { ok: true, payload };
+}
+
+function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") return res.status(204).end();
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
 
-  const license =
-    (req.method === "GET" ? req.query.license : (req.body && req.body.license)) || "";
-
-  const list = (process.env.LICENSES || "")
+function getLicenseList() {
+  return (process.env.LICENSES || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
 
-  const ok = list.includes(String(license));
-  if (!ok) return res.status(403).json({ ok: false, error: "invalid_license" });
+function getTokenFromReq(req) {
+  // Accept token from:
+  // 1) Authorization: Bearer <token>
+  // 2) body.token
+  // 3) query.token (for testing)
+  const auth = (req.headers.authorization || "").toString();
+  if (auth.toLowerCase().indexOf("bearer ") === 0) return auth.slice(7).trim();
 
-  const plan = String(license).startsWith("PRO-")
-    ? "pro"
-    : String(license).startsWith("BASIC-")
-      ? "basic"
-      : "basic";
+  if (req.method === "GET") return (req.query.token || "").toString();
+  return ((req.body && req.body.token) || "").toString();
+}
 
+module.exports = function handler(req, res) {
+  cors(res);
+  if (req.method === "OPTIONS") return res.status(204).end();
+
+  const secret = (process.env.SECRET_SALT || "").toString();
+  if (!secret || secret.length < 16) {
+    return res.status(500).json({ ok: false, error: "server_misconfigured" });
+  }
+
+  const token = getTokenFromReq(req);
+  const vt = verifyToken(token, secret);
+  if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
+
+  const { lic, plan } = vt.payload;
+
+  // server-side enforcement: token license must still be in LICENSES
+  const list = getLicenseList();
+  if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
+
+  // --- server controlled UI ---
   const ui = {
     showProModeToggle: plan === "pro",
     showMediaModeToggle: true,
@@ -31,6 +101,8 @@ module.exports = function handler(req, res) {
     showThemePicker: true
   };
 
+  // --- server controlled defaults + flags ---
+  // Keep these safe. (Client will also filter.)
   const config = {
     defaults: {
       t_kill: plan === "pro",
