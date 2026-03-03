@@ -1,5 +1,5 @@
-import crypto from "crypto";
-import { getRedis } from "./_redis.js";
+const crypto = require("crypto");
+const { getRedis } = require("./_redis");
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -8,7 +8,7 @@ function cors(res) {
 }
 
 function b64urlToBuffer(s) {
-  s = (s || "").toString().replace(/-/g, "+").replace(/_/g, "/");
+  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
   while (s.length % 4) s += "=";
   return Buffer.from(s, "base64");
 }
@@ -37,11 +37,8 @@ function verifyToken(token, secret) {
   const sigB64 = parts[1];
 
   const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const expectedB64 = expected
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  const expectedB64 = expected.toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 
   const a = Buffer.from(expectedB64);
   const b = Buffer.from(sigB64);
@@ -55,18 +52,18 @@ function verifyToken(token, secret) {
   return { ok: true, payload };
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method_not_allowed" });
 
-  const secret = (process.env.SECRET_SALT || "").toString();
+  const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
   const body = getJsonBody(req);
-  const token = (body.token || "").toString();
+  const token = String(body.token || "");
 
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
@@ -79,9 +76,9 @@ export default async function handler(req, res) {
   }
 
   const { lic, sid } = vt.payload;
-  const sessionKey = `sn:sessions:${lic}`;
+  const sessionKey = "sn:sessions:" + lic;
 
   await redis.hdel(sessionKey, sid);
 
   return res.status(200).json({ ok: true });
-}
+};

@@ -1,5 +1,5 @@
-import crypto from "crypto";
-import { getRedis } from "./_redis.js";
+const crypto = require("crypto");
+const { getRedis } = require("./_redis");
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -34,98 +34,88 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function getJsonBody(req) {
-  try {
-    if (!req.body) return {};
-    if (typeof req.body === "string") return JSON.parse(req.body);
-    return req.body;
-  } catch {
-    return {};
-  }
-}
-
 function readLicense(req) {
-  if (req.method === "GET") return (req.query.license || "").toString().trim();
-  const b = getJsonBody(req);
-  return (b.license || "").toString().trim();
+  if (req.method === "GET") return String(req.query.license || "").trim();
+  const b = req.body;
+  if (!b) return "";
+  if (typeof b === "string") {
+    try { return String(JSON.parse(b).license || "").trim(); } catch { return ""; }
+  }
+  return String(b.license || "").trim();
 }
 
-function planForLicense(license) {
-  return license.startsWith("PRO-") ? "pro" : "basic";
+function planForLicense(lic) {
+  return lic.indexOf("PRO-") === 0 ? "pro" : "basic";
 }
-
-function sessionLimitForPlan(plan) {
+function limitForPlan(plan) {
   return plan === "pro" ? 4 : 2;
 }
-
-function ttlSecondsForPlan(plan) {
+function ttlForPlan(plan) {
   return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
 }
-
 function makeSessionId() {
   return crypto.randomBytes(18).toString("hex");
 }
 
-async function cleanupExpiredSessions(redis, key, nowSec) {
+async function cleanupExpired(redis, key, nowSec) {
   const map = await redis.hgetall(key);
   if (!map) return;
 
   const entries = Object.entries(map);
-  for (const [sid, expStr] of entries) {
-    const exp = parseInt(expStr, 10) || 0;
-    if (exp <= nowSec) {
-      await redis.hdel(key, sid);
-    }
+  for (let i = 0; i < entries.length; i++) {
+    const sid = entries[i][0];
+    const exp = parseInt(entries[i][1], 10) || 0;
+    if (exp <= nowSec) await redis.hdel(key, sid);
   }
 }
 
-async function countActiveSessions(redis, key, nowSec) {
+async function countActive(redis, key, nowSec) {
   const map = await redis.hgetall(key);
   if (!map) return 0;
 
-  let count = 0;
   const entries = Object.entries(map);
-  for (const [, expStr] of entries) {
-    const exp = parseInt(expStr, 10) || 0;
-    if (exp > nowSec) count++;
+  let c = 0;
+  for (let i = 0; i < entries.length; i++) {
+    const exp = parseInt(entries[i][1], 10) || 0;
+    if (exp > nowSec) c++;
   }
-  return count;
+  return c;
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  const secret = (process.env.SECRET_SALT || "").toString();
+  const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  const license = readLicense(req);
+  const lic = readLicense(req);
   const list = getLicenseList();
-  if (!license || !list.includes(license)) {
+  if (!lic || !list.includes(lic)) {
     return res.status(200).json({ ok: false, plan: "none" });
   }
 
   let redis;
   try {
     redis = getRedis();
-  } catch {
+  } catch (e) {
     return res.status(500).json({ ok: false, error: "redis_not_configured" });
   }
 
-  const plan = planForLicense(license);
-  const limit = sessionLimitForPlan(plan);
-  const ttl = ttlSecondsForPlan(plan);
+  const plan = planForLicense(lic);
+  const limit = limitForPlan(plan);
+  const ttl = ttlForPlan(plan);
 
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttl;
 
-  const sessionKey = `sn:sessions:${license}`;
+  const sessionKey = "sn:sessions:" + lic;
 
-  await cleanupExpiredSessions(redis, sessionKey, now);
+  await cleanupExpired(redis, sessionKey, now);
 
-  const active = await countActiveSessions(redis, sessionKey, now);
+  const active = await countActive(redis, sessionKey, now);
   if (active >= limit) {
     return res.status(429).json({
       ok: false,
@@ -136,20 +126,18 @@ export default async function handler(req, res) {
     });
   }
 
-  const sessionId = makeSessionId();
-
-  await redis.hset(sessionKey, { [sessionId]: String(exp) });
-  // keep the hash alive a bit longer than TTL
+  const sid = makeSessionId();
+  await redis.hset(sessionKey, { [sid]: String(exp) });
   await redis.expire(sessionKey, ttl + 120);
 
-  const token = signToken({ lic: license, plan, exp, sid: sessionId }, secret);
+  const token = signToken({ lic: lic, plan: plan, exp: exp, sid: sid }, secret);
 
   return res.status(200).json({
     ok: true,
     plan,
     token,
     exp,
-    sessionId,
+    sessionId: sid,
     ttlSeconds: ttl
   });
-}
+};

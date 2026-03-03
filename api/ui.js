@@ -1,5 +1,5 @@
-import crypto from "crypto";
-import { getRedis } from "./_redis.js";
+const crypto = require("crypto");
+const { getRedis } = require("./_redis");
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -8,7 +8,7 @@ function cors(res) {
 }
 
 function b64urlToBuffer(s) {
-  s = (s || "").toString().replace(/-/g, "+").replace(/_/g, "/");
+  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
   while (s.length % 4) s += "=";
   return Buffer.from(s, "base64");
 }
@@ -18,7 +18,7 @@ function safeJsonParse(str) {
 }
 
 function getToken(req) {
-  return (req.query.token || "").toString().trim();
+  return String(req.query.token || "").trim();
 }
 
 function verifyToken(token, secret) {
@@ -31,11 +31,8 @@ function verifyToken(token, secret) {
   const sigB64 = parts[1];
 
   const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const expectedB64 = expected
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  const expectedB64 = expected.toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 
   const a = Buffer.from(expectedB64);
   const b = Buffer.from(sigB64);
@@ -44,7 +41,7 @@ function verifyToken(token, secret) {
 
   const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.exp || !payload.sid || !payload.plan) {
+  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid) {
     return { ok: false, error: "bad_payload" };
   }
 
@@ -61,11 +58,11 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  const secret = (process.env.SECRET_SALT || "").toString();
+  const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
@@ -74,7 +71,7 @@ export default async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
 
-  const { lic, plan, exp, sid } = vt.payload;
+  const { lic, plan, sid, exp } = vt.payload;
 
   const list = getLicenseList();
   if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
@@ -86,7 +83,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "redis_not_configured" });
   }
 
-  const sessionKey = `sn:sessions:${lic}`;
+  const sessionKey = "sn:sessions:" + lic;
   const storedExp = await redis.hget(sessionKey, sid);
   if (!storedExp) return res.status(403).json({ ok: false, error: "session_not_found" });
 
@@ -126,4 +123,4 @@ export default async function handler(req, res) {
     ui,
     config
   });
-}
+};
