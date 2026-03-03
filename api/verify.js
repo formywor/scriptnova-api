@@ -1,8 +1,13 @@
 const crypto = require("crypto");
 
-// --- helpers ---
-function b64urlEncode(buf) {
-  return Buffer.from(buf)
+function cors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+function b64urlEncode(input) {
+  return Buffer.from(input, "utf8")
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -12,22 +17,13 @@ function b64urlEncode(buf) {
 function signToken(payloadObj, secret) {
   const payloadJson = JSON.stringify(payloadObj);
   const payloadB64 = b64urlEncode(payloadJson);
-
   const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const sigB64 = b64urlEncode(sig);
-
+  const sigB64 = sig
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
   return payloadB64 + "." + sigB64;
-}
-
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
-
-function parseLicense(req) {
-  if (req.method === "GET") return (req.query.license || "").toString();
-  return ((req.body && req.body.license) || "").toString();
 }
 
 function getLicenseList() {
@@ -35,6 +31,17 @@ function getLicenseList() {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+// robust parsing for GET or POST (body can be object or string)
+function getLicense(req) {
+  if (req.method === "GET") return (req.query.license || "").toString();
+  const b = req.body;
+  if (!b) return "";
+  if (typeof b === "string") {
+    try { return (JSON.parse(b).license || "").toString(); } catch { return ""; }
+  }
+  return (b.license || "").toString();
 }
 
 module.exports = function handler(req, res) {
@@ -46,7 +53,7 @@ module.exports = function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured" });
   }
 
-  const license = parseLicense(req);
+  const license = getLicense(req);
   const list = getLicenseList();
 
   const ok = list.includes(license);
@@ -54,9 +61,8 @@ module.exports = function handler(req, res) {
 
   const plan = license.startsWith("PRO-") ? "pro" : "basic";
 
-  // token expires in 10 minutes
   const now = Math.floor(Date.now() / 1000);
-  const exp = now + 10 * 60;
+  const exp = now + 10 * 60; // 10 minutes
 
   const token = signToken({ lic: license, plan, exp }, secret);
 
