@@ -1,13 +1,9 @@
 module.exports = function handler(req, res) {
-  // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  // Allow GET for easy testing in a browser:
-  // /api/ui?license=PRO-TEST1234
   const license =
     (req.method === "GET" ? req.query.license : (req.body && req.body.license)) || "";
 
@@ -25,7 +21,6 @@ module.exports = function handler(req, res) {
       ? "basic"
       : "basic";
 
-  // 🔒 Server controls what UI is visible
   const ui = {
     showProModeToggle: plan === "pro",
     showMediaModeToggle: true,
@@ -36,7 +31,6 @@ module.exports = function handler(req, res) {
     showThemePicker: true
   };
 
-  // 🔒 Server controls defaults + secret flags
   const config = {
     defaults: {
       t_kill: plan === "pro",
@@ -50,15 +44,8 @@ module.exports = function handler(req, res) {
       t_mute: false
     },
     chromeFlags: plan === "pro"
-      ? [
-          "--no-first-run",
-          "--force-dark-mode",
-          "--disable-renderer-backgrounding"
-        ]
-      : [
-          "--no-first-run",
-          "--force-dark-mode"
-        ]
+      ? ["--no-first-run", "--force-dark-mode", "--disable-renderer-backgrounding"]
+      : ["--no-first-run", "--force-dark-mode"]
   };
 
   return res.status(200).json({ ok: true, plan, ui, config });
