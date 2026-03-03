@@ -1,4 +1,5 @@
-const crypto = require("crypto");
+import crypto from "crypto";
+import { kv } from "@vercel/kv";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -14,6 +15,12 @@ function b64urlToBuffer(s) {
 
 function safeJsonParse(str) {
   try { return JSON.parse(str); } catch { return null; }
+}
+
+function getToken(req) {
+  const auth = (req.headers.authorization || "").toString();
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return (req.query.token || "").toString();
 }
 
 function verifyToken(token, secret) {
@@ -39,10 +46,12 @@ function verifyToken(token, secret) {
 
   const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.exp) return { ok: false, error: "bad_payload" };
+  if (!payload || !payload.lic || !payload.exp || !payload.sid || !payload.plan) {
+    return { ok: false, error: "bad_payload" };
+  }
 
   const now = Math.floor(Date.now() / 1000);
-  if (now > (payload.exp + 60)) return { ok: false, error: "expired" };
+  if (now > (payload.exp + 15)) return { ok: false, error: "expired" };
 
   return { ok: true, payload };
 }
@@ -54,22 +63,7 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function getToken(req) {
-  const auth = (req.headers.authorization || "").toString();
-  if (auth.toLowerCase().indexOf("bearer ") === 0) return auth.slice(7).trim();
-
-  // HTA uses GET by default
-  if (req.method === "GET") return (req.query.token || "").toString();
-
-  const b = req.body;
-  if (!b) return "";
-  if (typeof b === "string") {
-    try { return (JSON.parse(b).token || "").toString(); } catch { return ""; }
-  }
-  return (b.token || "").toString();
-}
-
-module.exports = function handler(req, res) {
+export default async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
@@ -82,44 +76,42 @@ module.exports = function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
 
-  const { lic, plan } = vt.payload;
+  const { lic, plan, exp, sid } = vt.payload;
 
+  // license still must exist
   const list = getLicenseList();
-  if (!list.includes(lic)) {
-    return res.status(403).json({ ok: false, error: "license_revoked" });
+  if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
+
+  // session must still be active in KV
+  const sessionKey = `sn:sessions:${lic}`;
+  const storedExp = await kv.hget(sessionKey, sid);
+  if (!storedExp) return res.status(403).json({ ok: false, error: "session_not_found" });
+
+  const storedExpNum = parseInt(storedExp, 10) || 0;
+  const now = Math.floor(Date.now() / 1000);
+  if (storedExpNum <= now) {
+    // cleanup
+    await kv.hdel(sessionKey, sid);
+    return res.status(403).json({ ok: false, error: "session_expired" });
   }
 
-  // Server UI controls
+  // Server-controlled UI permissions
   const ui = {
-    showProModeToggle: plan === "pro",
     showMediaModeToggle: true,
-    showToolsKillApps: true,
-    showToolsRamOptimize: true,
-    showToolsClearCache: true,
-    showEdgeDrmButton: true,
+    showProModeToggle: plan === "pro",
+    showTools: plan === "pro",
     showThemePicker: true
   };
 
-  // NOTE: these are not truly “secret” once Chrome launches
+  // Server-controlled Chrome flags (your “important stuff” lives here)
   const config = {
-    defaults: {
-      t_kill: plan === "pro",
-      t_temp: false,
-      t_incog: false,
-      t_kiosk: false,
-      t_gpu: true,
-      t_ext: false,
-      t_proxy: true,
-      t_fps: false,
-      t_mute: false
-    },
     chromeFlags: plan === "pro"
       ? [
           "--no-first-run",
           "--force-dark-mode",
           "--disable-renderer-backgrounding",
-          "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query"
+          "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
+          "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ]
       : [
           "--no-first-run",
@@ -127,5 +119,12 @@ module.exports = function handler(req, res) {
         ]
   };
 
-  return res.status(200).json({ ok: true, plan, ui, config });
-};
+  return res.status(200).json({
+    ok: true,
+    plan,
+    exp,
+    sessionId: sid,
+    ui,
+    config
+  });
+}
