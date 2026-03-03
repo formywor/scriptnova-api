@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { kv } from "@vercel/kv";
+import { getRedis } from "./_redis.js";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,14 +18,12 @@ function b64urlEncodeUtf8(str) {
 function signToken(payloadObj, secret) {
   const payloadJson = JSON.stringify(payloadObj);
   const payloadB64 = b64urlEncodeUtf8(payloadJson);
-
   const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
   const sigB64 = sig
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
-
   return payloadB64 + "." + sigB64;
 }
 
@@ -46,16 +44,10 @@ function getJsonBody(req) {
   }
 }
 
-function readInput(req) {
-  if (req.method === "GET") {
-    return {
-      license: (req.query.license || "").toString().trim()
-    };
-  }
+function readLicense(req) {
+  if (req.method === "GET") return (req.query.license || "").toString().trim();
   const b = getJsonBody(req);
-  return {
-    license: (b.license || "").toString().trim()
-  };
+  return (b.license || "").toString().trim();
 }
 
 function planForLicense(license) {
@@ -67,37 +59,34 @@ function sessionLimitForPlan(plan) {
 }
 
 function ttlSecondsForPlan(plan) {
-  // basic 32 minutes, pro 118 hours
   return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
 }
 
 function makeSessionId() {
-  // safe random ID
   return crypto.randomBytes(18).toString("hex");
 }
 
-async function cleanupExpiredSessions(key, nowSec) {
-  const map = await kv.hgetall(key);
-  if (!map) return 0;
+async function cleanupExpiredSessions(redis, key, nowSec) {
+  const map = await redis.hgetall(key);
+  if (!map) return;
 
-  let removed = 0;
-  for (const sid of Object.keys(map)) {
-    const exp = parseInt(map[sid], 10) || 0;
+  const entries = Object.entries(map);
+  for (const [sid, expStr] of entries) {
+    const exp = parseInt(expStr, 10) || 0;
     if (exp <= nowSec) {
-      await kv.hdel(key, sid);
-      removed++;
+      await redis.hdel(key, sid);
     }
   }
-  return removed;
 }
 
-async function countActiveSessions(key, nowSec) {
-  const map = await kv.hgetall(key);
+async function countActiveSessions(redis, key, nowSec) {
+  const map = await redis.hgetall(key);
   if (!map) return 0;
 
   let count = 0;
-  for (const sid of Object.keys(map)) {
-    const exp = parseInt(map[sid], 10) || 0;
+  const entries = Object.entries(map);
+  for (const [, expStr] of entries) {
+    const exp = parseInt(expStr, 10) || 0;
     if (exp > nowSec) count++;
   }
   return count;
@@ -112,11 +101,17 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  const { license } = readInput(req);
+  const license = readLicense(req);
   const list = getLicenseList();
-
   if (!license || !list.includes(license)) {
     return res.status(200).json({ ok: false, plan: "none" });
+  }
+
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({ ok: false, error: "redis_not_configured" });
   }
 
   const plan = planForLicense(license);
@@ -128,11 +123,9 @@ export default async function handler(req, res) {
 
   const sessionKey = `sn:sessions:${license}`;
 
-  // cleanup expired sessions first
-  await cleanupExpiredSessions(sessionKey, now);
+  await cleanupExpiredSessions(redis, sessionKey, now);
 
-  // enforce active session limits
-  const active = await countActiveSessions(sessionKey, now);
+  const active = await countActiveSessions(redis, sessionKey, now);
   if (active >= limit) {
     return res.status(429).json({
       ok: false,
@@ -145,12 +138,9 @@ export default async function handler(req, res) {
 
   const sessionId = makeSessionId();
 
-  // store this session
-  await kv.hset(sessionKey, { [sessionId]: String(exp) });
-
-  // also set TTL on the whole hash key (slightly longer than the session)
-  // so old hashes disappear even if something goes wrong
-  await kv.expire(sessionKey, ttl + 120);
+  await redis.hset(sessionKey, { [sessionId]: String(exp) });
+  // keep the hash alive a bit longer than TTL
+  await redis.expire(sessionKey, ttl + 120);
 
   const token = signToken({ lic: license, plan, exp, sid: sessionId }, secret);
 

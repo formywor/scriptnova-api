@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { kv } from "@vercel/kv";
+import { getRedis } from "./_redis.js";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -71,10 +71,17 @@ export default async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
 
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({ ok: false, error: "redis_not_configured" });
+  }
+
   const { lic, sid } = vt.payload;
   const sessionKey = `sn:sessions:${lic}`;
 
-  await kv.hdel(sessionKey, sid);
+  await redis.hdel(sessionKey, sid);
 
   return res.status(200).json({ ok: true });
 }
