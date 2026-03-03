@@ -1,9 +1,9 @@
 import crypto from "crypto";
-import { kv } from "@vercel/kv";
+import { getRedis } from "./_redis.js";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
@@ -18,9 +18,7 @@ function safeJsonParse(str) {
 }
 
 function getToken(req) {
-  const auth = (req.headers.authorization || "").toString();
-  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  return (req.query.token || "").toString();
+  return (req.query.token || "").toString().trim();
 }
 
 function verifyToken(token, secret) {
@@ -78,32 +76,33 @@ export default async function handler(req, res) {
 
   const { lic, plan, exp, sid } = vt.payload;
 
-  // license still must exist
   const list = getLicenseList();
   if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
 
-  // session must still be active in KV
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({ ok: false, error: "redis_not_configured" });
+  }
+
   const sessionKey = `sn:sessions:${lic}`;
-  const storedExp = await kv.hget(sessionKey, sid);
+  const storedExp = await redis.hget(sessionKey, sid);
   if (!storedExp) return res.status(403).json({ ok: false, error: "session_not_found" });
 
-  const storedExpNum = parseInt(storedExp, 10) || 0;
   const now = Math.floor(Date.now() / 1000);
+  const storedExpNum = parseInt(storedExp, 10) || 0;
   if (storedExpNum <= now) {
-    // cleanup
-    await kv.hdel(sessionKey, sid);
+    await redis.hdel(sessionKey, sid);
     return res.status(403).json({ ok: false, error: "session_expired" });
   }
 
-  // Server-controlled UI permissions
   const ui = {
-    showMediaModeToggle: true,
     showProModeToggle: plan === "pro",
-    showTools: plan === "pro",
+    showMediaModeToggle: true,
     showThemePicker: true
   };
 
-  // Server-controlled Chrome flags (your “important stuff” lives here)
   const config = {
     chromeFlags: plan === "pro"
       ? [
