@@ -23,7 +23,7 @@ function getToken(req) {
 }
 
 function getClientId(req) {
-  return String(req.query.cid || "").trim();
+  return String(req.query.cid || req.query.clientId || "").trim();
 }
 
 function isSafeClientId(s) {
@@ -52,6 +52,8 @@ function verifyToken(token, secret) {
 
   const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
+
+  // NOTE: verify.js signs { lic, plan, exp, sid, cid }
   if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid) {
     return { ok: false, error: "bad_payload" };
   }
@@ -62,9 +64,11 @@ function verifyToken(token, secret) {
   return { ok: true, payload };
 }
 
+// IMPORTANT: accept both old numeric sessions and new JSON sessions
 function parseSessionValue(raw) {
   const expNum = parseInt(raw, 10) || 0;
   if (expNum) return { exp: expNum, cid: "", seen: 0 };
+
   try {
     const obj = JSON.parse(String(raw));
     return {
@@ -77,8 +81,15 @@ function parseSessionValue(raw) {
   }
 }
 
+function getLicenseList() {
+  return (process.env.LICENSES || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// Strict server-side allowlist for chrome flags (prevents bad/unsafe flags)
 function normalizeFlagServer(flag) {
-  // Only allow what you explicitly support
   const ALLOW = {
     "--no-first-run": true,
     "--force-dark-mode": true,
@@ -102,15 +113,9 @@ function normalizeFlagServer(flag) {
   let val = f.substring(eq + 1).trim();
   if (!val) return "";
 
+  // If value contains spaces, quote it so Windows passes it as one argument
   if (val.indexOf(" ") !== -1) val = "\"" + val + "\"";
   return name + "=" + val;
-}
-
-function getLicenseList() {
-  return (process.env.LICENSES || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 module.exports = async function handler(req, res) {
@@ -136,6 +141,8 @@ module.exports = async function handler(req, res) {
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
 
   const { lic, plan, sid, exp, cid: tokenCid } = vt.payload;
+
+  // Client binding (stops token sharing)
   if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch" });
 
   const list = getLicenseList();
@@ -155,28 +162,22 @@ module.exports = async function handler(req, res) {
   const now = Math.floor(Date.now() / 1000);
   const s = parseSessionValue(storedRaw);
 
-  if (s.exp <= now) {
+  if ((s.exp || 0) <= now) {
     await redis.hdel(sessionKey, sid);
     return res.status(403).json({ ok: false, error: "session_expired" });
   }
 
   if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch" });
 
-  // Heartbeat enforcement (tune in env)
+  // Heartbeat enforcement (optional tuning)
   const HEARTBEAT_MAX_GAP = parseInt(process.env.HEARTBEAT_MAX_GAP_SEC || "210", 10);
   if (s.seen && (now - s.seen) > HEARTBEAT_MAX_GAP) {
     await redis.hdel(sessionKey, sid);
     return res.status(403).json({ ok: false, error: "heartbeat_lost" });
   }
 
-  // Update last seen (also acts as heartbeat)
+  // Update last-seen (also counts as heartbeat)
   await redis.hset(sessionKey, { [sid]: JSON.stringify({ exp: s.exp, cid: cid, seen: now }) });
-
-  const ui = {
-    showProModeToggle: plan === "pro",
-    showMediaModeToggle: true,
-    showThemePicker: true
-  };
 
   const proUA = "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
 
@@ -200,7 +201,11 @@ module.exports = async function handler(req, res) {
     plan,
     exp,
     sessionId: sid,
-    ui,
+    ui: {
+      showProModeToggle: plan === "pro",
+      showMediaModeToggle: true,
+      showThemePicker: true
+    },
     config: { chromeFlags }
   });
 };
