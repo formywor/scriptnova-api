@@ -140,7 +140,8 @@ module.exports = async function handler(req, res) {
 
   if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch" });
 
-  await redis.hset(sessionKey, { [sid]: JSON.stringify({ exp: s.exp, cid: cid, seen: now }) });
+  // IMPORTANT: use explicit (key, field, value)
+  await redis.hset(sessionKey, sid, JSON.stringify({ exp: s.exp, cid: cid, seen: now }));
 
   return res.status(200).json({ ok: true, seen: now });
 };

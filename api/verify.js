@@ -45,7 +45,6 @@ async function getJsonBody(req) {
     }
   } catch {}
 
-  // Fallback: read raw stream
   try {
     const raw = await new Promise((resolve) => {
       let data = "";
@@ -73,7 +72,7 @@ function limitForPlan(plan) {
   return plan === "pro" ? 4 : 2;
 }
 function ttlForPlan(plan) {
-  return plan === "pro" ? 118 * 60 * 60 : 32 * 60;
+  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
 }
 function makeSessionId() {
   return crypto.randomBytes(18).toString("hex");
@@ -134,7 +133,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  // Accept GET for quick debug, POST for HTA
+  // Allow GET for testing; HTA uses POST.
   let lic = "";
   let clientId = "";
 
@@ -151,7 +150,6 @@ module.exports = async function handler(req, res) {
   if (!lic || !list.includes(lic)) {
     return res.status(200).json({ ok: false, plan: "none" });
   }
-
   if (!isSafeClientId(clientId)) {
     return res.status(400).json({ ok: false, error: "bad_client_id" });
   }
@@ -187,10 +185,8 @@ module.exports = async function handler(req, res) {
 
   const sid = makeSessionId();
 
-  await redis.hset(sessionKey, {
-    [sid]: JSON.stringify({ exp: exp, cid: clientId, seen: now })
-  });
-
+  // IMPORTANT: Use explicit (key, field, value)
+  await redis.hset(sessionKey, sid, JSON.stringify({ exp: exp, cid: clientId, seen: now }));
   await redis.expire(sessionKey, ttl + 120);
 
   const token = signToken({ lic: lic, plan: plan, exp: exp, sid: sid, cid: clientId }, secret);
