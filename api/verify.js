@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const PREFIX = "sn2"; // versioned key prefix to avoid old-format collisions
+const BUILD = "sn-hard-2026-03-04";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -34,7 +34,6 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-// Robust body parsing for Vercel
 async function getJsonBody(req) {
   try {
     if (req.body) {
@@ -118,15 +117,14 @@ module.exports = async function handler(req, res) {
   const rl = await rateLimit(req, "verify", 12, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
-    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
+    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter, build: BUILD });
   }
 
   const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
+    return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
   }
 
-  // GET for debugging, POST for HTA
   let lic = "";
   let clientId = "";
 
@@ -140,12 +138,16 @@ module.exports = async function handler(req, res) {
   }
 
   const list = getLicenseList();
-  if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none" });
-  if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id" });
+  if (!lic || !list.includes(lic)) {
+    return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  }
+  if (!isSafeClientId(clientId)) {
+    return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
+  }
 
   let redis;
   try { redis = getRedis(); }
-  catch { return res.status(500).json({ ok: false, error: "redis_not_configured" }); }
+  catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
   const plan = planForLicense(lic);
   const limit = limitForPlan(plan);
@@ -154,23 +156,23 @@ module.exports = async function handler(req, res) {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttl;
 
-  const sessionKey = `${PREFIX}:sessions:${lic}`;
+  const sessionKey = "sn:sessions:" + lic;
 
   await cleanupExpired(redis, sessionKey, now);
 
   const active = await countActive(redis, sessionKey, now);
   if (active >= limit) {
-    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active, limit });
+    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active, limit, build: BUILD });
   }
 
   const sid = makeSessionId();
   const record = JSON.stringify({ exp: exp, cid: clientId, seen: now });
 
-  // IMPORTANT: explicit (key, field, value)
+  // CRITICAL: explicit hset(key, field, value)
   await redis.hset(sessionKey, sid, record);
   await redis.expire(sessionKey, ttl + 180);
 
   const token = signToken({ lic, plan, exp, sid, cid: clientId }, secret);
 
-  return res.status(200).json({ ok: true, plan, token, exp, sessionId: sid, ttlSeconds: ttl });
+  return res.status(200).json({ ok: true, plan, token, exp, sessionId: sid, ttlSeconds: ttl, build: BUILD });
 };
