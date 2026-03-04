@@ -2,28 +2,59 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
+const PREFIX = "sn2"; // versioned key prefix to avoid old-format collisions
+
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-function b64urlToBuffer(s) {
-  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
-  while (s.length % 4) s += "=";
-  return Buffer.from(s, "base64");
+function b64urlEncodeUtf8(str) {
+  return Buffer.from(String(str), "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
-function safeJsonParse(str) {
-  try { return JSON.parse(str); } catch { return null; }
+function signToken(payloadObj, secret) {
+  const payloadJson = JSON.stringify(payloadObj);
+  const payloadB64 = b64urlEncodeUtf8(payloadJson);
+  const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
+  const sigB64 = sig.toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return payloadB64 + "." + sigB64;
 }
 
-function getToken(req) {
-  return String(req.query.token || "").trim();
+function getLicenseList() {
+  return (process.env.LICENSES || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
-function getClientId(req) {
-  return String(req.query.cid || req.query.clientId || "").trim();
+// Robust body parsing for Vercel
+async function getJsonBody(req) {
+  try {
+    if (req.body) {
+      if (typeof req.body === "string") return JSON.parse(req.body);
+      if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString("utf8"));
+      if (typeof req.body === "object") return req.body;
+    }
+  } catch {}
+  try {
+    const raw = await new Promise((resolve) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => resolve(data));
+      req.on("error", () => resolve(""));
+    });
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
 function isSafeClientId(s) {
@@ -32,34 +63,17 @@ function isSafeClientId(s) {
   return /^[A-Za-z0-9\-_.]+$/.test(s);
 }
 
-function verifyToken(token, secret) {
-  if (!token || token.indexOf(".") === -1) return { ok: false, error: "bad_token" };
-
-  const parts = token.split(".");
-  if (parts.length !== 2) return { ok: false, error: "bad_token" };
-
-  const payloadB64 = parts[0];
-  const sigB64 = parts[1];
-
-  const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const expectedB64 = expected.toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-
-  const a = Buffer.from(expectedB64);
-  const b = Buffer.from(sigB64);
-  if (a.length !== b.length) return { ok: false, error: "bad_sig" };
-  if (!crypto.timingSafeEqual(a, b)) return { ok: false, error: "bad_sig" };
-
-  const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
-  const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid) {
-    return { ok: false, error: "bad_payload" };
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-  if (now > (payload.exp + 15)) return { ok: false, error: "expired" };
-
-  return { ok: true, payload };
+function planForLicense(lic) {
+  return lic.indexOf("PRO-") === 0 ? "pro" : "basic";
+}
+function limitForPlan(plan) {
+  return plan === "pro" ? 4 : 2;
+}
+function ttlForPlan(plan) {
+  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
+}
+function makeSessionId() {
+  return crypto.randomBytes(18).toString("hex");
 }
 
 function parseSessionValue(raw) {
@@ -77,47 +91,31 @@ function parseSessionValue(raw) {
   }
 }
 
-function getLicenseList() {
-  return (process.env.LICENSES || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+async function cleanupExpired(redis, key, nowSec) {
+  const map = await redis.hgetall(key);
+  if (!map) return;
+  for (const [sid, raw] of Object.entries(map)) {
+    const s = parseSessionValue(raw);
+    if ((s.exp || 0) <= nowSec) await redis.hdel(key, sid);
+  }
 }
 
-// Allowlist for safety
-function normalizeFlagServer(flag) {
-  const ALLOW = {
-    "--no-first-run": true,
-    "--force-dark-mode": true,
-    "--disable-renderer-backgrounding": true,
-    "--dns-over-https-templates": true,
-    "--user-agent": true
-  };
-
-  let f = String(flag || "").trim();
-  if (!f) return "";
-  if (/[\r\n\t\0]/.test(f)) return "";
-  if (f.indexOf("--") !== 0) return "";
-  if (f.indexOf("\"") !== -1) return "";
-
-  const eq = f.indexOf("=");
-  const name = eq === -1 ? f : f.substring(0, eq);
-  if (!ALLOW[name]) return "";
-
-  if (eq === -1) return name;
-
-  let val = f.substring(eq + 1).trim();
-  if (!val) return "";
-
-  if (val.indexOf(" ") !== -1) val = "\"" + val + "\"";
-  return name + "=" + val;
+async function countActive(redis, key, nowSec) {
+  const map = await redis.hgetall(key);
+  if (!map) return 0;
+  let c = 0;
+  for (const raw of Object.values(map)) {
+    const s = parseSessionValue(raw);
+    if ((s.exp || 0) > nowSec) c++;
+  }
+  return c;
 }
 
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  const rl = await rateLimit(req, "ui", 120, 60);
+  const rl = await rateLimit(req, "verify", 12, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
     return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
@@ -128,77 +126,51 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  const token = getToken(req);
-  const cid = getClientId(req);
-  if (!isSafeClientId(cid)) return res.status(400).json({ ok: false, error: "bad_client_id" });
+  // GET for debugging, POST for HTA
+  let lic = "";
+  let clientId = "";
 
-  const vt = verifyToken(token, secret);
-  if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
-
-  const { lic, plan, sid, exp, cid: tokenCid } = vt.payload;
-  if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch" });
+  if (req.method === "GET") {
+    lic = String(req.query.license || "").trim();
+    clientId = String(req.query.clientId || req.query.cid || "").trim();
+  } else {
+    const body = await getJsonBody(req);
+    lic = String(body.license || "").trim();
+    clientId = String(body.clientId || "").trim();
+  }
 
   const list = getLicenseList();
-  if (!list.includes(lic)) return res.status(403).json({ ok: false, error: "license_revoked" });
+  if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none" });
+  if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id" });
 
   let redis;
-  try {
-    redis = getRedis();
-  } catch {
-    return res.status(500).json({ ok: false, error: "redis_not_configured" });
-  }
+  try { redis = getRedis(); }
+  catch { return res.status(500).json({ ok: false, error: "redis_not_configured" }); }
 
-  const sessionKey = "sn:sessions:" + lic;
-
-  const storedRaw = await redis.hget(sessionKey, sid);
-  if (!storedRaw) return res.status(403).json({ ok: false, error: "session_not_found" });
+  const plan = planForLicense(lic);
+  const limit = limitForPlan(plan);
+  const ttl = ttlForPlan(plan);
 
   const now = Math.floor(Date.now() / 1000);
-  const s = parseSessionValue(storedRaw);
+  const exp = now + ttl;
 
-  if ((s.exp || 0) <= now) {
-    await redis.hdel(sessionKey, sid);
-    return res.status(403).json({ ok: false, error: "session_expired" });
+  const sessionKey = `${PREFIX}:sessions:${lic}`;
+
+  await cleanupExpired(redis, sessionKey, now);
+
+  const active = await countActive(redis, sessionKey, now);
+  if (active >= limit) {
+    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active, limit });
   }
 
-  if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch" });
+  const sid = makeSessionId();
+  const record = JSON.stringify({ exp: exp, cid: clientId, seen: now });
 
-  const HEARTBEAT_MAX_GAP = parseInt(process.env.HEARTBEAT_MAX_GAP_SEC || "210", 10);
-  if (s.seen && (now - s.seen) > HEARTBEAT_MAX_GAP) {
-    await redis.hdel(sessionKey, sid);
-    return res.status(403).json({ ok: false, error: "heartbeat_lost" });
-  }
+  // IMPORTANT: explicit (key, field, value)
+  await redis.hset(sessionKey, sid, record);
+  await redis.expire(sessionKey, ttl + 180);
 
-  // IMPORTANT: use explicit (key, field, value)
-  await redis.hset(sessionKey, sid, JSON.stringify({ exp: s.exp, cid: cid, seen: now }));
+  const token = signToken({ lic, plan, exp, sid, cid: clientId }, secret);
 
-  const proUA = "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
-
-  const rawFlags = plan === "pro"
-    ? [
-        "--no-first-run",
-        "--force-dark-mode",
-        "--disable-renderer-backgrounding",
-        "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
-        "--user-agent=" + proUA
-      ]
-    : [
-        "--no-first-run",
-        "--force-dark-mode"
-      ];
-
-  const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
-
-  return res.status(200).json({
-    ok: true,
-    plan,
-    exp,
-    sessionId: sid,
-    ui: {
-      showProModeToggle: plan === "pro",
-      showMediaModeToggle: true,
-      showThemePicker: true
-    },
-    config: { chromeFlags }
-  });
+  return res.status(200).json({ ok: true, plan, token, exp, sessionId: sid, ttlSeconds: ttl });
 };

@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
+const PREFIX = "sn2";
+
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
@@ -26,11 +28,10 @@ async function getJsonBody(req) {
       if (typeof req.body === "object") return req.body;
     }
   } catch {}
-
   try {
     const raw = await new Promise((resolve) => {
       let data = "";
-      req.on("data", (chunk) => (data += chunk));
+      req.on("data", (c) => (data += c));
       req.on("end", () => resolve(data));
       req.on("error", () => resolve(""));
     });
@@ -49,7 +50,6 @@ function isSafeClientId(s) {
 
 function verifyToken(token, secret) {
   if (!token || token.indexOf(".") === -1) return { ok: false, error: "bad_token" };
-
   const parts = token.split(".");
   if (parts.length !== 2) return { ok: false, error: "bad_token" };
 
@@ -77,7 +77,7 @@ module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method_not_allowed" });
 
-  const rl = await rateLimit(req, "end", 120, 60);
+  const rl = await rateLimit(req, "end", 240, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
     return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
@@ -100,13 +100,10 @@ module.exports = async function handler(req, res) {
   if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch" });
 
   let redis;
-  try {
-    redis = getRedis();
-  } catch {
-    return res.status(500).json({ ok: false, error: "redis_not_configured" });
-  }
+  try { redis = getRedis(); }
+  catch { return res.status(500).json({ ok: false, error: "redis_not_configured" }); }
 
-  const sessionKey = "sn:sessions:" + lic;
+  const sessionKey = `${PREFIX}:sessions:${lic}`;
   await redis.hdel(sessionKey, sid);
 
   return res.status(200).json({ ok: true });

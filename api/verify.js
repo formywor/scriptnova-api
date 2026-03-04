@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
+const PREFIX = "sn2"; // versioned key prefix to avoid old-format collisions
+
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
@@ -20,11 +22,8 @@ function signToken(payloadObj, secret) {
   const payloadJson = JSON.stringify(payloadObj);
   const payloadB64 = b64urlEncodeUtf8(payloadJson);
   const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const sigB64 = sig
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  const sigB64 = sig.toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   return payloadB64 + "." + sigB64;
 }
 
@@ -35,7 +34,7 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-// Robust JSON body parsing for Vercel serverless
+// Robust body parsing for Vercel
 async function getJsonBody(req) {
   try {
     if (req.body) {
@@ -44,11 +43,10 @@ async function getJsonBody(req) {
       if (typeof req.body === "object") return req.body;
     }
   } catch {}
-
   try {
     const raw = await new Promise((resolve) => {
       let data = "";
-      req.on("data", (chunk) => (data += chunk));
+      req.on("data", (c) => (data += c));
       req.on("end", () => resolve(data));
       req.on("error", () => resolve(""));
     });
@@ -96,11 +94,8 @@ function parseSessionValue(raw) {
 async function cleanupExpired(redis, key, nowSec) {
   const map = await redis.hgetall(key);
   if (!map) return;
-
-  const entries = Object.entries(map);
-  for (let i = 0; i < entries.length; i++) {
-    const sid = entries[i][0];
-    const s = parseSessionValue(entries[i][1]);
+  for (const [sid, raw] of Object.entries(map)) {
+    const s = parseSessionValue(raw);
     if ((s.exp || 0) <= nowSec) await redis.hdel(key, sid);
   }
 }
@@ -108,11 +103,9 @@ async function cleanupExpired(redis, key, nowSec) {
 async function countActive(redis, key, nowSec) {
   const map = await redis.hgetall(key);
   if (!map) return 0;
-
-  const entries = Object.entries(map);
   let c = 0;
-  for (let i = 0; i < entries.length; i++) {
-    const s = parseSessionValue(entries[i][1]);
+  for (const raw of Object.values(map)) {
+    const s = parseSessionValue(raw);
     if ((s.exp || 0) > nowSec) c++;
   }
   return c;
@@ -122,7 +115,7 @@ module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
 
-  const rl = await rateLimit(req, "verify", 8, 60);
+  const rl = await rateLimit(req, "verify", 12, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
     return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
@@ -133,7 +126,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  // Allow GET for testing; HTA uses POST.
+  // GET for debugging, POST for HTA
   let lic = "";
   let clientId = "";
 
@@ -147,19 +140,12 @@ module.exports = async function handler(req, res) {
   }
 
   const list = getLicenseList();
-  if (!lic || !list.includes(lic)) {
-    return res.status(200).json({ ok: false, plan: "none" });
-  }
-  if (!isSafeClientId(clientId)) {
-    return res.status(400).json({ ok: false, error: "bad_client_id" });
-  }
+  if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none" });
+  if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id" });
 
   let redis;
-  try {
-    redis = getRedis();
-  } catch {
-    return res.status(500).json({ ok: false, error: "redis_not_configured" });
-  }
+  try { redis = getRedis(); }
+  catch { return res.status(500).json({ ok: false, error: "redis_not_configured" }); }
 
   const plan = planForLicense(lic);
   const limit = limitForPlan(plan);
@@ -168,35 +154,23 @@ module.exports = async function handler(req, res) {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttl;
 
-  const sessionKey = "sn:sessions:" + lic;
+  const sessionKey = `${PREFIX}:sessions:${lic}`;
 
   await cleanupExpired(redis, sessionKey, now);
 
   const active = await countActive(redis, sessionKey, now);
   if (active >= limit) {
-    return res.status(429).json({
-      ok: false,
-      plan,
-      error: "too_many_sessions",
-      active,
-      limit
-    });
+    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active, limit });
   }
 
   const sid = makeSessionId();
+  const record = JSON.stringify({ exp: exp, cid: clientId, seen: now });
 
-  // IMPORTANT: Use explicit (key, field, value)
-  await redis.hset(sessionKey, sid, JSON.stringify({ exp: exp, cid: clientId, seen: now }));
-  await redis.expire(sessionKey, ttl + 120);
+  // IMPORTANT: explicit (key, field, value)
+  await redis.hset(sessionKey, sid, record);
+  await redis.expire(sessionKey, ttl + 180);
 
-  const token = signToken({ lic: lic, plan: plan, exp: exp, sid: sid, cid: clientId }, secret);
+  const token = signToken({ lic, plan, exp, sid, cid: clientId }, secret);
 
-  return res.status(200).json({
-    ok: true,
-    plan,
-    token,
-    exp,
-    sessionId: sid,
-    ttlSeconds: ttl
-  });
+  return res.status(200).json({ ok: true, plan, token, exp, sessionId: sid, ttlSeconds: ttl });
 };
