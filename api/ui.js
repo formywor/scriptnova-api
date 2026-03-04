@@ -100,6 +100,10 @@ module.exports = async function handler(req, res) {
     showThemePicker: true
   };
 
+  // IMPORTANT FIX:
+  // Any flag value containing spaces MUST be quoted so it stays a single argument on Windows.
+  const proUA = "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
+
   const config = {
     chromeFlags: plan === "pro"
       ? [
@@ -107,7 +111,7 @@ module.exports = async function handler(req, res) {
           "--force-dark-mode",
           "--disable-renderer-backgrounding",
           "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
-          "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          `--user-agent="${proUA}"`
         ]
       : [
           "--no-first-run",
