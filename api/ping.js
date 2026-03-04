@@ -16,6 +16,12 @@ function b64urlToBuffer(s) {
   return Buffer.from(s, "base64");
 }
 function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
+function parseRedisJson(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "object") return raw;
+  if (typeof raw === "string") return safeJsonParse(raw);
+  return safeJsonParse(String(raw));
+}
 
 async function getJsonBody(req) {
   try {
@@ -104,7 +110,7 @@ module.exports = async function handler(req, res) {
   const raw = await redis.get(sk);
   if (!raw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
 
-  const s = safeJsonParse(String(raw));
+  const s = parseRedisJson(raw);
   if (!s) return res.status(403).json({ ok: false, error: "session_corrupt", build: BUILD });
 
   const now = Math.floor(Date.now() / 1000);
