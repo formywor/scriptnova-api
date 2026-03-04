@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-04";
+const BUILD = "sn-hard-2026-03-04b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,9 +16,7 @@ function b64urlToBuffer(s) {
   return Buffer.from(s, "base64");
 }
 
-function safeJsonParse(str) {
-  try { return JSON.parse(str); } catch { return null; }
-}
+function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
 
 function isSafeClientId(s) {
   if (!s) return false;
@@ -55,27 +53,14 @@ function verifyToken(token, secret) {
   return { ok: true, payload };
 }
 
-function parseSessionValue(raw) {
-  const expNum = parseInt(raw, 10) || 0;
-  if (expNum) return { exp: expNum, cid: "", seen: 0 };
-  try {
-    const obj = JSON.parse(String(raw));
-    return {
-      exp: parseInt(obj.exp, 10) || 0,
-      cid: String(obj.cid || ""),
-      seen: parseInt(obj.seen, 10) || 0
-    };
-  } catch {
-    return { exp: 0, cid: "", seen: 0 };
-  }
-}
-
 function getLicenseList() {
   return (process.env.LICENSES || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
 
 function normalizeFlagServer(flag) {
   const ALLOW = {
@@ -136,25 +121,27 @@ module.exports = async function handler(req, res) {
   try { redis = getRedis(); }
   catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
-  const sessionKey = "sn:sessions:" + lic;
-  const storedRaw = await redis.hget(sessionKey, sid);
-  if (!storedRaw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
+  const sk = sessionKey(lic, sid);
+  const raw = await redis.get(sk);
+  if (!raw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
+
+  let s;
+  try { s = JSON.parse(String(raw)); } catch { s = null; }
+  if (!s) return res.status(403).json({ ok: false, error: "session_corrupt", build: BUILD });
 
   const now = Math.floor(Date.now() / 1000);
-  const s = parseSessionValue(storedRaw);
-
-  if ((s.exp || 0) <= now) {
-    await redis.hdel(sessionKey, sid);
+  const expStored = parseInt(s.exp, 10) || 0;
+  if (expStored <= now) {
+    await redis.del(sk);
     return res.status(403).json({ ok: false, error: "session_expired", build: BUILD });
   }
 
-  if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
+  if (String(s.cid || "") !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
-  // update last seen
-  await redis.hset(sessionKey, sid, JSON.stringify({ exp: s.exp, cid: cid, seen: now }));
+  s.seen = now;
+  await redis.set(sk, JSON.stringify(s), { ex: Math.max(60, expStored - now + 180) });
 
   const proUA = "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
-
   const rawFlags = plan === "pro"
     ? [
         "--no-first-run",
@@ -163,10 +150,7 @@ module.exports = async function handler(req, res) {
         "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
         "--user-agent=" + proUA
       ]
-    : [
-        "--no-first-run",
-        "--force-dark-mode"
-      ];
+    : ["--no-first-run", "--force-dark-mode"];
 
   const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
 
@@ -175,8 +159,8 @@ module.exports = async function handler(req, res) {
     plan,
     exp,
     sessionId: sid,
-    ui: { showProModeToggle: plan === "pro", showMediaModeToggle: true, showThemePicker: true },
     config: { chromeFlags },
+    ui: { showProModeToggle: plan === "pro", showMediaModeToggle: true, showThemePicker: true },
     build: BUILD
   });
 };
