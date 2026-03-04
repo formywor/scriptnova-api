@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const PREFIX = "sn2";
+const BUILD = "sn-hard-2026-03-04";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -95,48 +95,49 @@ function parseSessionValue(raw) {
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method_not_allowed" });
+  if (req.method !== "POST") return res.status(405).json({ ok: false, error: "method_not_allowed", build: BUILD });
 
   const rl = await rateLimit(req, "ping", 300, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
-    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
+    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter, build: BUILD });
   }
 
   const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
+    return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
   }
 
   const body = await getJsonBody(req);
   const token = String(body.token || "");
   const cid = String(body.clientId || "").trim();
-  if (!isSafeClientId(cid)) return res.status(400).json({ ok: false, error: "bad_client_id" });
+  if (!isSafeClientId(cid)) return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
 
   const vt = verifyToken(token, secret);
-  if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error });
+  if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error, build: BUILD });
 
   const { lic, sid, cid: tokenCid } = vt.payload;
-  if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch" });
+  if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   let redis;
   try { redis = getRedis(); }
-  catch { return res.status(500).json({ ok: false, error: "redis_not_configured" }); }
+  catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
-  const sessionKey = `${PREFIX}:sessions:${lic}`;
+  const sessionKey = "sn:sessions:" + lic;
   const storedRaw = await redis.hget(sessionKey, sid);
-  if (!storedRaw) return res.status(403).json({ ok: false, error: "session_not_found" });
+  if (!storedRaw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
 
   const now = Math.floor(Date.now() / 1000);
   const s = parseSessionValue(storedRaw);
 
   if ((s.exp || 0) <= now) {
     await redis.hdel(sessionKey, sid);
-    return res.status(403).json({ ok: false, error: "session_expired" });
+    return res.status(403).json({ ok: false, error: "session_expired", build: BUILD });
   }
 
-  if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch" });
+  if (s.cid && s.cid !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   await redis.hset(sessionKey, sid, JSON.stringify({ exp: s.exp, cid: cid, seen: now }));
-  return res.status(200).json({ ok: true, seen: now });
+
+  return res.status(200).json({ ok: true, seen: now, build: BUILD });
 };
