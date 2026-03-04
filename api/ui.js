@@ -16,7 +16,17 @@ function b64urlToBuffer(s) {
   return Buffer.from(s, "base64");
 }
 
-function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
+function safeJsonParse(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
+// ✅ NEW: tolerate Upstash returning either string OR already-parsed object
+function parseRedisJson(raw) {
+  if (raw == null) return null;
+  if (typeof raw === "object") return raw; // already parsed
+  if (typeof raw === "string") return safeJsonParse(raw);
+  return safeJsonParse(String(raw));
+}
 
 function isSafeClientId(s) {
   if (!s) return false;
@@ -60,7 +70,9 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
+function sessionKey(lic, sid) {
+  return "sn:session:" + lic + ":" + sid;
+}
 
 function normalizeFlagServer(flag) {
   const ALLOW = {
@@ -125,8 +137,7 @@ module.exports = async function handler(req, res) {
   const raw = await redis.get(sk);
   if (!raw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
 
-  let s;
-  try { s = JSON.parse(String(raw)); } catch { s = null; }
+  const s = parseRedisJson(raw);
   if (!s) return res.status(403).json({ ok: false, error: "session_corrupt", build: BUILD });
 
   const now = Math.floor(Date.now() / 1000);
@@ -138,6 +149,7 @@ module.exports = async function handler(req, res) {
 
   if (String(s.cid || "") !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
+  // update seen + refresh TTL
   s.seen = now;
   await redis.set(sk, JSON.stringify(s), { ex: Math.max(60, expStored - now + 180) });
 
