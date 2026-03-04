@@ -4,6 +4,8 @@ function cors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
+const { rateLimit } = require("./_rate");
+
 function getLicenseList() {
   return (process.env.LICENSES || "")
     .split(",")
@@ -34,6 +36,12 @@ function ttlForPlan(plan) {
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
+
+  const rl = await rateLimit(req, "check", 240, 60);
+  if (!rl.ok) {
+    res.setHeader("Retry-After", String(rl.retryAfter));
+    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter });
+  }
 
   const lic = readLicense(req);
   const list = getLicenseList();
