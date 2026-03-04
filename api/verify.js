@@ -35,22 +35,29 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function readLicense(req) {
-  const b = req.body;
-  if (!b) return "";
-  if (typeof b === "string") {
-    try { return String(JSON.parse(b).license || "").trim(); } catch { return ""; }
-  }
-  return String(b.license || "").trim();
-}
+// Robust JSON body parsing for Vercel serverless
+async function getJsonBody(req) {
+  try {
+    if (req.body) {
+      if (typeof req.body === "string") return JSON.parse(req.body);
+      if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString("utf8"));
+      if (typeof req.body === "object") return req.body;
+    }
+  } catch {}
 
-function readClientId(req) {
-  const b = req.body;
-  if (!b) return "";
-  if (typeof b === "string") {
-    try { return String(JSON.parse(b).clientId || "").trim(); } catch { return ""; }
+  // Fallback: read raw stream
+  try {
+    const raw = await new Promise((resolve) => {
+      let data = "";
+      req.on("data", (chunk) => (data += chunk));
+      req.on("end", () => resolve(data));
+      req.on("error", () => resolve(""));
+    });
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
   }
-  return String(b.clientId || "").trim();
 }
 
 function isSafeClientId(s) {
@@ -66,10 +73,25 @@ function limitForPlan(plan) {
   return plan === "pro" ? 4 : 2;
 }
 function ttlForPlan(plan) {
-  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
+  return plan === "pro" ? 118 * 60 * 60 : 32 * 60;
 }
 function makeSessionId() {
   return crypto.randomBytes(18).toString("hex");
+}
+
+function parseSessionValue(raw) {
+  const expNum = parseInt(raw, 10) || 0;
+  if (expNum) return { exp: expNum, cid: "", seen: 0 };
+  try {
+    const obj = JSON.parse(String(raw));
+    return {
+      exp: parseInt(obj.exp, 10) || 0,
+      cid: String(obj.cid || ""),
+      seen: parseInt(obj.seen, 10) || 0
+    };
+  } catch {
+    return { exp: 0, cid: "", seen: 0 };
+  }
 }
 
 async function cleanupExpired(redis, key, nowSec) {
@@ -79,15 +101,8 @@ async function cleanupExpired(redis, key, nowSec) {
   const entries = Object.entries(map);
   for (let i = 0; i < entries.length; i++) {
     const sid = entries[i][0];
-    const raw = entries[i][1];
-    let exp = parseInt(raw, 10) || 0;
-    if (!exp) {
-      try {
-        const obj = JSON.parse(String(raw));
-        exp = parseInt(obj.exp, 10) || 0;
-      } catch { exp = 0; }
-    }
-    if (exp <= nowSec) await redis.hdel(key, sid);
+    const s = parseSessionValue(entries[i][1]);
+    if ((s.exp || 0) <= nowSec) await redis.hdel(key, sid);
   }
 }
 
@@ -98,15 +113,8 @@ async function countActive(redis, key, nowSec) {
   const entries = Object.entries(map);
   let c = 0;
   for (let i = 0; i < entries.length; i++) {
-    const raw = entries[i][1];
-    let exp = parseInt(raw, 10) || 0;
-    if (!exp) {
-      try {
-        const obj = JSON.parse(String(raw));
-        exp = parseInt(obj.exp, 10) || 0;
-      } catch { exp = 0; }
-    }
-    if (exp > nowSec) c++;
+    const s = parseSessionValue(entries[i][1]);
+    if ((s.exp || 0) > nowSec) c++;
   }
   return c;
 }
@@ -126,13 +134,24 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret" });
   }
 
-  const lic = readLicense(req);
-  const clientId = readClientId(req);
-  const list = getLicenseList();
+  // Accept GET for quick debug, POST for HTA
+  let lic = "";
+  let clientId = "";
 
+  if (req.method === "GET") {
+    lic = String(req.query.license || "").trim();
+    clientId = String(req.query.clientId || req.query.cid || "").trim();
+  } else {
+    const body = await getJsonBody(req);
+    lic = String(body.license || "").trim();
+    clientId = String(body.clientId || "").trim();
+  }
+
+  const list = getLicenseList();
   if (!lic || !list.includes(lic)) {
     return res.status(200).json({ ok: false, plan: "none" });
   }
+
   if (!isSafeClientId(clientId)) {
     return res.status(400).json({ ok: false, error: "bad_client_id" });
   }
@@ -167,9 +186,11 @@ module.exports = async function handler(req, res) {
   }
 
   const sid = makeSessionId();
+
   await redis.hset(sessionKey, {
     [sid]: JSON.stringify({ exp: exp, cid: clientId, seen: now })
   });
+
   await redis.expire(sessionKey, ttl + 120);
 
   const token = signToken({ lic: lic, plan: plan, exp: exp, sid: sid, cid: clientId }, secret);
