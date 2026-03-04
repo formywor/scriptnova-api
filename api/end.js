@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-04";
+const BUILD = "sn-hard-2026-03-04b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -15,10 +15,7 @@ function b64urlToBuffer(s) {
   while (s.length % 4) s += "=";
   return Buffer.from(s, "base64");
 }
-
-function safeJsonParse(str) {
-  try { return JSON.parse(str); } catch { return null; }
-}
+function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
 
 async function getJsonBody(req) {
   try {
@@ -37,9 +34,7 @@ async function getJsonBody(req) {
     });
     if (!raw) return {};
     return JSON.parse(raw);
-  } catch {
-    return {};
-  }
+  } catch { return {}; }
 }
 
 function isSafeClientId(s) {
@@ -72,6 +67,9 @@ function verifyToken(token, secret) {
   return { ok: true, payload };
 }
 
+function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
+function activeSetKey(lic) { return "sn:active:" + lic; }
+
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -84,9 +82,7 @@ module.exports = async function handler(req, res) {
   }
 
   const secret = String(process.env.SECRET_SALT || "");
-  if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
-  }
+  if (!secret || secret.length < 16) return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
 
   const body = await getJsonBody(req);
   const token = String(body.token || "");
@@ -100,11 +96,10 @@ module.exports = async function handler(req, res) {
   if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   let redis;
-  try { redis = getRedis(); }
-  catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
+  try { redis = getRedis(); } catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
-  const sessionKey = "sn:sessions:" + lic;
-  await redis.hdel(sessionKey, sid);
+  await redis.del(sessionKey(lic, sid));
+  await redis.srem(activeSetKey(lic), sid);
 
   return res.status(200).json({ ok: true, build: BUILD });
 };

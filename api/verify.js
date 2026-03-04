@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-04";
+const BUILD = "sn-hard-2026-03-04b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -62,52 +62,38 @@ function isSafeClientId(s) {
   return /^[A-Za-z0-9\-_.]+$/.test(s);
 }
 
-function planForLicense(lic) {
-  return lic.indexOf("PRO-") === 0 ? "pro" : "basic";
-}
-function limitForPlan(plan) {
-  return plan === "pro" ? 4 : 2;
-}
-function ttlForPlan(plan) {
-  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
-}
-function makeSessionId() {
-  return crypto.randomBytes(18).toString("hex");
-}
+function planForLicense(lic) { return lic.indexOf("PRO-") === 0 ? "pro" : "basic"; }
+function limitForPlan(plan) { return plan === "pro" ? 4 : 2; }
+function ttlForPlan(plan) { return plan === "pro" ? (118 * 60 * 60) : (32 * 60); }
 
-function parseSessionValue(raw) {
-  const expNum = parseInt(raw, 10) || 0;
-  if (expNum) return { exp: expNum, cid: "", seen: 0 };
-  try {
-    const obj = JSON.parse(String(raw));
-    return {
-      exp: parseInt(obj.exp, 10) || 0,
-      cid: String(obj.cid || ""),
-      seen: parseInt(obj.seen, 10) || 0
-    };
-  } catch {
-    return { exp: 0, cid: "", seen: 0 };
-  }
-}
+function makeSessionId() { return crypto.randomBytes(18).toString("hex"); }
+function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
+function activeSetKey(lic) { return "sn:active:" + lic; }
 
-async function cleanupExpired(redis, key, nowSec) {
-  const map = await redis.hgetall(key);
-  if (!map) return;
-  for (const [sid, raw] of Object.entries(map)) {
-    const s = parseSessionValue(raw);
-    if ((s.exp || 0) <= nowSec) await redis.hdel(key, sid);
-  }
-}
+async function cleanupActive(redis, lic, now) {
+  const setKey = activeSetKey(lic);
+  const sids = await redis.smembers(setKey);
+  if (!sids || !sids.length) return;
 
-async function countActive(redis, key, nowSec) {
-  const map = await redis.hgetall(key);
-  if (!map) return 0;
-  let c = 0;
-  for (const raw of Object.values(map)) {
-    const s = parseSessionValue(raw);
-    if ((s.exp || 0) > nowSec) c++;
+  for (const sid of sids) {
+    const sk = sessionKey(lic, sid);
+    const raw = await redis.get(sk);
+    if (!raw) {
+      await redis.srem(setKey, sid);
+      continue;
+    }
+    try {
+      const obj = JSON.parse(String(raw));
+      const exp = parseInt(obj.exp, 10) || 0;
+      if (exp <= now) {
+        await redis.del(sk);
+        await redis.srem(setKey, sid);
+      }
+    } catch {
+      await redis.del(sk);
+      await redis.srem(setKey, sid);
+    }
   }
-  return c;
 }
 
 module.exports = async function handler(req, res) {
@@ -138,12 +124,8 @@ module.exports = async function handler(req, res) {
   }
 
   const list = getLicenseList();
-  if (!lic || !list.includes(lic)) {
-    return res.status(200).json({ ok: false, plan: "none", build: BUILD });
-  }
-  if (!isSafeClientId(clientId)) {
-    return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
-  }
+  if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
 
   let redis;
   try { redis = getRedis(); }
@@ -156,21 +138,23 @@ module.exports = async function handler(req, res) {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttl;
 
-  const sessionKey = "sn:sessions:" + lic;
+  await cleanupActive(redis, lic, now);
 
-  await cleanupExpired(redis, sessionKey, now);
+  const setKey = activeSetKey(lic);
+  const activeCount = await redis.scard(setKey);
 
-  const active = await countActive(redis, sessionKey, now);
-  if (active >= limit) {
-    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active, limit, build: BUILD });
+  if ((activeCount || 0) >= limit) {
+    return res.status(429).json({ ok: false, plan, error: "too_many_sessions", active: activeCount || 0, limit, build: BUILD });
   }
 
   const sid = makeSessionId();
+  const sk = sessionKey(lic, sid);
+
   const record = JSON.stringify({ exp: exp, cid: clientId, seen: now });
 
-  // CRITICAL: explicit hset(key, field, value)
-  await redis.hset(sessionKey, sid, record);
-  await redis.expire(sessionKey, ttl + 180);
+  await redis.set(sk, record, { ex: ttl + 180 });
+  await redis.sadd(setKey, sid);
+  await redis.expire(setKey, ttl + 300);
 
   const token = signToken({ lic, plan, exp, sid, cid: clientId }, secret);
 
