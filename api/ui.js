@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05d";
+const BUILD = "sn-hard-2026-03-05f";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -76,7 +76,17 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
+function isFreeKey(lic) {
+  return String(lic || "").indexOf("FREE-") === 0;
+}
+
+function freeKeyRedisKey(lic) {
+  return "sn:freekey:" + String(lic);
+}
+
+function sessionKey(lic, sid) {
+  return "sn:session:" + lic + ":" + sid;
+}
 
 function randomNonceB64url(bytes = 16) {
   return b64urlFromBuffer(crypto.randomBytes(bytes));
@@ -112,13 +122,22 @@ module.exports = async function handler(req, res) {
   const { lic, plan, sid, hw } = vt.payload;
   if (cid !== vt.payload.cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
-  const list = getLicenseList();
-  if (!list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
-
   let redis;
   try { redis = getRedis(); }
   catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
+  // ✅ License validation:
+  // - FREE keys must exist in Redis (still alive)
+  // - BASIC/PRO must exist in env LICENSES
+  if (isFreeKey(lic)) {
+    const freeRaw = await redis.get(freeKeyRedisKey(lic));
+    if (!freeRaw) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  } else {
+    const list = getLicenseList();
+    if (!list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  }
+
+  // Session check
   const sk = sessionKey(lic, sid);
   const raw = await redis.get(sk);
   if (!raw) return res.status(403).json({ ok: false, error: "session_not_found", build: BUILD });
