@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05d";
+const BUILD = "sn-hard-2026-03-05f";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -102,6 +102,14 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
+function isFreeKey(lic) {
+  return String(lic || "").indexOf("FREE-") === 0;
+}
+
+function freeKeyRedisKey(lic) {
+  return "sn:freekey:" + String(lic);
+}
+
 function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
 function nonceUsedKey(lic, sid, nonce) { return `sn:launchnonce:${lic}:${sid}:${nonce}`; }
 
@@ -111,7 +119,6 @@ function makeLaunchSig(secret, sid, cid, nonce, exp, profileId) {
 }
 
 function normalizeFlagServer(flag) {
-  // Allowlist: only these flags can be shipped.
   const ALLOW = {
     "--no-first-run": true,
     "--force-dark-mode": true,
@@ -127,7 +134,6 @@ function normalizeFlagServer(flag) {
   if (!f) return "";
   if (/[\r\n\t\0]/.test(f)) return "";
   if (!f.startsWith("--")) return "";
-  // Do NOT allow embedded quotes. (HTA will do safe wrapping when needed.)
   if (f.includes('"')) return "";
 
   const eq = f.indexOf("=");
@@ -139,7 +145,6 @@ function normalizeFlagServer(flag) {
   const val = f.substring(eq + 1).trim();
   if (!val) return "";
 
-  // IMPORTANT: do NOT add quotes here.
   return `${name}=${val}`;
 }
 
@@ -187,12 +192,18 @@ module.exports = async function handler(req, res) {
   const { lic, plan, sid, hw } = vt.payload;
   if (clientId !== vt.payload.cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
-  const list = getLicenseList();
-  if (!list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
-
   let redis;
   try { redis = getRedis(); }
   catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
+
+  // ✅ License validation:
+  if (isFreeKey(lic)) {
+    const freeRaw = await redis.get(freeKeyRedisKey(lic));
+    if (!freeRaw) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  } else {
+    const list = getLicenseList();
+    if (!list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  }
 
   const sk = sessionKey(lic, sid);
   const raw = await redis.get(sk);
@@ -210,20 +221,18 @@ module.exports = async function handler(req, res) {
   if (String(s.cid || "") !== clientId) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
   if (String(s.hw || "") !== String(hw)) return res.status(403).json({ ok: false, error: "hwid_mismatch", build: BUILD });
 
-  // validate launchSig
   const expectedSig = makeLaunchSig(secret, sid, clientId, launchNonce, launchExp, launchProfileId);
   if (expectedSig.length !== launchSig.length) return res.status(403).json({ ok: false, error: "bad_launch_sig", build: BUILD });
   if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(launchSig))) {
     return res.status(403).json({ ok: false, error: "bad_launch_sig", build: BUILD });
   }
 
-  // one-time nonce enforcement
   const nk = nonceUsedKey(lic, sid, launchNonce);
   const already = await redis.get(nk);
   if (already) return res.status(403).json({ ok: false, error: "nonce_used", build: BUILD });
   await redis.set(nk, "1", { ex: 30 });
 
-  // server-controlled UA + flags (NO quotes added here)
+  // Flags: PRO gets full; BASIC/FREE gets minimal
   const proUA =
     "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
 
