@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-04b";
+const BUILD = "sn-hard-2026-03-05d";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -15,6 +15,15 @@ function b64urlToBuffer(s) {
   while (s.length % 4) s += "=";
   return Buffer.from(s, "base64");
 }
+
+function b64urlFromBuffer(buf) {
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
 function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
 function parseRedisJson(raw) {
   if (raw == null) return null;
@@ -58,8 +67,7 @@ function verifyToken(token, secret) {
   const sigB64 = parts[1];
 
   const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const expectedB64 = expected.toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const expectedB64 = b64urlFromBuffer(expected);
 
   const a = Buffer.from(expectedB64);
   const b = Buffer.from(sigB64);
@@ -68,7 +76,9 @@ function verifyToken(token, secret) {
 
   const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.sid || !payload.exp || !payload.cid) return { ok: false, error: "bad_payload" };
+  if (!payload || !payload.lic || !payload.sid || !payload.exp || !payload.cid || !payload.hw) {
+    return { ok: false, error: "bad_payload" };
+  }
 
   const now = Math.floor(Date.now() / 1000);
   if (now > (payload.exp + 15)) return { ok: false, error: "expired" };
@@ -100,7 +110,7 @@ module.exports = async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error, build: BUILD });
 
-  const { lic, sid, cid: tokenCid } = vt.payload;
+  const { lic, sid, cid: tokenCid, hw } = vt.payload;
   if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   let redis;
@@ -121,6 +131,7 @@ module.exports = async function handler(req, res) {
   }
 
   if (String(s.cid || "") !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
+  if (String(s.hw || "") !== String(hw)) return res.status(403).json({ ok: false, error: "hwid_mismatch", build: BUILD });
 
   s.seen = now;
   await redis.set(sk, JSON.stringify(s), { ex: Math.max(60, expStored - now + 180) });

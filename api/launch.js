@@ -2,12 +2,18 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05c";
+const BUILD = "sn-hard-2026-03-05d";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+}
+
+function b64urlToBuffer(s) {
+  s = String(s || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64");
 }
 
 function b64urlFromBuffer(buf) {
@@ -18,10 +24,7 @@ function b64urlFromBuffer(buf) {
     .replace(/=+$/g, "");
 }
 
-function safeJsonParse(str) {
-  try { return JSON.parse(str); } catch { return null; }
-}
-
+function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
 function parseRedisJson(raw) {
   if (raw == null) return null;
   if (typeof raw === "object") return raw;
@@ -44,6 +47,26 @@ function isSafeHttpUrl(u) {
   return low.startsWith("http://") || low.startsWith("https://");
 }
 
+async function getJsonBody(req) {
+  try {
+    if (req.body) {
+      if (typeof req.body === "string") return JSON.parse(req.body);
+      if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString("utf8"));
+      if (typeof req.body === "object") return req.body;
+    }
+  } catch {}
+  try {
+    const raw = await new Promise((resolve) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => resolve(data));
+      req.on("error", () => resolve(""));
+    });
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch { return {}; }
+}
+
 function verifyToken(token, secret) {
   if (!token || token.indexOf(".") === -1) return { ok: false, error: "bad_token" };
   const parts = token.split(".");
@@ -60,9 +83,9 @@ function verifyToken(token, secret) {
   if (a.length !== b.length) return { ok: false, error: "bad_sig" };
   if (!crypto.timingSafeEqual(a, b)) return { ok: false, error: "bad_sig" };
 
-  const payloadJson = Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid) {
+  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid || !payload.hw) {
     return { ok: false, error: "bad_payload" };
   }
 
@@ -87,8 +110,8 @@ function makeLaunchSig(secret, sid, cid, nonce, exp, profileId) {
   return b64urlFromBuffer(crypto.createHmac("sha256", secret).update(msg).digest());
 }
 
-// keep allowlist, server handles quoting for values with spaces
 function normalizeFlagServer(flag) {
+  // Allowlist: only these flags can be shipped.
   const ALLOW = {
     "--no-first-run": true,
     "--force-dark-mode": true,
@@ -104,7 +127,8 @@ function normalizeFlagServer(flag) {
   if (!f) return "";
   if (/[\r\n\t\0]/.test(f)) return "";
   if (!f.startsWith("--")) return "";
-  if (f.includes('"')) return ""; // block quote injection
+  // Do NOT allow embedded quotes. (HTA will do safe wrapping when needed.)
+  if (f.includes('"')) return "";
 
   const eq = f.indexOf("=");
   const name = eq === -1 ? f : f.substring(0, eq);
@@ -112,10 +136,10 @@ function normalizeFlagServer(flag) {
 
   if (eq === -1) return name;
 
-  let val = f.substring(eq + 1).trim();
+  const val = f.substring(eq + 1).trim();
   if (!val) return "";
 
-  if (/\s/.test(val)) val = `"${val}"`;
+  // IMPORTANT: do NOT add quotes here.
   return `${name}=${val}`;
 }
 
@@ -135,7 +159,8 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
   }
 
-  const body = req.body || {};
+  const body = await getJsonBody(req);
+
   const token = String(body.token || "").trim();
   const clientId = String(body.clientId || "").trim();
   const startUrl = String(body.startUrl || "").trim();
@@ -159,7 +184,7 @@ module.exports = async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error, build: BUILD });
 
-  const { lic, plan, sid } = vt.payload;
+  const { lic, plan, sid, hw } = vt.payload;
   if (clientId !== vt.payload.cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   const list = getLicenseList();
@@ -181,7 +206,9 @@ module.exports = async function handler(req, res) {
     await redis.del(sk);
     return res.status(403).json({ ok: false, error: "session_expired", build: BUILD });
   }
+
   if (String(s.cid || "") !== clientId) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
+  if (String(s.hw || "") !== String(hw)) return res.status(403).json({ ok: false, error: "hwid_mismatch", build: BUILD });
 
   // validate launchSig
   const expectedSig = makeLaunchSig(secret, sid, clientId, launchNonce, launchExp, launchProfileId);
@@ -190,13 +217,13 @@ module.exports = async function handler(req, res) {
     return res.status(403).json({ ok: false, error: "bad_launch_sig", build: BUILD });
   }
 
-  // one-time nonce
+  // one-time nonce enforcement
   const nk = nonceUsedKey(lic, sid, launchNonce);
   const already = await redis.get(nk);
   if (already) return res.status(403).json({ ok: false, error: "nonce_used", build: BUILD });
   await redis.set(nk, "1", { ex: 30 });
 
-  // server-controlled flags
+  // server-controlled UA + flags (NO quotes added here)
   const proUA =
     "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
 
@@ -218,7 +245,6 @@ module.exports = async function handler(req, res) {
 
   const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
 
-  // ✅ NO encoding at all
   return res.status(200).json({
     ok: true,
     bundle: {
