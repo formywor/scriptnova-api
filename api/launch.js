@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05a";
+const BUILD = "sn-hard-2026-03-05b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -87,7 +87,6 @@ function makeLaunchSig(secret, sid, cid, nonce, exp, profileId) {
   return b64urlFromBuffer(crypto.createHmac("sha256", secret).update(msg).digest());
 }
 
-// ✅ server-side allowlist + quoting (same idea as before)
 function normalizeFlagServer(flag) {
   const ALLOW = {
     "--no-first-run": true,
@@ -117,15 +116,6 @@ function normalizeFlagServer(flag) {
 
   if (/\s/.test(val)) val = `"${val}"`;
   return `${name}=${val}`;
-}
-
-// ✅ “good enough” obfuscation: XOR with SHA256(token + nonce), base64url.
-// Not true secrecy, but blocks casual scraping.
-function xorObfuscateToB64url(plainUtf8, token, nonce) {
-  const key = crypto.createHash("sha256").update(String(token) + "|" + String(nonce)).digest(); // 32 bytes
-  const buf = Buffer.from(String(plainUtf8), "utf8");
-  for (let i = 0; i < buf.length; i++) buf[i] = buf[i] ^ key[i % key.length];
-  return b64urlFromBuffer(buf);
 }
 
 module.exports = async function handler(req, res) {
@@ -192,20 +182,17 @@ module.exports = async function handler(req, res) {
   }
   if (String(s.cid || "") !== clientId) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
-  // validate launchSig (binds sid/cid/nonce/exp/profile)
   const expectedSig = makeLaunchSig(secret, sid, clientId, launchNonce, launchExp, launchProfileId);
   if (expectedSig.length !== launchSig.length) return res.status(403).json({ ok: false, error: "bad_launch_sig", build: BUILD });
   if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(launchSig))) {
     return res.status(403).json({ ok: false, error: "bad_launch_sig", build: BUILD });
   }
 
-  // one-time nonce enforcement
   const nk = nonceUsedKey(lic, sid, launchNonce);
   const already = await redis.get(nk);
   if (already) return res.status(403).json({ ok: false, error: "nonce_used", build: BUILD });
   await redis.set(nk, "1", { ex: 30 });
 
-  // ✅ server-controlled UA + flags
   const proUA =
     "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
 
@@ -227,7 +214,6 @@ module.exports = async function handler(req, res) {
 
   const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
 
-  // short-lived bundle (client will use immediately)
   const bundleObj = {
     ok: true,
     exp: now + 20,
@@ -235,12 +221,13 @@ module.exports = async function handler(req, res) {
     flags: chromeFlags
   };
 
+  // ✅ NEW: just base64url(JSON) (reliable decode in HTA)
   const bundleJson = JSON.stringify(bundleObj);
-  const bundle = xorObfuscateToB64url(bundleJson, token, launchNonce);
+  const bundleB64 = b64urlFromBuffer(Buffer.from(bundleJson, "utf8"));
 
   return res.status(200).json({
     ok: true,
-    bundle,
+    bundleB64,
     build: BUILD
   });
 };
