@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05d";
+const BUILD = "sn-hard-2026-03-05e";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,12 +18,19 @@ function b64urlEncodeUtf8(str) {
     .replace(/=+$/g, "");
 }
 
+function b64urlFromBuffer(buf) {
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
 function signToken(payloadObj, secret) {
   const payloadJson = JSON.stringify(payloadObj);
   const payloadB64 = b64urlEncodeUtf8(payloadJson);
   const sig = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const sigB64 = sig.toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const sigB64 = b64urlFromBuffer(sig);
   return payloadB64 + "." + sigB64;
 }
 
@@ -62,7 +69,6 @@ function isSafeClientId(s) {
   return /^[A-Za-z0-9\-_.]+$/.test(s);
 }
 
-// HTA sends raw hwid string; server hashes it.
 function isSafeHwidRaw(s) {
   s = String(s || "").trim();
   if (!s) return false;
@@ -75,14 +81,27 @@ function hwidHash(raw, secret) {
   return crypto.createHash("sha256").update(String(secret) + "|" + String(raw)).digest("hex");
 }
 
-function planForLicense(lic) { return lic.indexOf("PRO-") === 0 ? "pro" : "basic"; }
-function limitForPlan(plan) { return plan === "pro" ? 4 : 2; }
-function ttlForPlan(plan) { return plan === "pro" ? (118 * 60 * 60) : (32 * 60); }
+function planForLicense(lic) {
+  if (lic.indexOf("FREE-") === 0) return "free";
+  return lic.indexOf("PRO-") === 0 ? "pro" : "basic";
+}
+function limitForPlan(plan) {
+  if (plan === "free") return 1;
+  return plan === "pro" ? 4 : 2;
+}
+function ttlForPlan(plan) {
+  if (plan === "free") return 15 * 60;
+  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
+}
 
 function makeSessionId() { return crypto.randomBytes(18).toString("hex"); }
 function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
 function activeSetKey(lic) { return "sn:active:" + lic; }
 function hwidSetKey(lic) { return "sn:hwids:" + lic; }
+
+function freeKeyRedisKey(freeKey) {
+  return "sn:freekey:" + String(freeKey);
+}
 
 async function cleanupActive(redis, lic, now) {
   const setKey = activeSetKey(lic);
@@ -110,7 +129,7 @@ async function cleanupActive(redis, lic, now) {
   }
 }
 
-// HWID binding: allow up to 2 devices per license.
+// Allow up to 2 HWIDs per license
 async function enforceHwidBind(redis, lic, hwHash) {
   const key = hwidSetKey(lic);
   const members = await redis.smembers(key);
@@ -120,15 +139,12 @@ async function enforceHwidBind(redis, lic, hwHash) {
     await redis.sadd(key, hwHash);
     return { ok: true, boundNow: true, allowedCount: 1 };
   }
-
   if (set.has(hwHash)) {
     return { ok: true, boundNow: false, allowedCount: set.size };
   }
-
   if (set.size >= 2) {
     return { ok: false, error: "hwid_mismatch" };
   }
-
   await redis.sadd(key, hwHash);
   return { ok: true, boundNow: true, allowedCount: set.size + 1 };
 }
@@ -163,8 +179,6 @@ module.exports = async function handler(req, res) {
     hwidRaw = String(body.hwid || "").trim();
   }
 
-  const list = getLicenseList();
-  if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
   if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
   if (!isSafeHwidRaw(hwidRaw)) return res.status(400).json({ ok: false, error: "bad_hwid", build: BUILD });
 
@@ -172,9 +186,20 @@ module.exports = async function handler(req, res) {
   try { redis = getRedis(); }
   catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
+  // Validate license:
+  // - FREE keys exist only in Redis
+  // - BASIC/PRO keys exist in env LICENSES
+  if (lic.indexOf("FREE-") === 0) {
+    const raw = await redis.get(freeKeyRedisKey(lic));
+    if (!raw) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  } else {
+    const list = getLicenseList();
+    if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  }
+
   const hw = hwidHash(hwidRaw, secret);
 
-  // Enforce HWID binding for the license
+  // HWID bind (applies to all plans, including FREE)
   const bind = await enforceHwidBind(redis, lic, hw);
   if (!bind.ok) {
     return res.status(403).json({ ok: false, error: bind.error, build: BUILD });
@@ -206,14 +231,12 @@ module.exports = async function handler(req, res) {
   const sid = makeSessionId();
   const sk = sessionKey(lic, sid);
 
-  // Store session with cid + hw
   const record = JSON.stringify({ exp: exp, cid: clientId, hw: hw, seen: now });
 
   await redis.set(sk, record, { ex: ttl + 180 });
   await redis.sadd(setKey, sid);
   await redis.expire(setKey, ttl + 300);
 
-  // Token includes hw so later endpoints can enforce without resending hwid
   const token = signToken({ lic, plan, exp, sid, cid: clientId, hw: hw }, secret);
 
   return res.status(200).json({
