@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05a";
+const BUILD = "sn-hard-2026-03-05d";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -59,7 +59,7 @@ function verifyToken(token, secret) {
 
   const payloadJson = b64urlToBuffer(payloadB64).toString("utf8");
   const payload = safeJsonParse(payloadJson);
-  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid) {
+  if (!payload || !payload.lic || !payload.plan || !payload.exp || !payload.sid || !payload.cid || !payload.hw) {
     return { ok: false, error: "bad_payload" };
   }
 
@@ -109,7 +109,7 @@ module.exports = async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error, build: BUILD });
 
-  const { lic, plan, sid } = vt.payload;
+  const { lic, plan, sid, hw } = vt.payload;
   if (cid !== vt.payload.cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   const list = getLicenseList();
@@ -132,16 +132,18 @@ module.exports = async function handler(req, res) {
     await redis.del(sk);
     return res.status(403).json({ ok: false, error: "session_expired", build: BUILD });
   }
+
   if (String(s.cid || "") !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
+  if (String(s.hw || "") !== String(hw)) return res.status(403).json({ ok: false, error: "hwid_mismatch", build: BUILD });
 
   // touch session
   s.seen = now;
   await redis.set(sk, JSON.stringify(s), { ex: Math.max(60, expStored - now + 180) });
 
-  // ✅ NEW: launch challenge (NO FLAGS HERE)
+  // launch challenge (NO FLAGS HERE)
   const launchProfileId = (plan === "pro") ? "pro_default_1" : "basic_default_1";
   const launchNonce = randomNonceB64url(16);
-  const launchExp = now + 20; // short window
+  const launchExp = now + 20;
   const launchSig = makeLaunchSig(secret, sid, cid, launchNonce, launchExp, launchProfileId);
 
   return res.status(200).json({
@@ -150,13 +152,11 @@ module.exports = async function handler(req, res) {
     exp: expStored,
     sessionId: sid,
 
-    // launch challenge
     launchProfileId,
     launchNonce,
     launchExp,
     launchSig,
 
-    // small UI config only
     ui: { showProModeToggle: plan === "pro", showMediaModeToggle: true, showThemePicker: true },
     build: BUILD
   });
