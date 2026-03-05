@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-04c";
+const BUILD = "sn-hard-2026-03-05a";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -16,7 +16,18 @@ function b64urlToBuffer(s) {
   return Buffer.from(s, "base64");
 }
 
-function safeJsonParse(str) { try { return JSON.parse(str); } catch { return null; } }
+function b64urlFromBuffer(buf) {
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function safeJsonParse(str) {
+  try { return JSON.parse(str); } catch { return null; }
+}
+
 function parseRedisJson(raw) {
   if (raw == null) return null;
   if (typeof raw === "object") return raw;
@@ -39,8 +50,7 @@ function verifyToken(token, secret) {
   const sigB64 = parts[1];
 
   const expected = crypto.createHmac("sha256", secret).update(payloadB64).digest();
-  const expectedB64 = expected.toString("base64")
-    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const expectedB64 = b64urlFromBuffer(expected);
 
   const a = Buffer.from(expectedB64);
   const b = Buffer.from(sigB64);
@@ -68,38 +78,13 @@ function getLicenseList() {
 
 function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
 
-// ✅ UPDATED allowlist (add --disable-extensions and a couple safe related flags)
-function normalizeFlagServer(flag) {
-  const ALLOW = {
-    "--no-first-run": true,
-    "--force-dark-mode": true,
-    "--disable-renderer-backgrounding": true,
-    "--dns-over-https-templates": true,
-    "--user-agent": true,
+function randomNonceB64url(bytes = 16) {
+  return b64urlFromBuffer(crypto.randomBytes(bytes));
+}
 
-    // NEW:
-    "--disable-extensions": true,
-    "--disable-default-apps": true,
-    "--disable-component-update": true
-  };
-
-  let f = String(flag || "").trim();
-  if (!f) return "";
-  if (/[\r\n\t\0]/.test(f)) return "";
-  if (f.indexOf("--") !== 0) return "";
-  if (f.indexOf("\"") !== -1) return ""; // we'll quote values ourselves
-
-  const eq = f.indexOf("=");
-  const name = eq === -1 ? f : f.substring(0, eq);
-  if (!ALLOW[name]) return "";
-
-  if (eq === -1) return name;
-
-  let val = f.substring(eq + 1).trim();
-  if (!val) return "";
-
-  if (val.indexOf(" ") !== -1) val = "\"" + val + "\"";
-  return name + "=" + val;
+function makeLaunchSig(secret, sid, cid, nonce, exp, profileId) {
+  const msg = `sid=${sid}&cid=${cid}&nonce=${nonce}&exp=${exp}&profile=${profileId}`;
+  return b64urlFromBuffer(crypto.createHmac("sha256", secret).update(msg).digest());
 }
 
 module.exports = async function handler(req, res) {
@@ -124,8 +109,8 @@ module.exports = async function handler(req, res) {
   const vt = verifyToken(token, secret);
   if (!vt.ok) return res.status(403).json({ ok: false, error: vt.error, build: BUILD });
 
-  const { lic, plan, sid, exp, cid: tokenCid } = vt.payload;
-  if (cid !== tokenCid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
+  const { lic, plan, sid } = vt.payload;
+  if (cid !== vt.payload.cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
   const list = getLicenseList();
   if (!list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
@@ -147,41 +132,31 @@ module.exports = async function handler(req, res) {
     await redis.del(sk);
     return res.status(403).json({ ok: false, error: "session_expired", build: BUILD });
   }
-
   if (String(s.cid || "") !== cid) return res.status(403).json({ ok: false, error: "client_mismatch", build: BUILD });
 
+  // touch session
   s.seen = now;
   await redis.set(sk, JSON.stringify(s), { ex: Math.max(60, expStored - now + 180) });
 
-  // ✅ Your PRO UA stays server-side
-  const proUA =
-    "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
-
-  // ✅ UPDATED flag set (includes disable extensions)
-  const rawFlags = plan === "pro"
-    ? [
-        "--no-first-run",
-        "--force-dark-mode",
-        "--disable-renderer-backgrounding",
-        "--disable-extensions",
-        "--disable-default-apps",
-        "--disable-component-update",
-        "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
-        "--user-agent=" + proUA
-      ]
-    : [
-        "--no-first-run",
-        "--force-dark-mode"
-      ];
-
-  const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
+  // ✅ NEW: launch challenge (NO FLAGS HERE)
+  const launchProfileId = (plan === "pro") ? "pro_default_1" : "basic_default_1";
+  const launchNonce = randomNonceB64url(16);
+  const launchExp = now + 20; // short window
+  const launchSig = makeLaunchSig(secret, sid, cid, launchNonce, launchExp, launchProfileId);
 
   return res.status(200).json({
     ok: true,
     plan,
-    exp,
+    exp: expStored,
     sessionId: sid,
-    config: { chromeFlags },
+
+    // launch challenge
+    launchProfileId,
+    launchNonce,
+    launchExp,
+    launchSig,
+
+    // small UI config only
     ui: { showProModeToggle: plan === "pro", showMediaModeToggle: true, showThemePicker: true },
     build: BUILD
   });
