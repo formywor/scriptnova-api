@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05f";
+const BUILD = "sn-hard-2026-03-05g";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -148,6 +148,24 @@ function normalizeFlagServer(flag) {
   return `${name}=${val}`;
 }
 
+function getProfileFlags(plan) {
+  // You can customize per plan if you want.
+  const ua =
+    "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
+
+  // ✅ FULL flags for all plans (free/basic/pro)
+  return [
+    "--no-first-run",
+    "--force-dark-mode",
+    "--disable-renderer-backgrounding",
+    "--disable-extensions",
+    "--disable-default-apps",
+    "--disable-component-update",
+    "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
+    "--user-agent=" + ua
+  ];
+}
+
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
@@ -196,7 +214,7 @@ module.exports = async function handler(req, res) {
   try { redis = getRedis(); }
   catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
 
-  // ✅ License validation:
+  // License validation:
   if (isFreeKey(lic)) {
     const freeRaw = await redis.get(freeKeyRedisKey(lic));
     if (!freeRaw) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
@@ -232,26 +250,7 @@ module.exports = async function handler(req, res) {
   if (already) return res.status(403).json({ ok: false, error: "nonce_used", build: BUILD });
   await redis.set(nk, "1", { ex: 30 });
 
-  // Flags: PRO gets full; BASIC/FREE gets minimal
-  const proUA =
-    "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36";
-
-  const rawFlags = plan === "pro"
-    ? [
-        "--no-first-run",
-        "--force-dark-mode",
-        "--disable-renderer-backgrounding",
-        "--disable-extensions",
-        "--disable-default-apps",
-        "--disable-component-update",
-        "--dns-over-https-templates=https://chrome.cloudflare-dns.com/dns-query",
-        "--user-agent=" + proUA
-      ]
-    : [
-        "--no-first-run",
-        "--force-dark-mode"
-      ];
-
+  const rawFlags = getProfileFlags(plan);
   const chromeFlags = rawFlags.map(normalizeFlagServer).filter(Boolean);
 
   return res.status(200).json({
