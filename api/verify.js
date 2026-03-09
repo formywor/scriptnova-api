@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-05e";
+const BUILD = "sn-hard-2026-03-06b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -78,26 +78,49 @@ function isSafeHwidRaw(s) {
 }
 
 function hwidHash(raw, secret) {
-  return crypto.createHash("sha256").update(String(secret) + "|" + String(raw)).digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(String(secret) + "|" + String(raw))
+    .digest("hex");
 }
 
 function planForLicense(lic) {
   if (lic.indexOf("FREE-") === 0) return "free";
   return lic.indexOf("PRO-") === 0 ? "pro" : "basic";
 }
+
 function limitForPlan(plan) {
   if (plan === "free") return 1;
-  return plan === "pro" ? 4 : 2;
-}
-function ttlForPlan(plan) {
-  if (plan === "free") return 15 * 60;
-  return plan === "pro" ? (118 * 60 * 60) : (32 * 60);
+  if (plan === "pro") return 4;
+  return 2; // basic
 }
 
-function makeSessionId() { return crypto.randomBytes(18).toString("hex"); }
-function sessionKey(lic, sid) { return "sn:session:" + lic + ":" + sid; }
-function activeSetKey(lic) { return "sn:active:" + lic; }
-function hwidSetKey(lic) { return "sn:hwids:" + lic; }
+function ttlForPlan(plan) {
+  if (plan === "free") return 15 * 60; // 15m
+  if (plan === "pro") return 118 * 60 * 60; // 118h
+  return 32 * 60; // basic 32m
+}
+
+function maxDevicesForPlan(plan) {
+  if (plan === "free") return 1;
+  return 2; // basic + pro
+}
+
+function makeSessionId() {
+  return crypto.randomBytes(18).toString("hex");
+}
+
+function sessionKey(lic, sid) {
+  return "sn:session:" + lic + ":" + sid;
+}
+
+function activeSetKey(lic) {
+  return "sn:active:" + lic;
+}
+
+function hwidSetKey(lic) {
+  return "sn:hwids:" + lic;
+}
 
 function freeKeyRedisKey(freeKey) {
   return "sn:freekey:" + String(freeKey);
@@ -111,10 +134,12 @@ async function cleanupActive(redis, lic, now) {
   for (const sid of sids) {
     const sk = sessionKey(lic, sid);
     const raw = await redis.get(sk);
+
     if (!raw) {
       await redis.srem(setKey, sid);
       continue;
     }
+
     try {
       const obj = JSON.parse(String(raw));
       const exp = parseInt(obj.exp, 10) || 0;
@@ -129,22 +154,29 @@ async function cleanupActive(redis, lic, now) {
   }
 }
 
-// Allow up to 2 HWIDs per license
-async function enforceHwidBind(redis, lic, hwHash) {
+async function enforceHwidBind(redis, lic, hwHash, maxDevices, plan) {
   const key = hwidSetKey(lic);
   const members = await redis.smembers(key);
   const set = new Set((members || []).map(String));
+
+  // If an old FREE key was already bound to more than 1 device, lock it.
+  if (plan === "free" && set.size > 1) {
+    return { ok: false, error: "free_key_locked" };
+  }
 
   if (set.size === 0) {
     await redis.sadd(key, hwHash);
     return { ok: true, boundNow: true, allowedCount: 1 };
   }
+
   if (set.has(hwHash)) {
     return { ok: true, boundNow: false, allowedCount: set.size };
   }
-  if (set.size >= 2) {
+
+  if (set.size >= maxDevices) {
     return { ok: false, error: "hwid_mismatch" };
   }
+
   await redis.sadd(key, hwHash);
   return { ok: true, boundNow: true, allowedCount: set.size + 1 };
 }
@@ -156,12 +188,21 @@ module.exports = async function handler(req, res) {
   const rl = await rateLimit(req, "verify", 12, 60);
   if (!rl.ok) {
     res.setHeader("Retry-After", String(rl.retryAfter));
-    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter, build: BUILD });
+    return res.status(429).json({
+      ok: false,
+      error: "rate_limited",
+      retryAfter: rl.retryAfter,
+      build: BUILD
+    });
   }
 
   const secret = String(process.env.SECRET_SALT || "");
   if (!secret || secret.length < 16) {
-    return res.status(500).json({ ok: false, error: "server_misconfigured_secret", build: BUILD });
+    return res.status(500).json({
+      ok: false,
+      error: "server_misconfigured_secret",
+      build: BUILD
+    });
   }
 
   let lic = "";
@@ -179,35 +220,45 @@ module.exports = async function handler(req, res) {
     hwidRaw = String(body.hwid || "").trim();
   }
 
-  if (!isSafeClientId(clientId)) return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
-  if (!isSafeHwidRaw(hwidRaw)) return res.status(400).json({ ok: false, error: "bad_hwid", build: BUILD });
-
-  let redis;
-  try { redis = getRedis(); }
-  catch { return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD }); }
-
-  // Validate license:
-  // - FREE keys exist only in Redis
-  // - BASIC/PRO keys exist in env LICENSES
-  if (lic.indexOf("FREE-") === 0) {
-    const raw = await redis.get(freeKeyRedisKey(lic));
-    if (!raw) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
-  } else {
-    const list = getLicenseList();
-    if (!lic || !list.includes(lic)) return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+  if (!isSafeClientId(clientId)) {
+    return res.status(400).json({ ok: false, error: "bad_client_id", build: BUILD });
   }
 
-  const hw = hwidHash(hwidRaw, secret);
+  if (!isSafeHwidRaw(hwidRaw)) {
+    return res.status(400).json({ ok: false, error: "bad_hwid", build: BUILD });
+  }
 
-  // HWID bind (applies to all plans, including FREE)
-  const bind = await enforceHwidBind(redis, lic, hw);
-  if (!bind.ok) {
-    return res.status(403).json({ ok: false, error: bind.error, build: BUILD });
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({ ok: false, error: "redis_not_configured", build: BUILD });
+  }
+
+  // License validation
+  if (lic.indexOf("FREE-") === 0) {
+    const raw = await redis.get(freeKeyRedisKey(lic));
+    if (!raw) {
+      return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+    }
+  } else {
+    const list = getLicenseList();
+    if (!lic || !list.includes(lic)) {
+      return res.status(200).json({ ok: false, plan: "none", build: BUILD });
+    }
   }
 
   const plan = planForLicense(lic);
+  const maxDevices = maxDevicesForPlan(plan);
   const limit = limitForPlan(plan);
   const ttl = ttlForPlan(plan);
+
+  const hw = hwidHash(hwidRaw, secret);
+
+  const bind = await enforceHwidBind(redis, lic, hw, maxDevices, plan);
+  if (!bind.ok) {
+    return res.status(403).json({ ok: false, error: bind.error, build: BUILD });
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const exp = now + ttl;
@@ -231,13 +282,21 @@ module.exports = async function handler(req, res) {
   const sid = makeSessionId();
   const sk = sessionKey(lic, sid);
 
-  const record = JSON.stringify({ exp: exp, cid: clientId, hw: hw, seen: now });
+  const record = JSON.stringify({
+    exp,
+    cid: clientId,
+    hw,
+    seen: now
+  });
 
   await redis.set(sk, record, { ex: ttl + 180 });
   await redis.sadd(setKey, sid);
   await redis.expire(setKey, ttl + 300);
 
-  const token = signToken({ lic, plan, exp, sid, cid: clientId, hw: hw }, secret);
+  const token = signToken(
+    { lic, plan, exp, sid, cid: clientId, hw },
+    secret
+  );
 
   return res.status(200).json({
     ok: true,
@@ -248,6 +307,8 @@ module.exports = async function handler(req, res) {
     ttlSeconds: ttl,
     hwBound: bind.boundNow === true,
     hwSlotsUsed: bind.allowedCount,
+    maxDevices,
+    limit,
     build: BUILD
   });
 };
