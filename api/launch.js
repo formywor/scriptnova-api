@@ -192,7 +192,7 @@ function getFlagsForPlan(plan) {
     "--enable-features=DnsOverHttps",
     "--dns-over-https-mode=secure",
     "--dns-over-https-templates=https://cloudflare-dns.com/dns-query",
-    '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+    '--user-agent=Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.110 Safari/537.36'
   ];
 
   if (plan === "pro") {
