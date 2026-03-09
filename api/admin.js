@@ -641,7 +641,7 @@ async function makeDashboard(redis) {
       publicSite: await serviceStatusFromUrl("https://scriptnovaa.com"),
       redis: { online: true },
       launcherVersion: {
-        requiredMinVersion: global.minVersion || "v13.13.14",
+        requiredMinVersion: global.minVersion || "v13.13.15",
         cachedVersionTxt: versionTxt || null
       }
     },
@@ -1604,7 +1604,7 @@ module.exports = async function handler(req, res) {
             maxDevices: 2
           }
         },
-        launcherForceVersionValue: g.minVersion || "v13.13.14",
+        launcherForceVersionValue: g.minVersion || "v13.13.15",
         maintenanceMessageText: g.maintenanceMessage || "",
         featureToggles: {
           paused: g.paused,
