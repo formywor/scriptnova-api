@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-09-launchfix1";
+const BUILD = "sn-hard-2026-03-09-launchfix2";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -185,10 +185,13 @@ function getFlagsForPlan(plan) {
     "--no-first-run",
     "--disable-extensions",
     "--disable-component-extensions-with-background-pages",
-    "--disable-sync",
     "--disable-default-apps",
+    "--disable-sync",
     "--disable-background-networking",
-    "--disable-features=ChromeLabs,ExtensionsMenuAccessControl,ExtensionsToolbarMenu,OptimizationGuideModelDownloading,Translate,MediaRouter,AutofillServerCommunication",
+    "--dns-prefetch-disable",
+    "--enable-features=DnsOverHttps",
+    "--dns-over-https-mode=secure",
+    "--dns-over-https-templates=https://cloudflare-dns.com/dns-query",
     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
   ];
 
