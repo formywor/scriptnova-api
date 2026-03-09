@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-09-admin4b";
+const BUILD = "sn-hard-2026-03-09-admin4c";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -191,6 +191,7 @@ function getFlagsForPlan(plan) {
     "--disable-renderer-backgrounding",
     "--disable-backgrounding-occluded-windows",
     "--disable-features=OptimizationGuideModelDownloading,Translate,MediaRouter,AutofillServerCommunication",
+    "--disable-extensions",
     '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     "--dns-over-https-templates=https://cloudflare-dns.com/dns-query"
   ];
@@ -203,9 +204,7 @@ function getFlagsForPlan(plan) {
   }
 
   if (plan === "free") {
-    return base.concat([
-      "--disable-extensions"
-    ]);
+    return base;
   }
 
   return base.concat([
