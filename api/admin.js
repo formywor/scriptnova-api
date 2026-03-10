@@ -2,11 +2,9 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-admin-2026-03-09a";
+const BUILD = "sn-admin-2026-03-10b";
 
 // ===== admin credentials =====
-// Keep these on the backend only.
-// Later, we can move these to env vars without changing the frontend.
 const ADMIN_USERS = {
   owner: {
     username: "Owner",
@@ -28,7 +26,7 @@ const ADMIN_USERS = {
   }
 };
 
-const ADMIN_SESSION_TTL = 12 * 60 * 60; // 12h
+const ADMIN_SESSION_TTL = 12 * 60 * 60;
 const AUDIT_KEEP = 800;
 const ALERT_KEEP = 300;
 
@@ -40,10 +38,6 @@ function cors(res) {
 
 function nowSec() {
   return Math.floor(Date.now() / 1000);
-}
-
-function sha256(s) {
-  return crypto.createHash("sha256").update(String(s || "")).digest("hex");
 }
 
 function randHex(n) {
@@ -126,21 +120,6 @@ function getLicenseList() {
     .filter(Boolean);
 }
 
-function isSafeClientId(s) {
-  s = String(s || "").trim();
-  if (!s) return false;
-  if (s.length < 16 || s.length > 80) return false;
-  return /^[A-Za-z0-9\-_.]+$/.test(s);
-}
-
-function isSafeHwidRaw(s) {
-  s = String(s || "").trim();
-  if (!s) return false;
-  if (s.length < 8 || s.length > 240) return false;
-  if (/[\r\n\t\0]/.test(s)) return false;
-  return true;
-}
-
 function planForLicense(lic) {
   lic = String(lic || "").trim().toUpperCase();
   if (lic.indexOf("FREE-") === 0) return "free";
@@ -162,14 +141,7 @@ function defaultTtlForPlan(plan) {
 
 function defaultMaxDevicesForPlan(plan) {
   if (plan === "free") return 1;
-  return 2; // preserve current backend behavior
-}
-
-function hwidHash(raw, secret) {
-  return crypto
-    .createHash("sha256")
-    .update(String(secret) + "|" + String(raw))
-    .digest("hex");
+  return 2;
 }
 
 function sessionKey(lic, sid) {
@@ -492,16 +464,18 @@ async function resolveLicenseInfo(redis, license) {
     const free = await redis.get(freeKeyRedisKey(license));
     if (!free) return { exists: false };
 
+    const freeObj = safeJsonParse(free, {});
     return {
       exists: true,
       source: "free",
       disabled,
       license,
       plan: "free",
-      ttlSeconds: 900,
+      ttlSeconds: toInt(freeObj.ttlSeconds, 900),
       sessionLimit: 1,
       maxDevices: 1,
-      exp: 0
+      exp: 0,
+      tier: String(freeObj.tier || "15m")
     };
   }
 
@@ -564,7 +538,8 @@ async function listFreeKeys(redis) {
       ttlSeconds: Math.max(0, toInt(ttl, 0)),
       exp: toInt(obj.exp, 0),
       createdAt: toInt(obj.createdAt, 0),
-      createdBy: String(obj.createdBy || "")
+      createdBy: String(obj.createdBy || ""),
+      tier: String(obj.tier || "")
     });
   }
 
@@ -597,13 +572,21 @@ async function getGlobalState(redis) {
   const maintenanceMessage = String((await redis.get(globalKey("maintenance_message"))) || "");
   const minVersion = String((await redis.get(globalKey("min_version"))) || "");
   const htaPausedReason = String((await redis.get(globalKey("paused_reason"))) || "");
+
+  const cleanupOldPromptEnabled = !!(await redis.get(globalKey("cleanup_old_prompt_enabled")));
+  const cleanupOldPromptMessage = String((await redis.get(globalKey("cleanup_old_prompt_message"))) || "");
+  const cleanupOldPromptForceOnce = toInt(await redis.get(globalKey("cleanup_old_prompt_force_once")), 0);
+
   return {
     paused,
     disableAll,
     maintenanceMode,
     maintenanceMessage,
     minVersion,
-    pausedReason: htaPausedReason
+    pausedReason: htaPausedReason,
+    cleanupOldPromptEnabled,
+    cleanupOldPromptMessage,
+    cleanupOldPromptForceOnce
   };
 }
 
@@ -652,7 +635,7 @@ async function makeDashboard(redis) {
       publicSite: await serviceStatusFromUrl("https://scriptnovaa.com"),
       redis: { online: true },
       launcherVersion: {
-        requiredMinVersion: global.minVersion || "v13.13.14",
+        requiredMinVersion: global.minVersion || "v13.13.15",
         cachedVersionTxt: versionTxt || null
       }
     },
@@ -672,7 +655,10 @@ async function makeDashboard(redis) {
       pausedReason: global.pausedReason,
       maintenanceMode: global.maintenanceMode,
       maintenanceMessage: global.maintenanceMessage,
-      disableAllKeys: global.disableAll
+      disableAllKeys: global.disableAll,
+      cleanupOldPromptEnabled: global.cleanupOldPromptEnabled,
+      cleanupOldPromptMessage: global.cleanupOldPromptMessage,
+      cleanupOldPromptForceOnce: global.cleanupOldPromptForceOnce
     },
     analyticsToday: {
       keyChecks: toInt(metrics.keyChecks, 0),
@@ -1195,13 +1181,16 @@ module.exports = async function handler(req, res) {
     const license = String(q.license || "").trim() || ("FREE-" + randHex(5).toUpperCase());
     const ttlSeconds = clamp(toInt(q.ttlSeconds, 900), 60, 86400);
     const exp = nowSec() + ttlSeconds;
+    const tier = String(q.tier || "").trim();
 
     await redis.set(
       freeKeyRedisKey(license),
       JSON.stringify({
         exp,
         createdAt: nowSec(),
-        createdBy: admin.username
+        createdBy: admin.username,
+        ttlSeconds,
+        tier
       }),
       { ex: ttlSeconds }
     );
@@ -1214,10 +1203,10 @@ module.exports = async function handler(req, res) {
       target: license,
       ip: getIp(req),
       success: true,
-      details: { ttlSeconds, exp }
+      details: { ttlSeconds, exp, tier }
     });
 
-    return res.status(200).json({ ok: true, license, ttlSeconds, exp, build: BUILD });
+    return res.status(200).json({ ok: true, license, ttlSeconds, exp, tier, build: BUILD });
   }
 
   if (action === "freekey_remove") {
@@ -1364,6 +1353,82 @@ module.exports = async function handler(req, res) {
     });
 
     return res.status(200).json({ ok: true, message, build: BUILD });
+  }
+
+  if (action === "launcher_cleanup_prompt_get") {
+    if (!canReadDashboard(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const g = await getGlobalState(redis);
+    return res.status(200).json({
+      ok: true,
+      cleanupPrompt: {
+        enabled: g.cleanupOldPromptEnabled,
+        message: g.cleanupOldPromptMessage,
+        forceOnce: g.cleanupOldPromptForceOnce
+      },
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_cleanup_prompt_set") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const enabled = !!q.enabled;
+    const message = String(q.message || "").trim();
+
+    if (enabled) await redis.set(globalKey("cleanup_old_prompt_enabled"), "1");
+    else await redis.del(globalKey("cleanup_old_prompt_enabled"));
+
+    if (message) await redis.set(globalKey("cleanup_old_prompt_message"), message);
+    else await redis.del(globalKey("cleanup_old_prompt_message"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_cleanup_prompt_set",
+      target: "cleanup_old_prompt",
+      ip: getIp(req),
+      success: true,
+      details: { enabled, message }
+    });
+
+    return res.status(200).json({
+      ok: true,
+      enabled,
+      message,
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_cleanup_prompt_bump") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const forceOnce = nowSec();
+    await redis.set(globalKey("cleanup_old_prompt_force_once"), String(forceOnce));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_cleanup_prompt_bump",
+      target: "cleanup_old_prompt_force_once",
+      ip: getIp(req),
+      success: true,
+      newValue: forceOnce
+    });
+
+    return res.status(200).json({
+      ok: true,
+      forceOnce,
+      build: BUILD
+    });
   }
 
   if (action === "hwid_search") {
@@ -1611,8 +1676,13 @@ module.exports = async function handler(req, res) {
             maxDevices: 2
           }
         },
-        launcherForceVersionValue: g.minVersion || "v13.13.14",
+        launcherForceVersionValue: g.minVersion || "v13.13.15",
         maintenanceMessageText: g.maintenanceMessage || "",
+        cleanupOldPrompt: {
+          enabled: g.cleanupOldPromptEnabled,
+          message: g.cleanupOldPromptMessage || "",
+          forceOnce: g.cleanupOldPromptForceOnce || 0
+        },
         featureToggles: {
           paused: g.paused,
           maintenanceMode: g.maintenanceMode,
@@ -1767,6 +1837,7 @@ module.exports = async function handler(req, res) {
     for (const r of rows) {
       await redis.del(sessionKey(r.license, r.sessionId));
       await redis.srem(activeSetKey(r.license), r.sessionId);
+      await maybeDeleteFreeKeyForLicense(redis, r.license);
     }
 
     await metricIncr(redis, "sessionsEnded", rows.length);
