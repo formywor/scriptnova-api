@@ -452,6 +452,18 @@ async function getCustomKey(redis, license) {
   return safeJsonParse(raw, null);
 }
 
+async function maybeDeleteFreeKeyForLicense(redis, license) {
+  license = String(license || "").trim();
+  if (!license || license.indexOf("FREE-") !== 0) return false;
+
+  try {
+    await redis.del(freeKeyRedisKey(license));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function resolveLicenseInfo(redis, license) {
   license = String(license || "").trim();
   if (!license) return { exists: false };
@@ -596,7 +608,6 @@ async function getGlobalState(redis) {
 }
 
 async function serviceStatusFromUrl(url) {
-  // lightweight placeholder for UI use, actual live health checks can be added later
   return { url, status: "unknown" };
 }
 
@@ -641,7 +652,7 @@ async function makeDashboard(redis) {
       publicSite: await serviceStatusFromUrl("https://scriptnovaa.com"),
       redis: { online: true },
       launcherVersion: {
-        requiredMinVersion: global.minVersion || "v13.13.15",
+        requiredMinVersion: global.minVersion || "v13.13.14",
         cachedVersionTxt: versionTxt || null
       }
     },
@@ -710,7 +721,6 @@ module.exports = async function handler(req, res) {
   const q = req.method === "GET" ? req.query || {} : body || {};
   const action = lower(q.action);
 
-  // ========= LOGIN =========
   if (action === "login") {
     const username = String(q.username || "").trim();
     const password = String(q.password || "").trim();
@@ -771,7 +781,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= everything else requires admin =========
   const auth = await requireAdmin(req, res, redis, body);
   if (!auth.ok) {
     return res.status(auth.status).json({
@@ -809,7 +818,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= DASHBOARD =========
   if (action === "dashboard") {
     if (!canReadDashboard(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -832,7 +840,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= SESSIONS =========
   if (action === "sessions_list") {
     if (!canReadSessions(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -883,6 +890,7 @@ module.exports = async function handler(req, res) {
 
     await redis.del(sessionKey(license, sid));
     await redis.srem(activeSetKey(license), sid);
+    const freeKeyDeleted = await maybeDeleteFreeKeyForLicense(redis, license);
     await metricIncr(redis, "sessionsEnded", 1);
 
     await audit(redis, {
@@ -892,10 +900,11 @@ module.exports = async function handler(req, res) {
       action: "session_end_one",
       target: license + ":" + sid,
       ip: getIp(req),
-      success: true
+      success: true,
+      details: { freeKeyDeleted }
     });
 
-    return res.status(200).json({ ok: true, build: BUILD });
+    return res.status(200).json({ ok: true, freeKeyDeleted, build: BUILD });
   }
 
   if (action === "sessions_end_all") {
@@ -904,9 +913,11 @@ module.exports = async function handler(req, res) {
     }
 
     const rows = await listActiveSessionRecords(redis);
+    let freeKeyDeletedCount = 0;
     for (const r of rows) {
       await redis.del(sessionKey(r.license, r.sessionId));
       await redis.srem(activeSetKey(r.license), r.sessionId);
+      if (await maybeDeleteFreeKeyForLicense(redis, r.license)) freeKeyDeletedCount += 1;
     }
     await metricIncr(redis, "sessionsEnded", rows.length);
 
@@ -918,10 +929,10 @@ module.exports = async function handler(req, res) {
       target: "all",
       ip: getIp(req),
       success: true,
-      details: { count: rows.length }
+      details: { count: rows.length, freeKeyDeletedCount }
     });
 
-    return res.status(200).json({ ok: true, ended: rows.length, build: BUILD });
+    return res.status(200).json({ ok: true, ended: rows.length, freeKeyDeletedCount, build: BUILD });
   }
 
   if (action === "sessions_end_by_hwid") {
@@ -935,9 +946,11 @@ module.exports = async function handler(req, res) {
     const rows = await listActiveSessionRecords(redis);
     const hit = rows.filter((r) => r.hwidHash === hw);
 
+    let freeKeyDeletedCount = 0;
     for (const r of hit) {
       await redis.del(sessionKey(r.license, r.sessionId));
       await redis.srem(activeSetKey(r.license), r.sessionId);
+      if (await maybeDeleteFreeKeyForLicense(redis, r.license)) freeKeyDeletedCount += 1;
     }
     await metricIncr(redis, "sessionsEnded", hit.length);
 
@@ -949,13 +962,12 @@ module.exports = async function handler(req, res) {
       target: hw,
       ip: getIp(req),
       success: true,
-      details: { count: hit.length }
+      details: { count: hit.length, freeKeyDeletedCount }
     });
 
-    return res.status(200).json({ ok: true, ended: hit.length, build: BUILD });
+    return res.status(200).json({ ok: true, ended: hit.length, freeKeyDeletedCount, build: BUILD });
   }
 
-  // ========= KEYS =========
   if (action === "key_search") {
     if (!canReadKeys(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1166,7 +1178,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, items: rows, count: rows.length, build: BUILD });
   }
 
-  // ========= FREE KEYS =========
   if (action === "freekeys_list") {
     if (!canReadFreeKeys(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1255,7 +1266,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, expired: rows.length, build: BUILD });
   }
 
-  // ========= LAUNCHER CONTROL =========
   if (action === "launcher_status") {
     if (!canReadDashboard(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1356,7 +1366,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, message, build: BUILD });
   }
 
-  // ========= HWID / DEVICE =========
   if (action === "hwid_search") {
     if (!canReadHWID(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1508,7 +1517,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, build: BUILD });
   }
 
-  // ========= ADMIN ACCOUNTS =========
   if (action === "admin_accounts_list") {
     if (!canReadAdminAccounts(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1576,7 +1584,6 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, count: n, build: BUILD });
   }
 
-  // ========= SYSTEM CONFIG =========
   if (action === "config_get") {
     if (!canReadConfig(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1604,7 +1611,7 @@ module.exports = async function handler(req, res) {
             maxDevices: 2
           }
         },
-        launcherForceVersionValue: g.minVersion || "v13.13.15",
+        launcherForceVersionValue: g.minVersion || "v13.13.14",
         maintenanceMessageText: g.maintenanceMessage || "",
         featureToggles: {
           paused: g.paused,
@@ -1616,7 +1623,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= ANALYTICS =========
   if (action === "analytics_summary") {
     if (!canReadAnalytics(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1655,7 +1661,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= ALERTS =========
   if (action === "alerts_list") {
     if (!canReadAlerts(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1676,7 +1681,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= AUDIT =========
   if (action === "audit_list") {
     if (!canReadAudit(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1697,7 +1701,6 @@ module.exports = async function handler(req, res) {
     });
   }
 
-  // ========= EMERGENCY =========
   if (action === "emergency_disable_all_keys") {
     if (!canEmergency(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
