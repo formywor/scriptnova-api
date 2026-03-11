@@ -2,20 +2,13 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-09-admin3";
+const BUILD = "sn-hard-2026-03-10-public2";
+const EVENT_KEEP = 400;
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-}
-
-function b64urlEncodeUtf8(str) {
-  return Buffer.from(String(str), "utf8")
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
 }
 
 function b64urlDecodeUtf8(s) {
@@ -101,6 +94,22 @@ function todayKeyDate() {
   return `${y}${m}${dd}`;
 }
 
+function eventsListKey() {
+  return "sn:public:events";
+}
+
+function pollVotesKey(pollId) {
+  return "sn:public:poll:" + String(pollId) + ":votes";
+}
+
+function pollVoteByClientKey(pollId, clientId) {
+  return "sn:public:pollvote:" + String(pollId) + ":cid:" + String(clientId);
+}
+
+function pollVoteByHwidKey(pollId, hwid) {
+  return "sn:public:pollvote:" + String(pollId) + ":hw:" + String(hwid);
+}
+
 async function metricIncr(redis, field, by) {
   try {
     const key = metricsKey(todayKeyDate());
@@ -146,9 +155,136 @@ function signLaunchChallenge(parts, secret) {
   );
 }
 
+function cleanStr(v, maxLen) {
+  v = String(v == null ? "" : v).trim();
+  if (!maxLen) return v;
+  return v.length > maxLen ? v.slice(0, maxLen) : v;
+}
+
+async function getJsonBody(req) {
+  try {
+    if (req.body) {
+      if (typeof req.body === "string") return JSON.parse(req.body);
+      if (Buffer.isBuffer(req.body)) return JSON.parse(req.body.toString("utf8"));
+      if (typeof req.body === "object") return req.body;
+    }
+  } catch {}
+
+  try {
+    const raw = await new Promise((resolve) => {
+      let data = "";
+      req.on("data", (c) => (data += c));
+      req.on("end", () => resolve(data));
+      req.on("error", () => resolve(""));
+    });
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function handlePublicSubmit(req, res, redis) {
+  const rl = await rateLimit(req, "ui_submit", 120, 60);
+  if (!rl.ok) {
+    res.setHeader("Retry-After", String(rl.retryAfter));
+    return res.status(429).json({ ok: false, error: "rate_limited", retryAfter: rl.retryAfter, build: BUILD });
+  }
+
+  const paused = await redis.get(globalKey("paused"));
+  if (paused) {
+    return res.status(503).json({ ok: false, error: "launcher_paused", build: BUILD });
+  }
+
+  const body = await getJsonBody(req);
+  const kind = cleanStr(body.kind, 64).toLowerCase();
+  const clientId = cleanStr(body.clientId, 128);
+  const hwid = cleanStr(body.hwid, 128);
+  const version = cleanStr(body.version, 64);
+  const data = safeJsonParse(body.data, {});
+
+  if (!kind) return res.status(400).json({ ok: false, error: "missing_kind", build: BUILD });
+
+  const row = {
+    id: `${Math.floor(Date.now() / 1000)}_${Math.random().toString(16).slice(2, 10)}`,
+    ts: Math.floor(Date.now() / 1000),
+    kind,
+    clientId,
+    hwid,
+    version,
+    data: typeof data === "object" && data ? data : {}
+  };
+
+  try {
+    await redis.lpush(eventsListKey(), JSON.stringify(row));
+    await redis.ltrim(eventsListKey(), 0, EVENT_KEEP - 1);
+  } catch {}
+
+  await metricIncr(redis, "publicEvents", 1);
+
+  if (kind === "dismiss_banner") {
+    await metricIncr(redis, "bannerDismissals", 1);
+  }
+
+  if (kind === "cleanup_run") {
+    await metricIncr(redis, "cleanupRuns", 1);
+  }
+
+  if (kind === "poll_vote") {
+    const pollId = cleanStr(data.pollId, 128);
+    const value = cleanStr(data.value, 200);
+    if (pollId && value) {
+      let duplicate = false;
+      try {
+        if (clientId) {
+          const k = pollVoteByClientKey(pollId, clientId);
+          const had = await redis.get(k);
+          if (had) duplicate = true;
+          else await redis.set(k, value, { ex: 60 * 60 * 24 * 90 });
+        }
+      } catch {}
+      try {
+        if (!duplicate && hwid) {
+          const k = pollVoteByHwidKey(pollId, hwid);
+          const had = await redis.get(k);
+          if (had) duplicate = true;
+          else await redis.set(k, value, { ex: 60 * 60 * 24 * 90 });
+        }
+      } catch {}
+
+      if (!duplicate) {
+        try {
+          await redis.hincrby(pollVotesKey(pollId), value, 1);
+          await redis.expire(pollVotesKey(pollId), 60 * 60 * 24 * 180);
+        } catch {}
+        await metricIncr(redis, "pollVotes", 1);
+      }
+
+      return res.status(200).json({ ok: true, duplicate, build: BUILD });
+    }
+  }
+
+  return res.status(200).json({ ok: true, build: BUILD });
+}
+
 module.exports = async function handler(req, res) {
   cors(res);
   if (req.method === "OPTIONS") return res.status(204).end();
+
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({
+      ok: false,
+      error: "redis_not_configured",
+      build: BUILD
+    });
+  }
+
+  if (req.method === "POST") {
+    return handlePublicSubmit(req, res, redis);
+  }
 
   if (req.method !== "GET") {
     return res.status(405).json({
@@ -193,17 +329,6 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({
       ok: false,
       error: "bad_client_id",
-      build: BUILD
-    });
-  }
-
-  let redis;
-  try {
-    redis = getRedis();
-  } catch {
-    return res.status(500).json({
-      ok: false,
-      error: "redis_not_configured",
       build: BUILD
     });
   }

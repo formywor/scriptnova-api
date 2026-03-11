@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-admin-2026-03-10b";
+const BUILD = "sn-admin-2026-03-10c";
 
 // ===== admin credentials =====
 const ADMIN_USERS = {
@@ -29,6 +29,7 @@ const ADMIN_USERS = {
 const ADMIN_SESSION_TTL = 12 * 60 * 60;
 const AUDIT_KEEP = 800;
 const ALERT_KEEP = 300;
+const PUBLIC_EVENT_KEEP_DEFAULT = 120;
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -65,6 +66,76 @@ function clamp(n, min, max) {
 
 function lower(s) {
   return String(s || "").trim().toLowerCase();
+}
+
+function cleanStr(v, maxLen) {
+  v = String(v == null ? "" : v).trim();
+  if (!maxLen) return v;
+  return v.length > maxLen ? v.slice(0, maxLen) : v;
+}
+
+function cleanUrl(v, maxLen) {
+  const s = cleanStr(v, maxLen || 500);
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s) || s.indexOf("/api/") === 0 || s.indexOf("/") === 0) return s;
+  return "";
+}
+
+function uniqArrayStrings(arr, maxItems, maxLen) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const v of arr) {
+    const s = cleanStr(v, maxLen || 200);
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+    if (out.length >= (maxItems || 50)) break;
+  }
+  return out;
+}
+
+function sanitizeQuickLinks(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const item of arr) {
+    if (!item || typeof item !== "object") continue;
+    const label = cleanStr(item.label, 80);
+    const url = cleanUrl(item.url, 400);
+    if (!label || !url) continue;
+    out.push({
+      label,
+      url,
+      icon: cleanStr(item.icon, 40),
+      mode: cleanStr(item.mode, 20) || "external"
+    });
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+function sanitizeModalButtons(arr) {
+  if (!Array.isArray(arr)) return [];
+  const out = [];
+  for (const item of arr) {
+    if (!item || typeof item !== "object") continue;
+    const label = cleanStr(item.label, 60);
+    const action = cleanStr(item.action, 40);
+    const url = cleanUrl(item.url, 400);
+    if (!label) continue;
+    out.push({
+      label,
+      action: action || (url ? "open" : "close"),
+      url,
+      style: cleanStr(item.style, 20) || "normal"
+    });
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+function sanitizePollOptions(arr) {
+  return uniqArrayStrings(arr, 12, 120);
 }
 
 function getIp(req) {
@@ -210,6 +281,14 @@ function userKeyForLogin(username) {
   if (u === "ulises") return "ulises";
   if (u === "other") return "other";
   return "";
+}
+
+function eventsListKey() {
+  return "sn:public:events";
+}
+
+function pollVotesKey(pollId) {
+  return "sn:public:poll:" + String(pollId) + ":votes";
 }
 
 function canReadDashboard(role) {
@@ -456,7 +535,9 @@ async function resolveLicenseInfo(redis, license) {
       exp: toInt(custom.exp, 0),
       note: String(custom.note || ""),
       createdAt: toInt(custom.createdAt, 0),
-      createdBy: String(custom.createdBy || "")
+      createdBy: String(custom.createdBy || ""),
+      updatedAt: toInt(custom.updatedAt, 0),
+      updatedBy: String(custom.updatedBy || "")
     };
   }
 
@@ -565,17 +646,81 @@ async function countSuspiciousHwids(redis) {
   }
 }
 
-async function getGlobalState(redis) {
-  const paused = !!(await redis.get(globalKey("paused")));
-  const disableAll = !!(await redis.get(globalKey("disable_all")));
-  const maintenanceMode = !!(await redis.get(globalKey("maintenance_mode")));
-  const maintenanceMessage = String((await redis.get(globalKey("maintenance_message"))) || "");
-  const minVersion = String((await redis.get(globalKey("min_version"))) || "");
-  const htaPausedReason = String((await redis.get(globalKey("paused_reason"))) || "");
+async function getGlobalString(redis, name, fallback) {
+  try {
+    const v = await redis.get(globalKey(name));
+    if (v == null || String(v).trim() === "") return fallback;
+    return String(v);
+  } catch {
+    return fallback;
+  }
+}
 
-  const cleanupOldPromptEnabled = !!(await redis.get(globalKey("cleanup_old_prompt_enabled")));
-  const cleanupOldPromptMessage = String((await redis.get(globalKey("cleanup_old_prompt_message"))) || "");
-  const cleanupOldPromptForceOnce = toInt(await redis.get(globalKey("cleanup_old_prompt_force_once")), 0);
+async function getGlobalBool(redis, name) {
+  try {
+    const v = await redis.get(globalKey(name));
+    return !!v && String(v).trim() !== "";
+  } catch {
+    return false;
+  }
+}
+
+async function getGlobalInt(redis, name, fallback) {
+  try {
+    const v = await redis.get(globalKey(name));
+    return toInt(v, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+async function getGlobalJson(redis, name, fallback) {
+  try {
+    const v = await redis.get(globalKey(name));
+    return safeJsonParse(v, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+async function getGlobalState(redis) {
+  const paused = await getGlobalBool(redis, "paused");
+  const disableAll = await getGlobalBool(redis, "disable_all");
+  const maintenanceMode = await getGlobalBool(redis, "maintenance_mode");
+  const maintenanceMessage = await getGlobalString(redis, "maintenance_message", "");
+  const minVersion = await getGlobalString(redis, "min_version", "");
+  const htaPausedReason = await getGlobalString(redis, "paused_reason", "");
+
+  const cleanupOldPromptEnabled = await getGlobalBool(redis, "cleanup_old_prompt_enabled");
+  const cleanupOldPromptMessage = await getGlobalString(redis, "cleanup_old_prompt_message", "");
+  const cleanupOldPromptForceOnce = await getGlobalInt(redis, "cleanup_old_prompt_force_once", 0);
+  const cleanupOldScanPaths = getGlobalJson(redis, "cleanup_old_scan_paths_json", []);
+  const cleanupOldNameHints = getGlobalJson(redis, "cleanup_old_name_hints_json", []);
+
+  const launcherSupportEmail = await getGlobalString(redis, "launcher_support_email", "gomegaassist@gmail.com");
+  const launcherDiscordUrl = await getGlobalString(redis, "launcher_discord_url", "https://discord.gg/gscGTMVsWE");
+  const launcherDefaultStartUrl = await getGlobalString(redis, "launcher_default_start_url", "https://www.guns.lol/iii_dev");
+  const launcherSubmitUrl = await getGlobalString(redis, "launcher_submit_url", "/api/ui");
+
+  const publicBannerEnabled = await getGlobalBool(redis, "public_banner_enabled");
+  const publicBannerId = await getGlobalString(redis, "public_banner_id", "");
+  const publicBannerTitle = await getGlobalString(redis, "public_banner_title", "");
+  const publicBannerText = await getGlobalString(redis, "public_banner_text", "");
+  const publicBannerMode = await getGlobalString(redis, "public_banner_mode", "info");
+  const publicBannerDismissable = await getGlobalBool(redis, "public_banner_dismissable");
+
+  const publicModalEnabled = await getGlobalBool(redis, "public_modal_enabled");
+  const publicModalId = await getGlobalString(redis, "public_modal_id", "");
+  const publicModalTitle = await getGlobalString(redis, "public_modal_title", "");
+  const publicModalText = await getGlobalString(redis, "public_modal_text", "");
+  const publicModalButtons = await getGlobalJson(redis, "public_modal_buttons_json", []);
+
+  const publicPollEnabled = await getGlobalBool(redis, "public_poll_enabled");
+  const publicPollId = await getGlobalString(redis, "public_poll_id", "");
+  const publicPollQuestion = await getGlobalString(redis, "public_poll_question", "");
+  const publicPollOptions = await getGlobalJson(redis, "public_poll_options_json", []);
+
+  const launcherQuickLinks = await getGlobalJson(redis, "launcher_quick_links_json", []);
 
   return {
     paused,
@@ -584,14 +729,63 @@ async function getGlobalState(redis) {
     maintenanceMessage,
     minVersion,
     pausedReason: htaPausedReason,
+
     cleanupOldPromptEnabled,
     cleanupOldPromptMessage,
-    cleanupOldPromptForceOnce
+    cleanupOldPromptForceOnce,
+    cleanupOldScanPaths: await cleanupOldScanPaths,
+    cleanupOldNameHints: await cleanupOldNameHints,
+
+    launcherSupportEmail,
+    launcherDiscordUrl,
+    launcherDefaultStartUrl,
+    launcherSubmitUrl,
+
+    publicBannerEnabled,
+    publicBannerId,
+    publicBannerTitle,
+    publicBannerText,
+    publicBannerMode,
+    publicBannerDismissable,
+
+    publicModalEnabled,
+    publicModalId,
+    publicModalTitle,
+    publicModalText,
+    publicModalButtons,
+
+    publicPollEnabled,
+    publicPollId,
+    publicPollQuestion,
+    publicPollOptions,
+
+    launcherQuickLinks
   };
 }
 
 async function serviceStatusFromUrl(url) {
   return { url, status: "unknown" };
+}
+
+async function getPollVotes(redis, pollId) {
+  if (!pollId) return {};
+  try {
+    const rows = await redis.hgetall(pollVotesKey(pollId));
+    return rows && typeof rows === "object" ? rows : {};
+  } catch {
+    return {};
+  }
+}
+
+async function listPublicEvents(redis, limit) {
+  const n = clamp(toInt(limit, 50), 1, 200);
+  let rows = [];
+  try {
+    rows = await redis.lrange(eventsListKey(), 0, n - 1);
+  } catch {
+    rows = [];
+  }
+  return (rows || []).map((x) => safeJsonParse(x, null)).filter(Boolean);
 }
 
 async function makeDashboard(redis) {
@@ -658,7 +852,17 @@ async function makeDashboard(redis) {
       disableAllKeys: global.disableAll,
       cleanupOldPromptEnabled: global.cleanupOldPromptEnabled,
       cleanupOldPromptMessage: global.cleanupOldPromptMessage,
-      cleanupOldPromptForceOnce: global.cleanupOldPromptForceOnce
+      cleanupOldPromptForceOnce: global.cleanupOldPromptForceOnce,
+      cleanupOldScanPaths: Array.isArray(global.cleanupOldScanPaths) ? global.cleanupOldScanPaths : [],
+      cleanupOldNameHints: Array.isArray(global.cleanupOldNameHints) ? global.cleanupOldNameHints : [],
+      supportEmail: global.launcherSupportEmail,
+      discordUrl: global.launcherDiscordUrl,
+      defaultStartUrl: global.launcherDefaultStartUrl,
+      submitUrl: global.launcherSubmitUrl,
+      publicBannerEnabled: global.publicBannerEnabled,
+      publicModalEnabled: global.publicModalEnabled,
+      publicPollEnabled: global.publicPollEnabled,
+      quickLinksCount: Array.isArray(global.launcherQuickLinks) ? global.launcherQuickLinks.length : 0
     },
     analyticsToday: {
       keyChecks: toInt(metrics.keyChecks, 0),
@@ -667,7 +871,12 @@ async function makeDashboard(redis) {
       launchFailures: toInt(metrics.launchFailures, 0),
       freeKeysGenerated: toInt(metrics.freeKeysGenerated, 0),
       sessionsEnded: toInt(metrics.sessionsEnded, 0),
-      adminLoginFailures: toInt(metrics.adminLoginFailures, 0)
+      adminLoginFailures: toInt(metrics.adminLoginFailures, 0),
+      uiChallenges: toInt(metrics.uiChallenges, 0),
+      publicEvents: toInt(metrics.publicEvents, 0),
+      pollVotes: toInt(metrics.pollVotes, 0),
+      bannerDismissals: toInt(metrics.bannerDismissals, 0),
+      cleanupRuns: toInt(metrics.cleanupRuns, 0)
     }
   };
 }
@@ -1355,6 +1564,46 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, message, build: BUILD });
   }
 
+  if (action === "launcher_set_runtime_config") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const supportEmail = cleanStr(q.supportEmail, 200);
+    const discordUrl = cleanUrl(q.discordUrl, 400);
+    const defaultStartUrl = cleanUrl(q.defaultStartUrl, 500);
+    const submitUrl = cleanUrl(q.submitUrl, 400) || "/api/ui";
+
+    if (supportEmail) await redis.set(globalKey("launcher_support_email"), supportEmail);
+    else await redis.del(globalKey("launcher_support_email"));
+
+    if (discordUrl) await redis.set(globalKey("launcher_discord_url"), discordUrl);
+    else await redis.del(globalKey("launcher_discord_url"));
+
+    if (defaultStartUrl) await redis.set(globalKey("launcher_default_start_url"), defaultStartUrl);
+    else await redis.del(globalKey("launcher_default_start_url"));
+
+    if (submitUrl) await redis.set(globalKey("launcher_submit_url"), submitUrl);
+    else await redis.del(globalKey("launcher_submit_url"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_set_runtime_config",
+      target: "runtime_config",
+      ip: getIp(req),
+      success: true,
+      details: { supportEmail, discordUrl, defaultStartUrl, submitUrl }
+    });
+
+    return res.status(200).json({
+      ok: true,
+      runtime: { supportEmail, discordUrl, defaultStartUrl, submitUrl },
+      build: BUILD
+    });
+  }
+
   if (action === "launcher_cleanup_prompt_get") {
     if (!canReadDashboard(admin.role)) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
@@ -1366,7 +1615,9 @@ module.exports = async function handler(req, res) {
       cleanupPrompt: {
         enabled: g.cleanupOldPromptEnabled,
         message: g.cleanupOldPromptMessage,
-        forceOnce: g.cleanupOldPromptForceOnce
+        forceOnce: g.cleanupOldPromptForceOnce,
+        scanPaths: Array.isArray(g.cleanupOldScanPaths) ? g.cleanupOldScanPaths : [],
+        nameHints: Array.isArray(g.cleanupOldNameHints) ? g.cleanupOldNameHints : []
       },
       build: BUILD
     });
@@ -1377,14 +1628,33 @@ module.exports = async function handler(req, res) {
       return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
     }
 
-    const enabled = !!q.enabled;
+    const enabled =
+      q.enabled === true ||
+      q.enabled === 1 ||
+      q.enabled === "1" ||
+      lower(q.enabled) === "true" ||
+      lower(q.enabled) === "yes" ||
+      lower(q.enabled) === "on";
+
     const message = String(q.message || "").trim();
+
+    let scanPaths = q.scanPaths;
+    let nameHints = q.nameHints;
+
+    if (typeof scanPaths === "string") scanPaths = safeJsonParse(scanPaths, scanPaths.split(/\r?\n|,/g));
+    if (typeof nameHints === "string") nameHints = safeJsonParse(nameHints, nameHints.split(/\r?\n|,/g));
+
+    scanPaths = uniqArrayStrings(scanPaths, 20, 260);
+    nameHints = uniqArrayStrings(nameHints, 20, 120);
 
     if (enabled) await redis.set(globalKey("cleanup_old_prompt_enabled"), "1");
     else await redis.del(globalKey("cleanup_old_prompt_enabled"));
 
     if (message) await redis.set(globalKey("cleanup_old_prompt_message"), message);
     else await redis.del(globalKey("cleanup_old_prompt_message"));
+
+    await redis.set(globalKey("cleanup_old_scan_paths_json"), JSON.stringify(scanPaths));
+    await redis.set(globalKey("cleanup_old_name_hints_json"), JSON.stringify(nameHints));
 
     await audit(redis, {
       type: "launcher",
@@ -1394,13 +1664,15 @@ module.exports = async function handler(req, res) {
       target: "cleanup_old_prompt",
       ip: getIp(req),
       success: true,
-      details: { enabled, message }
+      details: { enabled, message, scanPaths, nameHints }
     });
 
     return res.status(200).json({
       ok: true,
       enabled,
       message,
+      scanPaths,
+      nameHints,
       build: BUILD
     });
   }
@@ -1429,6 +1701,329 @@ module.exports = async function handler(req, res) {
       forceOnce,
       build: BUILD
     });
+  }
+
+  if (action === "launcher_public_banner_set") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const enabled =
+      q.enabled === true || q.enabled === 1 || q.enabled === "1" || lower(q.enabled) === "true" || lower(q.enabled) === "yes";
+    const id = cleanStr(q.id, 120) || ("banner_" + randHex(6));
+    const title = cleanStr(q.title, 120);
+    const text = cleanStr(q.text, 1200);
+    const mode = cleanStr(q.mode, 20) || "info";
+    const dismissable =
+      q.dismissable === true || q.dismissable === 1 || q.dismissable === "1" || lower(q.dismissable) === "true" || lower(q.dismissable) === "yes";
+
+    if (enabled) await redis.set(globalKey("public_banner_enabled"), "1");
+    else await redis.del(globalKey("public_banner_enabled"));
+
+    if (id) await redis.set(globalKey("public_banner_id"), id); else await redis.del(globalKey("public_banner_id"));
+    if (title) await redis.set(globalKey("public_banner_title"), title); else await redis.del(globalKey("public_banner_title"));
+    if (text) await redis.set(globalKey("public_banner_text"), text); else await redis.del(globalKey("public_banner_text"));
+    if (mode) await redis.set(globalKey("public_banner_mode"), mode); else await redis.del(globalKey("public_banner_mode"));
+    if (dismissable) await redis.set(globalKey("public_banner_dismissable"), "1"); else await redis.del(globalKey("public_banner_dismissable"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_banner_set",
+      target: id,
+      ip: getIp(req),
+      success: true,
+      details: { enabled, title, text, mode, dismissable }
+    });
+
+    return res.status(200).json({
+      ok: true,
+      banner: { enabled, id, title, text, mode, dismissable },
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_public_banner_clear") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    await redis.del(globalKey("public_banner_enabled"));
+    await redis.del(globalKey("public_banner_id"));
+    await redis.del(globalKey("public_banner_title"));
+    await redis.del(globalKey("public_banner_text"));
+    await redis.del(globalKey("public_banner_mode"));
+    await redis.del(globalKey("public_banner_dismissable"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_banner_clear",
+      target: "public_banner",
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, build: BUILD });
+  }
+
+  if (action === "launcher_public_modal_set") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const enabled =
+      q.enabled === true || q.enabled === 1 || q.enabled === "1" || lower(q.enabled) === "true" || lower(q.enabled) === "yes";
+    const id = cleanStr(q.id, 120) || ("modal_" + randHex(6));
+    const title = cleanStr(q.title, 120);
+    const text = cleanStr(q.text, 4000);
+
+    let buttons = q.buttons;
+    if (typeof buttons === "string") buttons = safeJsonParse(buttons, []);
+    buttons = sanitizeModalButtons(buttons);
+
+    if (enabled) await redis.set(globalKey("public_modal_enabled"), "1");
+    else await redis.del(globalKey("public_modal_enabled"));
+
+    if (id) await redis.set(globalKey("public_modal_id"), id); else await redis.del(globalKey("public_modal_id"));
+    if (title) await redis.set(globalKey("public_modal_title"), title); else await redis.del(globalKey("public_modal_title"));
+    if (text) await redis.set(globalKey("public_modal_text"), text); else await redis.del(globalKey("public_modal_text"));
+    await redis.set(globalKey("public_modal_buttons_json"), JSON.stringify(buttons));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_modal_set",
+      target: id,
+      ip: getIp(req),
+      success: true,
+      details: { enabled, title, textLen: text.length, buttonCount: buttons.length }
+    });
+
+    return res.status(200).json({
+      ok: true,
+      modal: { enabled, id, title, text, buttons },
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_public_modal_clear") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    await redis.del(globalKey("public_modal_enabled"));
+    await redis.del(globalKey("public_modal_id"));
+    await redis.del(globalKey("public_modal_title"));
+    await redis.del(globalKey("public_modal_text"));
+    await redis.del(globalKey("public_modal_buttons_json"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_modal_clear",
+      target: "public_modal",
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, build: BUILD });
+  }
+
+  if (action === "launcher_public_poll_set") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const enabled =
+      q.enabled === true || q.enabled === 1 || q.enabled === "1" || lower(q.enabled) === "true" || lower(q.enabled) === "yes";
+    const id = cleanStr(q.id, 120) || ("poll_" + randHex(6));
+    const question = cleanStr(q.question, 400);
+
+    let options = q.options;
+    if (typeof options === "string") options = safeJsonParse(options, options.split(/\r?\n|,/g));
+    options = sanitizePollOptions(options);
+
+    if (options.length < 2) {
+      return res.status(400).json({ ok: false, error: "poll_needs_two_options", build: BUILD });
+    }
+
+    if (enabled) await redis.set(globalKey("public_poll_enabled"), "1");
+    else await redis.del(globalKey("public_poll_enabled"));
+
+    if (id) await redis.set(globalKey("public_poll_id"), id); else await redis.del(globalKey("public_poll_id"));
+    if (question) await redis.set(globalKey("public_poll_question"), question); else await redis.del(globalKey("public_poll_question"));
+    await redis.set(globalKey("public_poll_options_json"), JSON.stringify(options));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_poll_set",
+      target: id,
+      ip: getIp(req),
+      success: true,
+      details: { enabled, question, options }
+    });
+
+    return res.status(200).json({
+      ok: true,
+      poll: { enabled, id, question, options },
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_public_poll_clear") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    await redis.del(globalKey("public_poll_enabled"));
+    await redis.del(globalKey("public_poll_id"));
+    await redis.del(globalKey("public_poll_question"));
+    await redis.del(globalKey("public_poll_options_json"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_poll_clear",
+      target: "public_poll",
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, build: BUILD });
+  }
+
+  if (action === "launcher_public_poll_results") {
+    if (!canReadDashboard(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const pollId = cleanStr(q.pollId, 120) || await getGlobalString(redis, "public_poll_id", "");
+    const question = await getGlobalString(redis, "public_poll_question", "");
+    const options = await getGlobalJson(redis, "public_poll_options_json", []);
+    const votes = await getPollVotes(redis, pollId);
+
+    return res.status(200).json({
+      ok: true,
+      poll: {
+        pollId,
+        question,
+        options: Array.isArray(options) ? options : [],
+        votes
+      },
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_public_poll_reset") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const pollId = cleanStr(q.pollId, 120) || await getGlobalString(redis, "public_poll_id", "");
+    if (!pollId) return res.status(400).json({ ok: false, error: "missing_poll_id", build: BUILD });
+
+    await redis.del(pollVotesKey(pollId));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_poll_reset",
+      target: pollId,
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, pollId, build: BUILD });
+  }
+
+  if (action === "launcher_quick_links_set") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    let links = q.links;
+    if (typeof links === "string") links = safeJsonParse(links, []);
+    links = sanitizeQuickLinks(links);
+
+    await redis.set(globalKey("launcher_quick_links_json"), JSON.stringify(links));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_quick_links_set",
+      target: "quick_links",
+      ip: getIp(req),
+      success: true,
+      details: { count: links.length }
+    });
+
+    return res.status(200).json({ ok: true, links, build: BUILD });
+  }
+
+  if (action === "launcher_quick_links_clear") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    await redis.del(globalKey("launcher_quick_links_json"));
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_quick_links_clear",
+      target: "quick_links",
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, build: BUILD });
+  }
+
+  if (action === "launcher_public_events_list") {
+    if (!canReadDashboard(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    const limit = clamp(toInt(q.limit, PUBLIC_EVENT_KEEP_DEFAULT), 1, 200);
+    const items = await listPublicEvents(redis, limit);
+
+    return res.status(200).json({
+      ok: true,
+      items,
+      count: items.length,
+      build: BUILD
+    });
+  }
+
+  if (action === "launcher_public_events_clear") {
+    if (!canWriteLauncher(admin.role)) {
+      return res.status(403).json({ ok: false, error: "forbidden", build: BUILD });
+    }
+
+    await redis.del(eventsListKey());
+
+    await audit(redis, {
+      type: "launcher",
+      actor: admin.username,
+      role: admin.role,
+      action: "launcher_public_events_clear",
+      target: "public_events",
+      ip: getIp(req),
+      success: true
+    });
+
+    return res.status(200).json({ ok: true, build: BUILD });
   }
 
   if (action === "hwid_search") {
@@ -1681,8 +2276,38 @@ module.exports = async function handler(req, res) {
         cleanupOldPrompt: {
           enabled: g.cleanupOldPromptEnabled,
           message: g.cleanupOldPromptMessage || "",
-          forceOnce: g.cleanupOldPromptForceOnce || 0
+          forceOnce: g.cleanupOldPromptForceOnce || 0,
+          scanPaths: Array.isArray(g.cleanupOldScanPaths) ? g.cleanupOldScanPaths : [],
+          nameHints: Array.isArray(g.cleanupOldNameHints) ? g.cleanupOldNameHints : []
         },
+        runtimeConfig: {
+          supportEmail: g.launcherSupportEmail || "",
+          discordUrl: g.launcherDiscordUrl || "",
+          defaultStartUrl: g.launcherDefaultStartUrl || "",
+          submitUrl: g.launcherSubmitUrl || "/api/ui"
+        },
+        publicBanner: {
+          enabled: g.publicBannerEnabled,
+          id: g.publicBannerId,
+          title: g.publicBannerTitle,
+          text: g.publicBannerText,
+          mode: g.publicBannerMode,
+          dismissable: g.publicBannerDismissable
+        },
+        publicModal: {
+          enabled: g.publicModalEnabled,
+          id: g.publicModalId,
+          title: g.publicModalTitle,
+          text: g.publicModalText,
+          buttons: Array.isArray(g.publicModalButtons) ? g.publicModalButtons : []
+        },
+        publicPoll: {
+          enabled: g.publicPollEnabled,
+          id: g.publicPollId,
+          question: g.publicPollQuestion,
+          options: Array.isArray(g.publicPollOptions) ? g.publicPollOptions : []
+        },
+        quickLinks: Array.isArray(g.launcherQuickLinks) ? g.launcherQuickLinks : [],
         featureToggles: {
           paused: g.paused,
           maintenanceMode: g.maintenanceMode,
@@ -1725,7 +2350,12 @@ module.exports = async function handler(req, res) {
         launchFailuresToday: toInt(metrics.launchFailures, 0),
         freeKeysGeneratedToday: toInt(metrics.freeKeysGenerated, 0),
         sessionsEndedToday: toInt(metrics.sessionsEnded, 0),
-        adminLoginFailuresToday: toInt(metrics.adminLoginFailures, 0)
+        adminLoginFailuresToday: toInt(metrics.adminLoginFailures, 0),
+        uiChallengesToday: toInt(metrics.uiChallenges, 0),
+        publicEventsToday: toInt(metrics.publicEvents, 0),
+        pollVotesToday: toInt(metrics.pollVotes, 0),
+        bannerDismissalsToday: toInt(metrics.bannerDismissals, 0),
+        cleanupRunsToday: toInt(metrics.cleanupRuns, 0)
       },
       build: BUILD
     });

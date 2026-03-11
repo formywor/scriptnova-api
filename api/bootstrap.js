@@ -102,6 +102,14 @@ module.exports = async function handler(req, res) {
     "Owner recommends removing outdated ScriptNova launcher copies from Desktop and Downloads."
   );
   const cleanupPromptForceOnce = await getGlobalInt(redis, "cleanup_old_prompt_force_once", 0);
+  const cleanupScanPaths = safeJsonParse(
+    await getGlobalString(redis, "cleanup_old_scan_paths_json", "[]"),
+    []
+  );
+  const cleanupNameHints = safeJsonParse(
+    await getGlobalString(redis, "cleanup_old_name_hints_json", "[]"),
+    []
+  );
 
   const supportEmail =
     (await getGlobalString(redis, "launcher_support_email", "")) ||
@@ -134,7 +142,7 @@ module.exports = async function handler(req, res) {
   const pollOptions = safeJsonParse(await getGlobalString(redis, "public_poll_options_json", "[]"), []);
 
   const quickLinks = safeJsonParse(await getGlobalString(redis, "launcher_quick_links_json", "[]"), []);
-  const submitUrl = await getGlobalString(redis, "launcher_submit_url", "");
+  const submitUrl = await getGlobalString(redis, "launcher_submit_url", "/api/ui");
 
   return res.status(200).json({
     ok: true,
@@ -188,7 +196,9 @@ module.exports = async function handler(req, res) {
       cleanupPrompt: {
         enabled: cleanupPromptEnabled,
         message: cleanupPromptMessage,
-        forceOnce: cleanupPromptForceOnce
+        forceOnce: cleanupPromptForceOnce,
+        scanPaths: Array.isArray(cleanupScanPaths) ? cleanupScanPaths : [],
+        nameHints: Array.isArray(cleanupNameHints) ? cleanupNameHints : []
       },
       quickLinks: Array.isArray(quickLinks) ? quickLinks : [],
       submitUrl: submitUrl || ""
