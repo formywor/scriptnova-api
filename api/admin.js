@@ -1907,7 +1907,7 @@ module.exports = async function handler(req, res) {
     return res.status(200).json({ ok: true, message, build: BUILD });
   }
 
-  return res.status(400).json({zzz
+  return res.status(400).json({
     ok: false,
     error: "unknown_action",
     build: BUILD
