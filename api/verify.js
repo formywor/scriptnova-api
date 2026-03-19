@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-09-admin2";
+const BUILD = "sn-hard-2026-03-19b";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -49,6 +49,7 @@ async function getJsonBody(req) {
       if (typeof req.body === "object") return req.body;
     }
   } catch {}
+
   try {
     const raw = await new Promise((resolve) => {
       let data = "";
@@ -105,7 +106,7 @@ function ttlForPlan(plan) {
 
 function maxDevicesForPlan(plan) {
   if (plan === "free") return 1;
-  return 2; // preserve current live behavior unless you want this changed later
+  return 2;
 }
 
 function makeSessionId() {
@@ -283,24 +284,33 @@ async function resolveLicense(redis, lic) {
       return { ok: false, error: "custom_key_invalid" };
     }
 
-    const plan = String(obj.plan || planForLicense(lic)).trim().toLowerCase();
-    const ttl = toInt(obj.ttlSeconds, ttlForPlan(plan));
-    const limit = toInt(obj.sessionLimit, limitForPlan(plan));
-    const maxDevices = toInt(obj.maxDevices, maxDevicesForPlan(plan));
-    const exp = toInt(obj.exp, 0);
     const now = Math.floor(Date.now() / 1000);
+    const plan = String(obj.plan || planForLicense(lic)).trim().toLowerCase();
+    const configuredTtl = Math.max(1, toInt(obj.ttlSeconds, ttlForPlan(plan)));
+    const limit = Math.max(1, toInt(obj.sessionLimit, limitForPlan(plan)));
+    const maxDevices = Math.max(1, toInt(obj.maxDevices, maxDevicesForPlan(plan)));
+    const exp = toInt(obj.exp, 0);
 
     if (exp > 0 && exp <= now) {
       return { ok: false, error: "key_expired" };
     }
 
+    let ttl = configuredTtl;
+    if (exp > 0) {
+      ttl = Math.max(1, Math.min(configuredTtl, exp - now));
+    }
+
     return {
       ok: true,
       source: "custom",
+      kind: "custom",
       plan,
+      tier: String(obj.tier || ""),
       ttl,
+      configuredTtlSeconds: configuredTtl,
       limit,
-      maxDevices
+      maxDevices,
+      keyExp: exp
     };
   }
 
@@ -310,13 +320,45 @@ async function resolveLicense(redis, lic) {
       return { ok: false, error: "invalid_key" };
     }
 
+    const obj = safeJsonParse(raw, {});
+    const now = Math.floor(Date.now() / 1000);
+    const configuredTtl = Math.max(1, toInt(obj.ttlSeconds, ttlForPlan("free")));
+    const maxSessions = Math.max(
+      1,
+      toInt(
+        obj.maxSessions,
+        toInt(obj.sessions, limitForPlan("free"))
+      )
+    );
+    const keyExp = toInt(obj.exp, 0);
+
+    let ttl = configuredTtl;
+
+    try {
+      const redisTtl = toInt(await redis.ttl(freeKeyRedisKey(lic)), -1);
+      if (redisTtl > 0) {
+        ttl = redisTtl;
+      }
+    } catch {}
+
+    if (keyExp > 0) {
+      if (keyExp <= now) {
+        return { ok: false, error: "key_expired" };
+      }
+      ttl = Math.max(1, Math.min(ttl, keyExp - now));
+    }
+
     return {
       ok: true,
       source: "free",
+      kind: "free",
       plan: "free",
-      ttl: 15 * 60,
-      limit: 1,
-      maxDevices: 1
+      tier: String(obj.tier || ""),
+      ttl,
+      configuredTtlSeconds: configuredTtl,
+      limit: maxSessions,
+      maxDevices: 1,
+      keyExp
     };
   }
 
@@ -326,13 +368,18 @@ async function resolveLicense(redis, lic) {
   }
 
   const plan = planForLicense(lic);
+
   return {
     ok: true,
     source: "env",
+    kind: "env",
     plan,
+    tier: "",
     ttl: ttlForPlan(plan),
+    configuredTtlSeconds: ttlForPlan(plan),
     limit: limitForPlan(plan),
-    maxDevices: maxDevicesForPlan(plan)
+    maxDevices: maxDevicesForPlan(plan),
+    keyExp: 0
   };
 }
 
@@ -434,9 +481,10 @@ module.exports = async function handler(req, res) {
   }
 
   const plan = licenseInfo.plan;
+  const tier = licenseInfo.tier || "";
   const maxDevices = licenseInfo.maxDevices;
   const limit = licenseInfo.limit;
-  const ttl = licenseInfo.ttl;
+  const ttl = Math.max(1, toInt(licenseInfo.ttl, 1));
 
   const hw = hwidHash(hwidRaw, secret);
 
@@ -481,6 +529,7 @@ module.exports = async function handler(req, res) {
     return res.status(429).json({
       ok: false,
       plan,
+      tier,
       error: "too_many_sessions",
       active: activeCount || 0,
       limit,
@@ -498,7 +547,11 @@ module.exports = async function handler(req, res) {
     seen: now,
     createdAt: now,
     ip: "",
-    hwidRawPreview: String(hwidRaw).slice(0, 80)
+    hwidRawPreview: String(hwidRaw).slice(0, 80),
+    plan,
+    tier,
+    source: licenseInfo.source || "",
+    keyExp: toInt(licenseInfo.keyExp, 0)
   });
 
   await redis.set(sk, record, { ex: ttl + 180 });
@@ -506,7 +559,7 @@ module.exports = async function handler(req, res) {
   await redis.expire(setKey, ttl + 300);
 
   const token = signToken(
-    { lic, plan, exp, sid, cid: clientId, hw },
+    { lic, plan, tier, exp, sid, cid: clientId, hw },
     secret
   );
 
@@ -521,6 +574,7 @@ module.exports = async function handler(req, res) {
       license: lic,
       sessionId: sid,
       plan,
+      tier,
       clientId,
       hwidHash: hw
     }
@@ -529,15 +583,19 @@ module.exports = async function handler(req, res) {
   return res.status(200).json({
     ok: true,
     plan,
+    tier,
     token,
     exp,
     sessionId: sid,
     ttlSeconds: ttl,
+    configuredTtlSeconds: toInt(licenseInfo.configuredTtlSeconds, ttl),
     hwBound: bind.boundNow === true,
     hwSlotsUsed: bind.allowedCount,
     maxDevices,
     limit,
     source: licenseInfo.source,
+    kind: licenseInfo.kind || "",
+    keyExp: toInt(licenseInfo.keyExp, 0),
     build: BUILD
   });
 };
