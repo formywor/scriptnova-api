@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-20-paidkeys-a";
+const BUILD = "sn-hard-2026-03-20-balance-c";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -112,10 +112,10 @@ function limitForPlan(plan) {
 function ttlForPlan(plan) {
   if (plan === "free") return 15 * 60;
   if (plan === "basic") return 6 * 60 * 60;
-  if (plan === "pro") return 30 * 24 * 60 * 60;
-  if (plan === "elite") return 90 * 24 * 60 * 60;
-  if (plan === "express") return 5444 * 60 * 60;
-  if (plan === "black_express") return 12000 * 60 * 60;
+  if (plan === "pro") return 48 * 60 * 60;
+  if (plan === "elite") return 168 * 60 * 60;
+  if (plan === "express") return 720 * 60 * 60;
+  if (plan === "black_express") return 1800 * 60 * 60;
   return 6 * 60 * 60;
 }
 
