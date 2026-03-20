@@ -1,7 +1,7 @@
 const { getRedis } = require("./_redis");
 const { rateLimit } = require("./_rate");
 
-const BUILD = "sn-hard-2026-03-19b";
+const BUILD = "sn-hard-2026-03-20-paidkeys-a";
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -49,25 +49,44 @@ function toInt(v, dflt) {
 
 function inferPlan(lic) {
   lic = String(lic || "").trim().toUpperCase();
+
   if (lic.indexOf("FREE-") === 0) return "free";
+  if (lic.indexOf("BLACKEXP-") === 0 || lic.indexOf("BLACK_EXPRESS-") === 0) return "black_express";
+  if (lic.indexOf("EXPRESS-") === 0) return "express";
+  if (lic.indexOf("ELITE-") === 0) return "elite";
   if (lic.indexOf("PRO-") === 0) return "pro";
+  if (lic.indexOf("BASIC-") === 0) return "basic";
+
   return "basic";
 }
 
 function defaultTtlForPlan(plan) {
   if (plan === "free") return 15 * 60;
-  if (plan === "pro") return 118 * 60 * 60;
-  return 32 * 60;
+  if (plan === "basic") return 6 * 60 * 60;
+  if (plan === "pro") return 30 * 24 * 60 * 60;
+  if (plan === "elite") return 90 * 24 * 60 * 60;
+  if (plan === "express") return 5444 * 60 * 60;
+  if (plan === "black_express") return 12000 * 60 * 60;
+  return 6 * 60 * 60;
 }
 
 function defaultLimitForPlan(plan) {
   if (plan === "free") return 1;
-  if (plan === "pro") return 4;
-  return 2;
+  if (plan === "basic") return 3;
+  if (plan === "pro") return 6;
+  if (plan === "elite") return 10;
+  if (plan === "express") return 725;
+  if (plan === "black_express") return 1500;
+  return 3;
 }
 
 function defaultMaxDevicesForPlan(plan) {
   if (plan === "free") return 1;
+  if (plan === "basic") return 2;
+  if (plan === "pro") return 4;
+  if (plan === "elite") return 6;
+  if (plan === "express") return 2;
+  if (plan === "black_express") return 12;
   return 2;
 }
 
@@ -129,7 +148,7 @@ async function resolveLicense(redis, lic) {
     }
   } catch {}
 
-  if (lic.indexOf("FREE-") === 0) {
+  if (String(lic).toUpperCase().indexOf("FREE-") === 0) {
     let raw;
     try {
       raw = await redis.get(freeKeyRedisKey(lic));
@@ -188,7 +207,7 @@ async function resolveLicense(redis, lic) {
     return { ok: false, error: "invalid_key" };
   }
 
-  const plan = lic.indexOf("PRO-") === 0 ? "pro" : "basic";
+  const plan = inferPlan(lic);
   const ttlSeconds = defaultTtlForPlan(plan);
 
   return {
