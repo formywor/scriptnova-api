@@ -130,14 +130,6 @@ function globalKey(name) {
   return "sn:global:" + String(name);
 }
 
-function auditListKey() {
-  return "sn:admin:audit";
-}
-
-function alertsListKey() {
-  return "sn:admin:alerts";
-}
-
 function metricsKey(day) {
   return "sn:metrics:" + String(day);
 }
@@ -155,28 +147,6 @@ async function metricIncr(redis, field, by) {
     const key = metricsKey(todayKeyDate());
     await redis.hincrby(key, field, by || 1);
     await redis.expire(key, 60 * 60 * 24 * 10);
-  } catch {}
-}
-
-async function pushAudit(redis, entry) {
-  try {
-    await redis.lpush(auditListKey(), JSON.stringify({
-      id: crypto.randomBytes(10).toString("hex"),
-      ts: Math.floor(Date.now() / 1000),
-      ...entry
-    }));
-    await redis.ltrim(auditListKey(), 0, 799);
-  } catch {}
-}
-
-async function pushAlert(redis, entry) {
-  try {
-    await redis.lpush(alertsListKey(), JSON.stringify({
-      id: crypto.randomBytes(10).toString("hex"),
-      ts: Math.floor(Date.now() / 1000),
-      ...entry
-    }));
-    await redis.ltrim(alertsListKey(), 0, 299);
   } catch {}
 }
 
@@ -365,12 +335,6 @@ module.exports = async function handler(req, res) {
   const banned = await redis.get(bannedHwidKey(tokenHw));
   if (banned) {
     await metricIncr(redis, "launchFailures", 1);
-    await pushAlert(redis, {
-      type: "banned_device_try",
-      hwidHash: tokenHw,
-      license: lic,
-      level: "high"
-    });
     return res.status(403).json({
       ok: false,
       error: "hwid_banned",
@@ -529,22 +493,6 @@ module.exports = async function handler(req, res) {
 
   const flags = getFlagsForPlan(plan);
   const bundleExp = now + 20;
-
-  await pushAudit(redis, {
-    type: "launch",
-    actor: "system",
-    role: "system",
-    action: "launch_bundle_issued",
-    target: lic + ":" + sid,
-    success: true,
-    details: {
-      license: lic,
-      sessionId: sid,
-      clientId,
-      plan,
-      startUrl
-    }
-  });
 
   return res.status(200).json({
     ok: true,

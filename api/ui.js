@@ -78,10 +78,6 @@ function globalKey(name) {
   return "sn:global:" + String(name);
 }
 
-function auditListKey() {
-  return "sn:admin:audit";
-}
-
 function metricsKey(day) {
   return "sn:metrics:" + String(day);
 }
@@ -115,17 +111,6 @@ async function metricIncr(redis, field, by) {
     const key = metricsKey(todayKeyDate());
     await redis.hincrby(key, field, by || 1);
     await redis.expire(key, 60 * 60 * 24 * 10);
-  } catch {}
-}
-
-async function pushAudit(redis, entry) {
-  try {
-    await redis.lpush(auditListKey(), JSON.stringify({
-      id: crypto.randomBytes(10).toString("hex"),
-      ts: Math.floor(Date.now() / 1000),
-      ...entry
-    }));
-    await redis.ltrim(auditListKey(), 0, 799);
   } catch {}
 }
 
@@ -507,21 +492,6 @@ module.exports = async function handler(req, res) {
   );
 
   await metricIncr(redis, "uiChallenges", 1);
-
-  await pushAudit(redis, {
-    type: "launch",
-    actor: "system",
-    role: "system",
-    action: "ui_challenge_issued",
-    target: lic + ":" + sid,
-    success: true,
-    details: {
-      license: lic,
-      sessionId: sid,
-      clientId: cid,
-      profileId: launchProfileId
-    }
-  });
 
   return res.status(200).json({
     ok: true,

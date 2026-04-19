@@ -176,14 +176,6 @@ function bannedHwidKey(hwHash) {
   return "sn:banned:hwid:" + String(hwHash);
 }
 
-function alertsListKey() {
-  return "sn:admin:alerts";
-}
-
-function auditListKey() {
-  return "sn:admin:audit";
-}
-
 function globalKey(name) {
   return "sn:global:" + String(name);
 }
@@ -205,28 +197,6 @@ async function metricIncr(redis, field, by) {
     const key = metricsKey(todayKeyDate());
     await redis.hincrby(key, field, by || 1);
     await redis.expire(key, 60 * 60 * 24 * 10);
-  } catch {}
-}
-
-async function pushAudit(redis, entry) {
-  try {
-    await redis.lpush(auditListKey(), JSON.stringify({
-      id: crypto.randomBytes(10).toString("hex"),
-      ts: Math.floor(Date.now() / 1000),
-      ...entry
-    }));
-    await redis.ltrim(auditListKey(), 0, 799);
-  } catch {}
-}
-
-async function pushAlert(redis, entry) {
-  try {
-    await redis.lpush(alertsListKey(), JSON.stringify({
-      id: crypto.randomBytes(10).toString("hex"),
-      ts: Math.floor(Date.now() / 1000),
-      ...entry
-    }));
-    await redis.ltrim(alertsListKey(), 0, 299);
   } catch {}
 }
 
@@ -483,15 +453,6 @@ module.exports = async function handler(req, res) {
 
   const licenseInfo = await resolveLicense(redis, lic);
   if (!licenseInfo.ok) {
-    if (licenseInfo.error === "invalid_key") {
-      await pushAlert(redis, {
-        type: "failed_key_attempt",
-        license: lic,
-        clientId,
-        level: "warning"
-      });
-    }
-
     return res.status(licenseInfo.error === "invalid_key" ? 200 : 403).json({
       ok: false,
       plan: "none",
@@ -510,13 +471,6 @@ module.exports = async function handler(req, res) {
 
   const banned = await redis.get(bannedHwidKey(hw));
   if (banned) {
-    await pushAlert(redis, {
-      type: "banned_device_try",
-      hwidHash: hw,
-      license: lic,
-      level: "high"
-    });
-
     return res.status(403).json({
       ok: false,
       error: "hwid_banned",
@@ -538,14 +492,6 @@ module.exports = async function handler(req, res) {
   const activeCount = await redis.scard(setKey);
 
   if ((activeCount || 0) >= limit) {
-    await pushAlert(redis, {
-      type: "too_many_sessions",
-      license: lic,
-      active: activeCount || 0,
-      limit,
-      level: "warning"
-    });
-
     return res.status(429).json({
       ok: false,
       plan,
@@ -582,23 +528,6 @@ module.exports = async function handler(req, res) {
     { lic, plan, tier, exp, sid, cid: clientId, hw },
     secret
   );
-
-  await pushAudit(redis, {
-    type: "session",
-    actor: "system",
-    role: "system",
-    action: "session_verify_create",
-    target: lic + ":" + sid,
-    success: true,
-    details: {
-      license: lic,
-      sessionId: sid,
-      plan,
-      tier,
-      clientId,
-      hwidHash: hw
-    }
-  });
 
   return res.status(200).json({
     ok: true,
