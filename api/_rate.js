@@ -32,14 +32,52 @@ async function rateLimit(req, bucket, limit, windowSec) {
   if (!Number.isFinite(limit) || limit <= 0) limit = 60;
   if (!Number.isFinite(windowSec) || windowSec <= 0) windowSec = 60;
 
-  // Always allow requests - rate limiting disabled
-  return {
-    ok: true,
-    remaining: limit - 1,
-    retryAfter: 0,
-    resetAt: nowSec() + windowSec,
-    degraded: true
-  };
+  let redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return {
+      ok: true,
+      remaining: limit - 1,
+      retryAfter: 0,
+      resetAt: nowSec() + windowSec,
+      degraded: true
+    };
+  }
+
+  const key = keyFor(bucket, req);
+
+  try {
+    const current = await redis.incr(key);
+
+    if (current === 1) {
+      await redis.expire(key, windowSec);
+    }
+
+    let ttl = 0;
+    try {
+      ttl = await redis.ttl(key);
+      ttl = parseInt(ttl, 10);
+      if (!Number.isFinite(ttl) || ttl < 0) ttl = windowSec;
+    } catch {
+      ttl = windowSec;
+    }
+
+    return {
+      ok: current <= limit,
+      remaining: Math.max(0, limit - current),
+      retryAfter: current > limit ? ttl : 0,
+      resetAt: nowSec() + ttl
+    };
+  } catch {
+    return {
+      ok: true,
+      remaining: limit - 1,
+      retryAfter: 0,
+      resetAt: nowSec() + windowSec,
+      degraded: true
+    };
+  }
 }
 
 module.exports = { rateLimit };
