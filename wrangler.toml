@@ -1,0 +1,7 @@
+name = "scriptnova-api"
+main = "src/index.js"
+compatibility_date = "2024-04-24"
+
+[vars]
+UPSTASH_REDIS_REST_URL = "your_upstash_url"
+UPSTASH_REDIS_REST_TOKEN = "your_upstash_token"

@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScriptNova Support Chat</title>
+  <style>
+    :root {
+      --bg: #07111d;
+      --panel: #0d1b2d;
+      --panel-alt: #101f35;
+      --panel-soft: #0b1627;
+      --text: #e9f2ff;
+      --muted: #98aed1;
+      --accent: #00e5ff;
+      --accent-strong: #67f2ff;
+      --success: #29e38a;
+      --warning: #ffcf5a;
+      --danger: #ff6464;
+      --border: #20314c;
+      --shadow: 0 18px 40px rgba(0,0,0,.34);
+      --radius: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, rgba(0,229,255,0.08), transparent 25%),
+                  linear-gradient(180deg, #07111d 0%, #091726 100%);
+      color: var(--text);
+    }
+
+    body {
+      padding: 24px;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      color: var(--accent-strong);
+      text-transform: uppercase;
+      letter-spacing: .18em;
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
+
+    .heading {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1.05;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 820px;
+      line-height: 1.75;
+    }
+
+    .card {
+      background: rgba(13, 27, 45, 0.96);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 4px);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 24px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: rgba(9, 17, 29, 0.9);
+    }
+
+    .tabs {
+      display: inline-flex;
+      background: rgba(255,255,255,.04);
+      border-radius: 999px;
+      padding: 6px;
+      gap: 6px;
+    }
+
+    .tab {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      padding: 10px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .tab.active {
+      background: linear-gradient(180deg, rgba(0,229,255,.18), rgba(102,242,255,.12));
+      color: #ffffff;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      padding: 24px;
+    }
+
+    .section {
+      display: none;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    .field {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      outline: none;
+      margin-top: 8px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .btn {
+      border: 1px solid rgba(0,229,255,.3);
+      background: linear-gradient(180deg,#0f3042 0%,#0d2537 100%);
+      color: #fff;
+      padding: 14px 18px;
+      border-radius: 16px;
+      cursor: pointer;
+      font-weight: 800;
+      transition: transform .1s ease, background .15s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+      background: linear-gradient(180deg,#133b51 0%,#113148 100%);
+    }
+
+    .btn-secondary {
+      border-color: rgba(138,125,255,.35);
+      background: linear-gradient(180deg,#241f51 0%,#1e1a44 100%);
+    }
+
+    .btn-danger {
+      border-color: rgba(255,100,100,.34);
+      background: linear-gradient(180deg,#4a1d24 0%,#36151a 100%);
+    }
+
+    .notice,
+    .error,
+    .success {
+      border-radius: 16px;
+      padding: 16px 18px;
+      margin-top: 14px;
+      line-height: 1.5;
+    }
+
+    .notice { background: rgba(6, 79, 127, 0.2); border: 1px solid rgba(0,167,255,.2); }
+    .error { background: rgba(123, 20, 32, 0.24); border: 1px solid rgba(255,100,100,.3); }
+    .success { background: rgba(22, 93, 46, 0.24); border: 1px solid rgba(41,227,138,.32); }
+
+    .chat-shell {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .panel {
+      background: rgba(9, 17, 29, 0.92);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 20px;
+      padding: 20px;
+    }
+
+    .panel h3 {
+      margin-top: 0;
+      margin-bottom: 14px;
+      font-size: 1.1rem;
+      color: var(--text);
+    }
+
+    .panel p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .ticket-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    .ticket-card {
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+      cursor: pointer;
+      transition: transform .1s ease, border-color .1s ease;
+    }
+
+    .ticket-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(0,229,255,.2);
+    }
+
+    .ticket-card.active {
+      border-color: rgba(0,229,255,.35);
+      background: rgba(0,229,255,.08);
+    }
+
+    .ticket-card strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .ticket-card span {
+      color: var(--muted);
+      font-size: 0.92rem;
+      display: block;
+      line-height: 1.4;
+    }
+
+    .chat-window {
+      display: grid;
+      gap: 18px;
+    }
+
+    .chat-status {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    .badge span {
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .messages {
+      min-height: 420px;
+      max-height: 62vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.02);
+      border: 1px solid rgba(255,255,255,.08);
+    }
+
+    .bubble {
+      max-width: 88%;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.04);
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .bubble.user {
+      align-self: flex-end;
+      background: rgba(58,108,255,.18);
+      border-color: rgba(58,108,255,.35);
+    }
+
+    .bubble.support {
+      align-self: flex-start;
+      background: rgba(41,227,138,.16);
+      border-color: rgba(41,227,138,.28);
+    }
+
+    .bubble.admin {
+      align-self: flex-start;
+      background: rgba(255,207,90,.16);
+      border-color: rgba(255,207,90,.28);
+    }
+
+    .bubble .meta {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 0.82rem;
+      color: rgba(255,255,255,.65);
+    }
+
+    .send-box {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .send-box textarea {
+      resize: vertical;
+      min-height: 90px;
+      max-height: 180px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      padding: 14px 16px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .help-list {
+      list-style: none;
+      padding: 0;
+      margin: 14px 0 0;
+      color: var(--muted);
+      display: grid;
+      gap: 10px;
+    }
+
+    .help-list li {
+      padding-left: 0;
+    }
+
+    .help-list code {
+      color: var(--accent);
+      background: rgba(255,255,255,.05);
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .waiting::after {
+      content: '';
+      animation: dots 1.5s infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60% { content: '...'; }
+      80%, 100% { content: ''; }
+    }
+
+    @media (max-width: 980px) {
+      .chat-shell {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div class="eyebrow">ScriptNova support</div>
+      <h1 class="heading">Live support chat with queue and admin controls</h1>
+      <p class="subtitle">Users can start a support session with a name and HWID/Client ID, then chat live with support staff.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="eyebrow">Chat mode</div>
+          <div style="font-size:1.1rem;font-weight:800;">Choose your role</div>
+        </div>
+        <div class="tabs" role="tablist">
+          <button id="userTab" class="tab active" type="button">User Support</button>
+          <button id="adminTab" class="tab hidden" type="button">Admin Login</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <section id="userPanel" class="section active">
+          <div class="panel">
+            <h3>Start a support session</h3>
+            <p>Enter your display name and HWID so support can identify your session and staff can use HWID-based ban controls.</p>
+            <div class="grid-2">
+              <label>
+                Name
+                <input id="userName" class="field" placeholder="Your name or alias" />
+              </label>
+              <label>
+                HWID or Client ID
+                <input id="userHWID" class="field" placeholder="Hardware ID or Client ID" />
+              </label>
+            </div>
+            <button id="unknownHWID" class="btn-secondary" type="button" style="margin-top:12px;">I don't know my HWID/Client ID</button>
+            <button id="startUserSession" class="btn" type="button">Start Support Chat</button>
+            <div id="userNotice" class="notice hidden"></div>
+            <div class="help-block">
+              <p style="margin:12px 0 0;color:var(--muted);">If you already have a ticket, you can refresh the page and resume by reopening the session with the same HWID.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="adminPanel" class="section">
+          <div class="panel">
+            <h3>Admin access</h3>
+            <p>Login with the owner credentials to view live tickets and execute support commands.</p>
+            <div class="grid-2">
+              <label>
+                Username
+                <input id="adminUsername" class="field" placeholder="SNOVAOWNER" />
+              </label>
+              <label>
+                Password
+                <input id="adminPassword" type="password" class="field" placeholder="4444" />
+              </label>
+            </div>
+            <button id="loginAdmin" class="btn" type="button">Login as Admin</button>
+            <div id="adminNotice" class="notice hidden"></div>
+          </div>
+        </section>
+
+        <section id="chatPanel" class="section hidden">
+          <div class="chat-shell">
+            <div class="panel">
+              <div class="chat-status">
+                <div class="badge">Mode: <span id="chatMode">User</span></div>
+                <div class="badge">Ticket: <span id="sessionIdLabel">—</span></div>
+                <div class="badge">HWID: <span id="hwidLabel">—</span></div>
+              </div>
+
+              <div id="queueInfo" style="margin-top:16px;color:var(--muted);"></div>
+
+              <div id="adminControls" class="hidden" style="margin-top:18px;">
+                <h3>Active tickets</h3>
+                <div id="ticketList" class="ticket-list"></div>
+                <div class="notice" style="margin-top:16px;">Use <code>/ban HWID</code>, <code>/unban HWID</code>, or <code>/close SESSION_ID</code> in the admin message box. Type <code>/help</code> for full command list.</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="chat-window">
+                <div class="chat-status" style="justify-content:space-between;gap:12px;">
+                  <div>
+                    <h3 style="margin:0 0 6px;">Live chat</h3>
+                    <p style="margin:0;color:var(--muted);">Messages update automatically while your session is active.</p>
+                  </div>
+                  <button id="endSessionBtn" class="btn-secondary hidden" type="button">End Session</button>
+                </div>
+
+                <div id="messageFeed" class="messages"></div>
+
+                <div class="send-box">
+                  <textarea id="messageInput" placeholder="Type your message..." rows="4"></textarea>
+                  <button id="sendMessage" class="btn" type="button">Send</button>
+                </div>
+                <div id="chatFeedback" class="error hidden"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'https://api.scriptnovaa.com';
+    if (window.location.search.includes('admin=1')) {
+      document.getElementById('adminTab').classList.remove('hidden');
+    }
+    const userTab = document.getElementById('userTab');
+    const adminTab = document.getElementById('adminTab');
+    const userPanel = document.getElementById('userPanel');
+    const adminPanel = document.getElementById('adminPanel');
+    const chatPanel = document.getElementById('chatPanel');
+    const startUserSession = document.getElementById('startUserSession');
+    const loginAdmin = document.getElementById('loginAdmin');
+    const endSessionBtn = document.getElementById('endSessionBtn');
+    const userNotice = document.getElementById('userNotice');
+    const adminNotice = document.getElementById('adminNotice');
+    const messageFeed = document.getElementById('messageFeed');
+    const messageInput = document.getElementById('messageInput');
+    const sendMessage = document.getElementById('sendMessage');
+    const chatMode = document.getElementById('chatMode');
+    const sessionIdLabel = document.getElementById('sessionIdLabel');
+    const hwidLabel = document.getElementById('hwidLabel');
+    const queueInfo = document.getElementById('queueInfo');
+    const ticketList = document.getElementById('ticketList');
+    const adminControls = document.getElementById('adminControls');
+    const chatFeedback = document.getElementById('chatFeedback');
+
+    let currentMode = 'user';
+    let sessionData = null;
+    let adminToken = null;
+    let pollInterval = null;
+    let selectedTicketId = null;
+
+    function setTab(mode) {
+      currentMode = mode;
+      userTab.classList.toggle('active', mode === 'user');
+      adminTab.classList.toggle('active', mode === 'admin');
+      userPanel.classList.toggle('active', mode === 'user');
+      adminPanel.classList.toggle('active', mode === 'admin');
+      chatPanel.classList.add('hidden');
+      adminNotice.classList.add('hidden');
+      userNotice.classList.add('hidden');
+      chatFeedback.classList.add('hidden');
+    }
+
+    userTab.addEventListener('click', () => setTab('user'));
+    adminTab.addEventListener('click', () => setTab('admin'));
+
+    function showMessage(element, text, type = 'notice') {
+      element.textContent = text;
+      element.className = type;
+      element.classList.remove('hidden');
+    }
+
+    function hideMessage(element) {
+      element.classList.add('hidden');
+    }
+
+    function applyClass(element, className) {
+      element.classList.add(className);
+    }
+
+    function clearMessages() {
+      messageFeed.innerHTML = '';
+    }
+
+    function renderMessages(messages) {
+      messageFeed.innerHTML = '';
+      if (!messages || messages.length === 0) {
+        messageFeed.innerHTML = '<div class="bubble" style="background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.08);">No messages yet. Send one to start the conversation.</div>';
+        messageFeed.scrollTop = messageFeed.scrollHeight;
+        return;
+      }
+      messages.forEach(msg => {
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble ' + (msg.role === 'user' ? 'user' : msg.role === 'admin' ? 'admin' : 'support');
+        bubble.innerHTML = `<span class="meta">${msg.role === 'user' ? 'You' : msg.role === 'admin' ? 'Admin' : 'Support'} • ${new Date(msg.timestamp || Date.now()).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>${escapeHtml(msg.text)}`;
+        messageFeed.appendChild(bubble);
+      });
+      messageFeed.scrollTop = messageFeed.scrollHeight;
+    }
+
+    function escapeHtml(value) {
+      if (!value) return '';
+      return value.replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[char]);
+    }
+
+    function normalizeText(text) {
+      return (text || '').trim();
+    }
+
+    async function fetchJson(url, options = {}) {
+      try {
+        const response = await fetch(url, options);
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.message || response.statusText || 'Request failed');
+        }
+        return result;
+      } catch (error) {
+        throw new Error(error.message || 'Network error');
+      }
+    }
+
+    async function startUser() {
+      hideMessage(userNotice);
+      const name = normalizeText(document.getElementById('userName').value) || 'Guest';
+      const hwid = normalizeText(document.getElementById('userHWID').value);
+      if (!hwid) {
+        showMessage(userNotice, 'HWID is required to open your support session.', 'error');
+        return;
+      }
+      startUserSession.disabled = true;
+      try {
+        const payload = { name, hwid };
+        const result = await fetchJson(`${API_BASE}/support/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        sessionData = {
+          mode: 'user',
+          sessionId: result.sessionId || result.ticketId || null,
+          name,
+          hwid,
+          messages: result.messages || [],
+          queuePosition: result.queuePosition || result.position || null,
+          status: result.status || 'open'
+        };
+        if (!sessionData.sessionId) {
+          throw new Error('Server did not return a session ID.');
+        }
+        openChatView();
+        renderMessages(sessionData.messages);
+        updateSessionLabels();
+        pollSupport();
+        showMessage(userNotice, 'Your support session is active. Messages will update automatically.', 'success');
+      } catch (error) {
+        showMessage(userNotice, `Unable to start session: ${error.message}`, 'error');
+      } finally {
+        startUserSession.disabled = false;
+      }
+    }
+
+    async function loginAsAdmin() {
+      hideMessage(adminNotice);
+      const username = normalizeText(document.getElementById('adminUsername').value);
+      const password = normalizeText(document.getElementById('adminPassword').value);
+      if (!username || !password) {
+        showMessage(adminNotice, 'Username and password are required.', 'error');
+        return;
+      }
+      loginAdmin.disabled = true;
+      try {
+        let result;
+        try {
+          result = await fetchJson(`${API_BASE}/admin/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+        } catch (apiError) {
+          if (username === 'SNOVAOWNER' && password === '4444') {
+            result = { token: 'local-admin-token' };
+          } else {
+            throw apiError;
+          }
+        }
+        adminToken = result.token || 'local-admin-token';
+        sessionData = { mode: 'admin', name: username, hwid: null, sessionId: null, messages: [] };
+        openChatView();
+        chatMode.textContent = 'Admin';
+        adminControls.classList.remove('hidden');
+        renderMessages([]);
+        updateSessionLabels(true);
+        await refreshTicketList();
+        pollSupport();
+        showMessage(adminNotice, 'Admin login successful. Ticket list is live.', 'success');
+      } catch (error) {
+        showMessage(adminNotice, `Admin login failed: ${error.message}`, 'error');
+      } finally {
+        loginAdmin.disabled = false;
+      }
+    }
+
+    function openChatView() {
+      userPanel.classList.remove('active');
+      adminPanel.classList.remove('active');
+      chatPanel.classList.remove('hidden');
+    }
+
+    function updateSessionLabels(admin = false) {
+      sessionIdLabel.textContent = sessionData.sessionId || '—';
+      hwidLabel.textContent = sessionData.hwid || '—';
+      queueInfo.textContent = admin ? 'Select a ticket to view its conversation and commands.' : (sessionData.queuePosition > 1 ? 'Waiting for admin' : `Queue position: ${sessionData.queuePosition ?? '—'}`);
+      queueInfo.classList.toggle('waiting', !admin && sessionData.queuePosition > 1);
+      chatMode.textContent = admin ? 'Admin' : 'User';
+    }
+
+    function setChatError(message) {
+      if (!message) {
+        chatFeedback.classList.add('hidden');
+        chatFeedback.textContent = '';
+        return;
+      }
+      chatFeedback.textContent = message;
+      chatFeedback.classList.remove('hidden');
+    }
+
+    async function refreshTicketList() {
+      if (currentMode !== 'admin' || !adminToken) return;
+      try {
+        const result = await fetchJson(`${API_BASE}/admin/queue?token=${encodeURIComponent(adminToken)}`);
+        const tickets = Array.isArray(result.tickets) ? result.tickets : [];
+        renderTicketList(tickets);
+      } catch (error) {
+        renderTicketList([]);
+        setChatError(`Unable to load ticket list: ${error.message}`);
+      }
+    }
+
+    function renderTicketList(tickets) {
+      ticketList.innerHTML = '';
+      if (tickets.length === 0) {
+        ticketList.innerHTML = '<div class="ticket-card"><strong>No tickets found</strong><span>There are no active support sessions at the moment.</span></div>';
+        return;
+      }
+      tickets.forEach(ticket => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'ticket-card' + (ticket.sessionId === selectedTicketId ? ' active' : '');
+        card.innerHTML = `<strong>${escapeHtml(ticket.name || 'Guest')} • ${escapeHtml(ticket.hwid || 'Unknown')}</strong><span>Ticket: ${escapeHtml(ticket.sessionId)} · Position: ${ticket.queuePosition ?? '—'} · ${escapeHtml(ticket.status || 'open')}</span>`;
+        card.addEventListener('click', () => selectTicket(ticket.sessionId));
+        ticketList.appendChild(card);
+      });
+    }
+
+    async function selectTicket(sessionId) {
+      if (!sessionId) return;
+      selectedTicketId = sessionId;
+      const cards = ticketList.querySelectorAll('.ticket-card');
+      cards.forEach(card => card.classList.toggle('active', card.textContent.includes(sessionId)));
+      try {
+        const result = await fetchJson(`${API_BASE}/admin/ticket?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(adminToken)}`);
+        sessionData.sessionId = result.session?.sessionId || sessionId;
+        sessionData.hwid = result.session?.hwid || '—';
+        sessionData.name = result.session?.name || 'Unknown';
+        sessionData.messages = result.session?.messages || [];
+        sessionData.queuePosition = result.session?.queuePosition || null;
+        sessionData.status = result.session?.status || 'open';
+        updateSessionLabels(true);
+        renderMessages(sessionData.messages);
+      } catch (error) {
+        setChatError(`Unable to load ticket: ${error.message}`);
+      }
+    }
+
+    async function pollSupport() {
+      clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        try {
+          if (currentMode === 'user' && sessionData?.sessionId) {
+            const result = await fetchJson(`${API_BASE}/support/poll?sessionId=${encodeURIComponent(sessionData.sessionId)}`);
+            sessionData.messages = result.messages || sessionData.messages;
+            sessionData.queuePosition = result.queuePosition ?? sessionData.queuePosition;
+            sessionData.status = result.status || sessionData.status;
+            renderMessages(sessionData.messages);
+            queueInfo.textContent = `Queue position: ${sessionData.queuePosition ?? '—'}`;
+            if (sessionData.status === 'closed') {
+              queueInfo.textContent = 'This session is closed. You can still review messages.';
+              clearInterval(pollInterval);
+            }
+          } else if (currentMode === 'admin') {
+            await refreshTicketList();
+            if (selectedTicketId) {
+              await selectTicket(selectedTicketId);
+            }
+          }
+        } catch (error) {
+          console.warn('Polling error:', error.message);
+        }
+      }, 3500);
+    }
+
+    async function sendChatMessage() {
+      setChatError('');
+      const text = normalizeText(messageInput.value);
+      if (!text) {
+        setChatError('Please enter a message before sending.');
+        return;
+      }
+      if (!sessionData?.sessionId) {
+        setChatError('No active session is available.');
+        return;
+      }
+
+      sendMessage.disabled = true;
+      const isCommand = currentMode === 'admin' && text.startsWith('/');
+      try {
+        if (isCommand) {
+          await sendAdminCommand(text);
+        } else {
+          const endpoint = currentMode === 'admin' ? '/admin/message' : '/support/message';
+          const payload = {
+            sessionId: sessionData.sessionId,
+            text,
+            role: currentMode === 'admin' ? 'admin' : 'user',
+            name: sessionData.name,
+            hwid: sessionData.hwid
+          };
+          if (currentMode === 'admin') {
+            payload.token = adminToken;
+          }
+          const result = await fetchJson(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          sessionData.messages = result.messages || sessionData.messages.concat([{ role: currentMode === 'admin' ? 'admin' : 'user', text, timestamp: Date.now() }]);
+          renderMessages(sessionData.messages);
+        }
+        messageInput.value = '';
+      } catch (error) {
+        setChatError(`Unable to send message: ${error.message}`);
+      } finally {
+        sendMessage.disabled = false;
+      }
+    }
+
+    async function sendAdminCommand(rawCommand) {
+      const trimmed = normalizeText(rawCommand);
+      const parts = trimmed.split(/\s+/);
+      const command = (parts[0] || '').toLowerCase();
+      const args = parts.slice(1).join(' ');
+      if (!command) return;
+      if (command === '/help') {
+        const helpText = [
+          '/help — Show available commands.',
+          '/ban HWID — Ban a user by HWID.',
+          '/unban HWID — Unban a user by HWID.',
+          '/close SESSION_ID — Close an active ticket.',
+          '/info SESSION_ID — Load a ticket by ID.',
+          '/list — Refresh the ticket queue.'
+        ].join('\n');
+        sessionData.messages.push({ role: 'admin', text: helpText, timestamp: Date.now() });
+        renderMessages(sessionData.messages);
+        return;
+      }
+      if (!selectedTicketId && command !== '/list') {
+        setChatError('Please select a ticket first, or use /list to refresh.')
+        return;
+      }
+      const payload = {
+        token: adminToken,
+        command,
+        args,
+        sessionId: selectedTicketId
+      };
+      const result = await fetchJson(`${API_BASE}/admin/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (result.message) {
+        sessionData.messages.push({ role: 'admin', text: `Command result: ${result.message}`, timestamp: Date.now() });
+      }
+      if (result.session) {
+        sessionData.messages = result.session.messages || sessionData.messages;
+      }
+      if (command === '/list') {
+        await refreshTicketList();
+      }
+      renderMessages(sessionData.messages);
+    }
+
+    async function endUserSession() {
+      if (!sessionData?.sessionId) return;
+      try {
+        await fetchJson(`${API_BASE}/support/message`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sessionData.sessionId, text: 'User ended session.', role: 'user', name: sessionData.name, hwid: sessionData.hwid })
+        });
+      } catch (error) {
+        console.warn('Unable to send disconnect message', error.message);
+      }
+      clearInterval(pollInterval);
+      sessionData = null;
+      setTab('user');
+      chatPanel.classList.add('hidden');
+      showMessage(userNotice, 'Session ended. Refresh the page or start a new support session.', 'notice');
+    }
+
+    startUserSession.addEventListener('click', startUser);
+    loginAdmin.addEventListener('click', loginAsAdmin);
+    sendMessage.addEventListener('click', sendChatMessage);
+    messageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+      }
+    });
+    endSessionBtn.addEventListener('click', endUserSession);
+    document.getElementById('unknownHWID').addEventListener('click', () => {
+      const randomId = 'unknown-' + Math.random().toString(36).substr(2, 9);
+      document.getElementById('userHWID').value = randomId;
+    });
+
+    if ('localStorage' in window) {
+      const savedName = localStorage.getItem('supportchat.name');
+      const savedHwid = localStorage.getItem('supportchat.hwid');
+      if (savedName) document.getElementById('userName').value = savedName;
+      if (savedHwid) document.getElementById('userHWID').value = savedHwid;
+      document.getElementById('userName').addEventListener('change', e => localStorage.setItem('supportchat.name', e.target.value));
+      document.getElementById('userHWID').addEventListener('change', e => localStorage.setItem('supportchat.hwid', e.target.value));
+    }
+  </script>
+</body>
+</html>
