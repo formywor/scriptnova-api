@@ -537,6 +537,9 @@
     let adminToken = null;
     let pollInterval = null;
     let selectedTicketId = null;
+    let localFallback = false;
+    const LOCAL_STORAGE_SESSION = 'supportchat.localSession';
+    const LOCAL_STORAGE_ADMIN = 'supportchat.localAdmin';
 
     function setTab(mode) {
       currentMode = mode;
@@ -605,13 +608,123 @@
     async function fetchJson(url, options = {}) {
       try {
         const response = await fetch(url, options);
-        const result = await response.json();
+        const text = await response.text();
+        const contentType = response.headers.get('content-type') || '';
+
         if (!response.ok) {
-          throw new Error(result.message || response.statusText || 'Request failed');
+          if (contentType.includes('application/json')) {
+            const result = JSON.parse(text);
+            throw new Error(result.message || result.error || response.statusText || 'Request failed');
+          }
+          throw new Error(`Remote API error: ${text.slice(0, 200)}`);
         }
-        return result;
+
+        if (!contentType.includes('application/json')) {
+          throw new Error(`Invalid JSON response: ${text.slice(0, 200)}`);
+        }
+
+        return JSON.parse(text);
       } catch (error) {
         throw new Error(error.message || 'Network error');
+      }
+    }
+
+    function saveLocalSession() {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(LOCAL_STORAGE_SESSION, JSON.stringify(sessionData));
+    }
+
+    function loadLocalSession() {
+      if (typeof localStorage === 'undefined') return null;
+      const raw = localStorage.getItem(LOCAL_STORAGE_SESSION);
+      return raw ? JSON.parse(raw) : null;
+    }
+
+    function startLocalSession(name, hwid) {
+      localFallback = true;
+      sessionData = {
+        mode: 'user',
+        sessionId: `local-${Date.now()}`,
+        name,
+        hwid,
+        messages: [],
+        queuePosition: 1,
+        status: 'active'
+      };
+      saveLocalSession();
+      openChatView();
+      updateSessionLabels();
+      renderMessages(sessionData.messages);
+      pollSupport();
+      showMessage(userNotice, 'Remote API unreachable. Running local browser-only chat.', 'success');
+    }
+
+    function loginLocalAdmin() {
+      localFallback = true;
+      adminToken = 'local-admin-token';
+      sessionData = { mode: 'admin', name: 'SNOVAOWNER', hwid: null, sessionId: null, messages: [] };
+      openChatView();
+      chatMode.textContent = 'Admin';
+      adminControls.classList.remove('hidden');
+      renderMessages([]);
+      updateSessionLabels(true);
+      renderTicketList([]);
+      pollSupport();
+      showMessage(adminNotice, 'Remote API unreachable. Running local admin preview mode.', 'success');
+    }
+
+    function sendLocalMessage(text) {
+      if (!sessionData) return;
+      const role = currentMode === 'admin' ? 'admin' : 'user';
+      sessionData.messages.push({ role, text, timestamp: Date.now() });
+      saveLocalSession();
+      renderMessages(sessionData.messages);
+    }
+
+    async function sendChatMessage() {
+      setChatError('');
+      const text = normalizeText(messageInput.value);
+      if (!text) {
+        setChatError('Please enter a message before sending.');
+        return;
+      }
+      if (!sessionData?.sessionId) {
+        setChatError('No active session is available.');
+        return;
+      }
+
+      sendMessage.disabled = true;
+      const isCommand = currentMode === 'admin' && text.startsWith('/');
+      try {
+        if (isCommand) {
+          await sendAdminCommand(text);
+        } else if (localFallback) {
+          sendLocalMessage(text);
+        } else {
+          const endpoint = currentMode === 'admin' ? '/admin/message' : '/support/message';
+          const payload = {
+            sessionId: sessionData.sessionId,
+            message: text,
+            role: currentMode === 'admin' ? 'admin' : 'user',
+            name: sessionData.name,
+            hwid: sessionData.hwid
+          };
+          if (currentMode === 'admin') {
+            payload.token = adminToken;
+          }
+          const result = await fetchJson(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          sessionData.messages = result.messages || sessionData.messages.concat([{ role: currentMode === 'admin' ? 'admin' : 'user', text, timestamp: Date.now() }]);
+          renderMessages(sessionData.messages);
+        }
+        messageInput.value = '';
+      } catch (error) {
+        setChatError(`Unable to send message: ${error.message}`);
+      } finally {
+        sendMessage.disabled = false;
       }
     }
 
@@ -649,7 +762,11 @@
         pollSupport();
         showMessage(userNotice, 'Your support session is active. Messages will update automatically.', 'success');
       } catch (error) {
-        showMessage(userNotice, `Unable to start session: ${error.message}`, 'error');
+        if (!localFallback && /Remote API error|Invalid JSON response|Failed to fetch|Network error/.test(error.message)) {
+          startLocalSession(name, hwid);
+        } else {
+          showMessage(userNotice, `Unable to start session: ${error.message}`, 'error');
+        }
       } finally {
         startUserSession.disabled = false;
       }
@@ -675,6 +792,9 @@
         } catch (apiError) {
           if (username === 'SNOVAOWNER' && password === '4444') {
             result = { token: 'local-admin-token' };
+          } else if (/Remote API error|Invalid JSON response|Failed to fetch|Network error/.test(apiError.message)) {
+            loginLocalAdmin();
+            return;
           } else {
             throw apiError;
           }
@@ -773,17 +893,23 @@
       pollInterval = setInterval(async () => {
         try {
           if (currentMode === 'user' && sessionData?.sessionId) {
-            const result = await fetchJson(`${API_BASE}/support/poll?sessionId=${encodeURIComponent(sessionData.sessionId)}`);
-            sessionData.messages = result.messages || sessionData.messages;
-            sessionData.queuePosition = result.queuePosition ?? sessionData.queuePosition;
-            sessionData.status = result.status || sessionData.status;
-            renderMessages(sessionData.messages);
-            queueInfo.textContent = `Queue position: ${sessionData.queuePosition ?? '—'}`;
-            if (sessionData.status === 'closed') {
-              queueInfo.textContent = 'This session is closed. You can still review messages.';
-              clearInterval(pollInterval);
+            if (localFallback) {
+              renderMessages(sessionData.messages);
+              queueInfo.textContent = 'Local chat only';
+            } else {
+              const result = await fetchJson(`${API_BASE}/support/poll?sessionId=${encodeURIComponent(sessionData.sessionId)}`);
+              sessionData.messages = result.messages || sessionData.messages;
+              sessionData.queuePosition = result.queuePosition ?? sessionData.queuePosition;
+              sessionData.status = result.status || sessionData.status;
+              renderMessages(sessionData.messages);
+              queueInfo.textContent = `Queue position: ${sessionData.queuePosition ?? '—'}`;
+              if (sessionData.status === 'closed') {
+                queueInfo.textContent = 'This session is closed. You can still review messages.';
+                clearInterval(pollInterval);
+              }
             }
           } else if (currentMode === 'admin') {
+            if (localFallback) return;
             await refreshTicketList();
             if (selectedTicketId) {
               await selectTicket(selectedTicketId);
@@ -793,51 +919,6 @@
           console.warn('Polling error:', error.message);
         }
       }, 3500);
-    }
-
-    async function sendChatMessage() {
-      setChatError('');
-      const text = normalizeText(messageInput.value);
-      if (!text) {
-        setChatError('Please enter a message before sending.');
-        return;
-      }
-      if (!sessionData?.sessionId) {
-        setChatError('No active session is available.');
-        return;
-      }
-
-      sendMessage.disabled = true;
-      const isCommand = currentMode === 'admin' && text.startsWith('/');
-      try {
-        if (isCommand) {
-          await sendAdminCommand(text);
-        } else {
-          const endpoint = currentMode === 'admin' ? '/admin/message' : '/support/message';
-          const payload = {
-            sessionId: sessionData.sessionId,
-            text,
-            role: currentMode === 'admin' ? 'admin' : 'user',
-            name: sessionData.name,
-            hwid: sessionData.hwid
-          };
-          if (currentMode === 'admin') {
-            payload.token = adminToken;
-          }
-          const result = await fetchJson(`${API_BASE}${endpoint}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          sessionData.messages = result.messages || sessionData.messages.concat([{ role: currentMode === 'admin' ? 'admin' : 'user', text, timestamp: Date.now() }]);
-          renderMessages(sessionData.messages);
-        }
-        messageInput.value = '';
-      } catch (error) {
-        setChatError(`Unable to send message: ${error.message}`);
-      } finally {
-        sendMessage.disabled = false;
-      }
     }
 
     async function sendAdminCommand(rawCommand) {
