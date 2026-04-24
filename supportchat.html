@@ -794,7 +794,7 @@
         } catch (apiError) {
           if (username === 'SNOVAOWNER' && password === '4444') {
             result = { token: 'local-admin-token' };
-          } else if (/Remote API error|Invalid JSON response|Failed to fetch|Network error/.test(apiError.message)) {
+          } else if (/Remote API error|Invalid JSON response|Failed to fetch|Network error|NOT_FOUND|not_found/.test(apiError.message)) {
             loginLocalAdmin();
             return;
           } else {
@@ -850,8 +850,14 @@
         const tickets = Array.isArray(result.tickets) ? result.tickets : [];
         renderTicketList(tickets);
       } catch (error) {
-        renderTicketList([]);
-        setChatError(`Unable to load ticket list: ${error.message}`);
+        if (error.message.includes('NOT_FOUND') || error.message.includes('not_found') || error.message.includes('not found')) {
+          localFallback = true;
+          renderTicketList([]);
+          showMessage(adminNotice, 'Remote API does not support admin features. Running local admin preview mode.', 'success');
+        } else {
+          renderTicketList([]);
+          setChatError(`Unable to load ticket list: ${error.message}`);
+        }
       }
     }
 
@@ -887,7 +893,20 @@
         updateSessionLabels(true);
         renderMessages(sessionData.messages);
       } catch (error) {
-        setChatError(`Unable to load ticket: ${error.message}`);
+        if (error.message.includes('NOT_FOUND') || error.message.includes('not_found') || error.message.includes('not found')) {
+          localFallback = true;
+          sessionData.sessionId = sessionId;
+          sessionData.hwid = '—';
+          sessionData.name = 'Unknown';
+          sessionData.messages = [];
+          sessionData.queuePosition = null;
+          sessionData.status = 'open';
+          updateSessionLabels(true);
+          renderMessages([]);
+          showMessage(adminNotice, 'Remote API does not support ticket details. Running local preview.', 'success');
+        } else {
+          setChatError(`Unable to load ticket: ${error.message}`);
+        }
       }
     }
 
