@@ -416,7 +416,7 @@
         </div>
         <div class="tabs" role="tablist">
           <button id="userTab" class="tab active" type="button">User Support</button>
-          <button id="adminTab" class="tab hidden" type="button">Admin Login</button>
+          <button id="adminTab" class="tab" type="button">Admin Login</button>
         </div>
       </div>
 
@@ -508,9 +508,6 @@
 
   <script>
     const API_BASE = 'https://api.scriptnovaa.com';
-    if (window.location.search.includes('admin=1')) {
-      document.getElementById('adminTab').classList.remove('hidden');
-    }
     const userTab = document.getElementById('userTab');
     const adminTab = document.getElementById('adminTab');
     const userPanel = document.getElementById('userPanel');
@@ -548,6 +545,7 @@
       userPanel.classList.toggle('active', mode === 'user');
       adminPanel.classList.toggle('active', mode === 'admin');
       chatPanel.classList.add('hidden');
+      chatPanel.classList.remove('active');
       adminNotice.classList.add('hidden');
       userNotice.classList.add('hidden');
       chatFeedback.classList.add('hidden');
@@ -642,6 +640,7 @@
 
     function startLocalSession(name, hwid) {
       localFallback = true;
+      currentMode = 'user';
       sessionData = {
         mode: 'user',
         sessionId: `local-${Date.now()}`,
@@ -661,6 +660,7 @@
 
     function loginLocalAdmin() {
       localFallback = true;
+      currentMode = 'admin';
       adminToken = 'local-admin-token';
       sessionData = { mode: 'admin', name: 'SNOVAOWNER', hwid: null, sessionId: null, messages: [] };
       openChatView();
@@ -729,6 +729,7 @@
     }
 
     async function startUser() {
+      currentMode = 'user';
       hideMessage(userNotice);
       const name = normalizeText(document.getElementById('userName').value) || 'Guest';
       const hwid = normalizeText(document.getElementById('userHWID').value);
@@ -773,6 +774,7 @@
     }
 
     async function loginAsAdmin() {
+      currentMode = 'admin';
       hideMessage(adminNotice);
       const username = normalizeText(document.getElementById('adminUsername').value);
       const password = normalizeText(document.getElementById('adminPassword').value);
@@ -820,6 +822,7 @@
       userPanel.classList.remove('active');
       adminPanel.classList.remove('active');
       chatPanel.classList.remove('hidden');
+      chatPanel.classList.add('active');
     }
 
     function updateSessionLabels(admin = false) {
