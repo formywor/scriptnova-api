@@ -73,7 +73,7 @@ function defaultTtlForPlan(plan) {
 function defaultLimitForPlan(plan) {
   if (plan === "free") return 1;
   if (plan === "basic") return 3;
-  if (plan === "pro") return 6;
+  if (plan === "pro") return 10;
   if (plan === "elite") return 10;
   if (plan === "express") return 725;
   if (plan === "black_express") return 1500;
@@ -83,7 +83,7 @@ function defaultLimitForPlan(plan) {
 function defaultMaxDevicesForPlan(plan) {
   if (plan === "free") return 1;
   if (plan === "basic") return 2;
-  if (plan === "pro") return 4;
+  if (plan === "pro") return 10;
   if (plan === "elite") return 6;
   if (plan === "express") return 2;
   if (plan === "black_express") return 12;
@@ -149,61 +149,11 @@ async function resolveLicense(redis, lic) {
   } catch {}
 
   if (String(lic).toUpperCase().indexOf("FREE-") === 0) {
-    let raw;
-    try {
-      raw = await redis.get(freeKeyRedisKey(lic));
-    } catch {
-      raw = null;
-    }
-
-    if (!raw) {
-      return { ok: false, error: "invalid_key" };
-    }
-
-    const obj = safeJsonParse(raw, {});
-    const now = Math.floor(Date.now() / 1000);
-    const configuredTtl = Math.max(1, toInt(obj.ttlSeconds, defaultTtlForPlan("free")));
-    const maxSessions = Math.max(
-      1,
-      toInt(
-        obj.maxSessions,
-        toInt(obj.sessions, defaultLimitForPlan("free"))
-      )
-    );
-    const expFromObj = toInt(obj.exp, 0);
-
-    let ttlRemaining = configuredTtl;
-
-    try {
-      const redisTtl = toInt(await redis.ttl(freeKeyRedisKey(lic)), -1);
-      if (redisTtl > 0) {
-        ttlRemaining = redisTtl;
-      }
-    } catch {}
-
-    if (expFromObj > 0) {
-      ttlRemaining = Math.max(1, Math.min(ttlRemaining, expFromObj - now));
-      if (expFromObj <= now) {
-        return { ok: false, error: "key_expired" };
-      }
-    }
-
-    return {
-      ok: true,
-      source: "free",
-      kind: "free",
-      plan: "free",
-      tier: String(obj.tier || ""),
-      ttlSeconds: Math.max(1, ttlRemaining),
-      configuredTtlSeconds: configuredTtl,
-      limit: maxSessions,
-      maxDevices: 1,
-      exp: expFromObj
-    };
+    return { ok: false, error: "invalid_key" };
   }
 
-  const list = getLicenseList();
-  if (!list.includes(lic)) {
+  const allowedKeys = ["PRO-Z", "PRO-SNOVAPROKEY", "PRO-SENG1", "PRO-MH1", "PRO-MH2"];
+  if (!allowedKeys.includes(lic.toUpperCase())) {
     return { ok: false, error: "invalid_key" };
   }
 

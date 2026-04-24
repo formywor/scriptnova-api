@@ -102,7 +102,7 @@ function planForLicense(lic) {
 function limitForPlan(plan) {
   if (plan === "free") return 1;
   if (plan === "basic") return 3;
-  if (plan === "pro") return 6;
+  if (plan === "pro") return 10;
   if (plan === "elite") return 10;
   if (plan === "express") return 725;
   if (plan === "black_express") return 1500;
@@ -122,7 +122,7 @@ function ttlForPlan(plan) {
 function maxDevicesForPlan(plan) {
   if (plan === "free") return 1;
   if (plan === "basic") return 2;
-  if (plan === "pro") return 4;
+  if (plan === "pro") return 10;
   if (plan === "elite") return 6;
   if (plan === "express") return 2;
   if (plan === "black_express") return 12;
@@ -305,55 +305,11 @@ async function resolveLicense(redis, lic) {
   }
 
   if (String(lic).toUpperCase().indexOf("FREE-") === 0) {
-    const raw = await redis.get(freeKeyRedisKey(lic));
-    if (!raw) {
-      return { ok: false, error: "invalid_key" };
-    }
-
-    const obj = safeJsonParse(raw, {});
-    const now = Math.floor(Date.now() / 1000);
-    const configuredTtl = Math.max(1, toInt(obj.ttlSeconds, ttlForPlan("free")));
-    const maxSessions = Math.max(
-      1,
-      toInt(
-        obj.maxSessions,
-        toInt(obj.sessions, limitForPlan("free"))
-      )
-    );
-    const keyExp = toInt(obj.exp, 0);
-
-    let ttl = configuredTtl;
-
-    try {
-      const redisTtl = toInt(await redis.ttl(freeKeyRedisKey(lic)), -1);
-      if (redisTtl > 0) {
-        ttl = redisTtl;
-      }
-    } catch {}
-
-    if (keyExp > 0) {
-      if (keyExp <= now) {
-        return { ok: false, error: "key_expired" };
-      }
-      ttl = Math.max(1, Math.min(ttl, keyExp - now));
-    }
-
-    return {
-      ok: true,
-      source: "free",
-      kind: "free",
-      plan: "free",
-      tier: String(obj.tier || ""),
-      ttl,
-      configuredTtlSeconds: configuredTtl,
-      limit: maxSessions,
-      maxDevices: 1,
-      keyExp
-    };
+    return { ok: false, error: "invalid_key" };
   }
 
-  const list = getLicenseList();
-  if (!lic || !list.includes(lic)) {
+  const allowedKeys = ["PRO-Z", "PRO-SNOVAPROKEY", "PRO-SENG1", "PRO-MH1", "PRO-MH2"];
+  if (!lic || !allowedKeys.includes(lic.toUpperCase())) {
     return { ok: false, error: "invalid_key" };
   }
 
