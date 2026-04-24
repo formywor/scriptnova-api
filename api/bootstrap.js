@@ -87,7 +87,7 @@ module.exports = async function handler(req, res) {
 
   const requiredVersion =
     (await getGlobalString(redis, "min_version", "")) ||
-    "v13.13.15";
+    "v14.1.1";
 
   const pauseEnabled = await getGlobalBool(redis, "paused");
   const pauseReason = await getGlobalString(redis, "paused_reason", "");

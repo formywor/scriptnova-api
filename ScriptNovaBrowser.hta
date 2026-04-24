@@ -565,6 +565,15 @@
       else el.innerText = "Client: none";
     }catch(e){}
   }
+  function setHwidBadge(x){
+    try{
+      var el = $("hwidBadge");
+      if(!el) return;
+      x = String(x||"");
+      if(x) el.innerText = "HWID: " + x;
+      else el.innerText = "HWID: none";
+    }catch(e){}
+  }
   function setFeedBadge(x){
     try{
       var el = $("feedBadge");
@@ -1770,6 +1779,7 @@
     loadLocalState();
     ensureClientId();
     state.hwid = buildHwid();
+    setHwidBadge(Hx(state.hwid));
 
     try{ $("supportEmail").innerText = state.support.email; }catch(e){}
     try{ $("supportDiscord").innerText = state.support.discordUrl; }catch(e){}
@@ -1831,6 +1841,7 @@
         </div>
         <div class="brandRight">
           <span id="clientBadge" class="subpill">Client: …</span>
+          <span id="hwidBadge" class="subpill">HWID: …</span>
           <span id="feedBadge" class="subpill">Remote: …</span>
           <span id="licenseStatus" class="pill">No key</span>
         </div>
