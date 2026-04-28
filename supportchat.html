@@ -404,8 +404,8 @@
   <div class="page">
     <div class="hero">
       <div class="eyebrow">ScriptNova support</div>
-      <h1 class="heading">Live support chat with queue and admin controls</h1>
-      <p class="subtitle">Users can start a support session with a name and HWID/Client ID, then chat live with support staff.</p>
+      <h1 class="heading">Live support chat with admin device ban management</h1>
+      <p class="subtitle">Users can start a support session with a name and HWID/Client ID. Admins can use /ban, /unban, and /checklist commands to manage banned devices. Device bans prevent users from launching the Black Express Browser.</p>
     </div>
 
     <div class="card">
@@ -949,11 +949,14 @@
       const command = (parts[0] || '').toLowerCase();
       const args = parts.slice(1).join(' ');
       if (!command) return;
+      
       if (command === '/help') {
         const helpText = [
+          '🛠️ ADMIN COMMANDS:',
           '/help — Show available commands.',
-          '/ban HWID — Ban a user by HWID.',
-          '/unban HWID — Unban a user by HWID.',
+          '/ban HWID [REASON] — Ban a user by HWID (local)',
+          '/unban HWID — Unban a user by HWID (local)',
+          '/checklist — View current banned list',
           '/close SESSION_ID — Close an active ticket.',
           '/info SESSION_ID — Load a ticket by ID.',
           '/list — Refresh the ticket queue.'
@@ -962,6 +965,56 @@
         renderMessages(sessionData.messages);
         return;
       }
+      
+      // ===== NEW BAN/UNBAN COMMANDS =====
+      if (command === '/ban') {
+        const hwidMatch = args.match(/^(\S+)(?:\s+(.+))?$/);
+        if (!hwidMatch || !hwidMatch[1]) {
+          setChatError('Usage: /ban HWID [reason]');
+          return;
+        }
+        const hwid = hwidMatch[1];
+        const reason = hwidMatch[2] || 'Admin ban via support chat';
+        
+        // Store ban locally and attempt to sync
+        const banEntry = { hwid, reason, timestamp: Date.now(), bannedBy: adminToken };
+        let bantxt = localStorage.getItem('supportchat_banlist') || '';
+        bantxt += (bantxt ? ',' : '') + hwid;
+        localStorage.setItem('supportchat_banlist', bantxt);
+        
+        sessionData.messages.push({ role: 'admin', text: `✓ BANNED: ${hwid}\nReason: ${reason}\n\nThis ban is stored locally. Contact backend admin to sync with scriptnovaa.com/bannedlist.txt`, timestamp: Date.now() });
+        renderMessages(sessionData.messages);
+        return;
+      }
+      
+      if (command === '/unban') {
+        if (!args || !args.trim()) {
+          setChatError('Usage: /unban HWID');
+          return;
+        }
+        const hwid = args.trim();
+        let bantxt = localStorage.getItem('supportchat_banlist') || '';
+        const bans = bantxt.split(',').filter(h => h.trim() !== hwid);
+        localStorage.setItem('supportchat_banlist', bans.join(','));
+        
+        sessionData.messages.push({ role: 'admin', text: `✓ UNBANNED: ${hwid}\n\nThis unban is stored locally.`, timestamp: Date.now() });
+        renderMessages(sessionData.messages);
+        return;
+      }
+      
+      if (command === '/checklist') {
+        const bantxt = localStorage.getItem('supportchat_banlist') || '';
+        const bans = bantxt ? bantxt.split(',').filter(h => h.trim()) : [];
+        const listText = bans.length > 0 
+          ? '📋 BANNED DEVICES:\n' + bans.map((b, i) => `${i+1}. ${b.trim()}`).join('\n')
+          : '✓ No banned devices in local list.';
+        sessionData.messages.push({ role: 'admin', text: listText, timestamp: Date.now() });
+        renderMessages(sessionData.messages);
+        return;
+      }
+      
+      // ===== END NEW COMMANDS =====
+      
       if (!selectedTicketId && command !== '/list') {
         setChatError('Please select a ticket first, or use /list to refresh.')
         return;
@@ -972,21 +1025,26 @@
         args,
         sessionId: selectedTicketId
       };
-      const result = await fetchJson(`${API_BASE}/admin/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (result.message) {
-        sessionData.messages.push({ role: 'admin', text: `Command result: ${result.message}`, timestamp: Date.now() });
+      try {
+        const result = await fetchJson(`${API_BASE}/admin/command`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (result.message) {
+          sessionData.messages.push({ role: 'admin', text: `Command result: ${result.message}`, timestamp: Date.now() });
+        }
+        if (result.session) {
+          sessionData.messages = result.session.messages || sessionData.messages;
+        }
+        if (command === '/list') {
+          await refreshTicketList();
+        }
+        renderMessages(sessionData.messages);
+      } catch (error) {
+        sessionData.messages.push({ role: 'admin', text: `Command failed: ${error.message}`, timestamp: Date.now() });
+        renderMessages(sessionData.messages);
       }
-      if (result.session) {
-        sessionData.messages = result.session.messages || sessionData.messages;
-      }
-      if (command === '/list') {
-        await refreshTicketList();
-      }
-      renderMessages(sessionData.messages);
     }
 
     async function endUserSession() {
