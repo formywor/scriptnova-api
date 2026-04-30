@@ -152,7 +152,7 @@ async function resolveLicense(redis, lic) {
     return { ok: false, error: "invalid_key" };
   }
 
-  const allowedKeys = ["PRO-DEV", "PRO-SNOVAPROKEY", "PRO-SENG3", "PRO-MH4", "PRO-MOTOGOODATGAME", "PRO-LUKASISCOOL", "PRO-MH3", "PRO-SHAYGAY", "PRO-KOFS", "PRO-SIGMATOILETHOWEY", "PRO-JADEN"];
+  const allowedKeys = ["PRO-DEV", "PRO-SNOVAPROKEY", "PRO-SENG3", "PRO-MH4", "PRO-MOTOGOODATGAME", "PRO-LUKASISCOOL", "PRO-MH3", "PRO-SHAYGAY", "PRO-KOFS", "PRO-SIGMATOILETHOWEY", "PRO-JADEN", "PRO-ADEL"];
   if (!allowedKeys.includes(lic.toUpperCase())) {
     return { ok: false, error: "invalid_key" };
   }
