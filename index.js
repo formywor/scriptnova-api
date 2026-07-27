@@ -439,19 +439,59 @@ async function requireBrowserSession(req) {
 }
 async function finishSession(sessionId, session, reason) {
   const clean = String(reason || "UNKNOWN").replace(/[^A-Z0-9_-]/gi, "").slice(0, 50);
-  await atomic((data) => {
-    const current = data.sessions?.[sessionId];
-    if (!current || current.status !== "ACTIVE") return data;
-    current.status = "FINISHED"; current.endReason = clean; current.endedAt = Date.now();
-    const token = data.tokens?.[session.tokenId];
-    if (token) {
-      token.status = clean === "TIME_EXPIRED" ? "EXPIRED" : "COMPLETED";
-      token.endReason = clean; token.endedAt = Date.now(); delete token.displayToken;
+  const finishId = crypto.randomBytes(12).toString("hex");
+  const lockedAt = Date.now();
+  const lockReference = root.child(`sessionFinishLocks/${sessionId}`);
+  const lock = await lockReference.transaction((current) => {
+    if (current && Number(current.lockedAt || 0) > lockedAt - 30000) return;
+    return {finishId, lockedAt};
+  }, undefined, false);
+  if (!lock.committed) return;
+  try {
+    const current = await read(`sessions/${sessionId}`);
+    if (!current || current.status !== "ACTIVE") return;
+    const [token, account] = await Promise.all([
+      read(`tokens/${current.tokenId}`),
+      read(`accounts/${current.accountId}`),
+    ]);
+    const endedAt = Date.now();
+    const launchFailedQuickly = clean === "LAUNCH_FAILED" &&
+      endedAt - Number(current.startedAt || 0) <= 60000 &&
+      !current.launchConfirmedAt &&
+      token?.status === "ACTIVE" && token.sessionId === sessionId &&
+      Boolean(account);
+    const updates = {
+      [`sessions/${sessionId}/status`]: "FINISHED",
+      [`sessions/${sessionId}/endReason`]: clean,
+      [`sessions/${sessionId}/endedAt`]: endedAt,
+    };
+    if (account?.activeSessionId === sessionId) {
+      updates[`accounts/${current.accountId}/activeSessionId`] = null;
+      updates[`accounts/${current.accountId}/updatedAt`] = endedAt;
     }
-    const account = data.accounts?.[session.accountId];
-    if (account) { account.activeSessionId = null; account.updatedAt = Date.now(); }
-    return data;
-  });
+    if (launchFailedQuickly) {
+      updates[`sessions/${sessionId}/tokenRestored`] = true;
+      updates[`tokens/${current.tokenId}/status`] = "UNUSED";
+      updates[`tokens/${current.tokenId}/sessionId`] = null;
+      updates[`tokens/${current.tokenId}/deviceId`] = null;
+      updates[`tokens/${current.tokenId}/activatedAt`] = null;
+      updates[`tokens/${current.tokenId}/expiresAt`] = null;
+      updates[`tokens/${current.tokenId}/endReason`] = null;
+      updates[`tokens/${current.tokenId}/endedAt`] = null;
+      updates[`accounts/${current.accountId}/unusedTokenCount`] =
+        ServerValue.increment(1);
+    } else if (token) {
+      updates[`tokens/${current.tokenId}/status`] =
+        clean === "TIME_EXPIRED" ? "EXPIRED" : "COMPLETED";
+      updates[`tokens/${current.tokenId}/endReason`] = clean;
+      updates[`tokens/${current.tokenId}/endedAt`] = endedAt;
+      updates[`tokens/${current.tokenId}/displayToken`] = null;
+    }
+    await root.update(updates);
+  } finally {
+    const activeLock = await read(`sessionFinishLocks/${sessionId}`);
+    if (activeLock?.finishId === finishId) await lockReference.remove();
+  }
 }
 
 app.get("/api/health", (req, res) => res.json({
@@ -994,6 +1034,19 @@ app.post("/api/session/heartbeat", route(async (req, res) => {
   await root.child(`sessions/${session.id}/lastHeartbeatAt`).set(Date.now());
   res.json({ok: true, action: "CONTINUE",
     expiresAt: new Date(session.data.expiresAt).toISOString()});
+}));
+
+app.post("/api/session/launched", route(async (req, res) => {
+  const session = await requireBrowserSession(req);
+  if (session.data.status !== "ACTIVE") {
+    fail("Browser session is no longer active.", 409);
+  }
+  const confirmedAt = Date.now();
+  await root.child(`sessions/${session.id}`).update({
+    launchConfirmedAt: session.data.launchConfirmedAt || confirmedAt,
+    lastHeartbeatAt: confirmedAt,
+  });
+  res.json({ok: true, confirmedAt});
 }));
 
 app.post("/api/session/end", route(async (req, res) => {
