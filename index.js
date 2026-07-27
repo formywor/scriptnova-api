@@ -27,8 +27,17 @@ const database = getDatabase();
 const root = database.ref();
 const app = express();
 app.disable("x-powered-by");
+app.disable("etag");
 app.set("trust proxy", true);
 app.use(express.json({limit: "32kb"}));
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  res.setHeader("Vary", "Origin, Authorization");
+  next();
+});
 
 const ALLOWED_ORIGINS = new Set([
   "https://scriptnovaa.com",
@@ -39,7 +48,6 @@ app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   }
@@ -102,7 +110,9 @@ function publicAccount(a) {
 function route(handler) {
   return async (req, res) => {
     try { await handler(req, res); } catch (error) {
-      console.error(error); res.status(error.statusCode || 400)
+      const statusCode = error.statusCode || 400;
+      if (statusCode >= 500) console.error(error);
+      res.status(statusCode)
           .json({ok: false, error: error.message || "Request failed."});
     }
   };
@@ -277,6 +287,12 @@ async function finishSession(sessionId, session, reason) {
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
 }));
+app.get("/", (req, res) => res.json({
+  ok: true,
+  product: "Share Browser API",
+  health: "https://api.scriptnovaa.com/api/health",
+}));
+app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
   ok: true, tokenOptions: TOKEN_OPTIONS,
   economy: {...ECONOMY, maximumRedirectPoints: 22},
