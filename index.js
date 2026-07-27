@@ -60,18 +60,67 @@ app.use((req, res, next) => {
 
 const PRESETS = {
   balanced: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
-    "--disable-notifications"],
+    "--disable-notifications", "--disable-background-mode"],
   privacy: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
     "--disable-notifications", "--disable-extensions",
-    "--disable-features=AutofillServerCommunication"],
-  minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync"],
+    "--disable-background-mode",
+    "--disable-features=AutofillServerCommunication", "--incognito"],
+  minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
+    "--disable-background-mode"],
+  protected: [
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-extensions",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-default-apps",
+    "--disable-sync",
+    "--disable-background-networking",
+    "--disable-background-mode",
+    "--disable-component-update",
+    "--dns-prefetch-disable",
+    "--enable-features=DnsOverHttps",
+    "--dns-over-https-mode=secure",
+    "--dns-over-https-templates=https://cloudflare-dns.com/dns-query",
+    "--disable-notifications",
+    "--incognito",
+  ],
 };
 const USER_AGENTS = {
   default: "",
   shareDesktop: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 " +
     "Safari/537.36 ShareBrowser/1.0",
+  chromeOs120: "Mozilla/5.0 (X11; CrOS aarch64 15699.85.0) " +
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
+const LAUNCHER_CONFIGURATION = Object.freeze({
+  defaultMode: "protected",
+  defaultIdentity: "chromeOs120",
+  modes: [
+    {id: "balanced", label: "Balanced"},
+    {id: "privacy", label: "Private"},
+    {id: "minimal", label: "Lightweight"},
+    {id: "protected", label: "Protected"},
+  ],
+  identities: [
+    {id: "default", label: "Standard"},
+    {id: "chromeOs120", label: "ScriptNovaa compatibility"},
+  ],
+  appearance: {
+    background: "#090c14",
+    panel: "#121724",
+    border: "#343c51",
+    accentStart: "#735cff",
+    accentEnd: "#23ceb9",
+  },
+});
+function browserLaunchFlags(browser, presetId) {
+  const flags = [...PRESETS[presetId]];
+  if (browser === "edge") {
+    flags.push("--disable-features=msEdgeStartupBoost");
+  }
+  return flags;
+}
 const SUPPORT_CATEGORIES = new Set([
   "CONNECTION_CODE_REPLACEMENT",
   "BROWSER_PROBLEM",
@@ -658,6 +707,14 @@ app.post("/api/device/launcher/status", route(async (req, res) => {
   });
 }));
 
+app.post("/api/launcher/config", route(async (req, res) => {
+  await requireAccount(req);
+  res.json({
+    ok: true,
+    configuration: LAUNCHER_CONFIGURATION,
+  });
+}));
+
 app.get("/api/support/tickets", route(async (req, res) => {
   const account = await requireAccount(req);
   const tickets = await accountSupportTickets(account.id);
@@ -912,7 +969,8 @@ app.post("/api/session/activate", route(async (req, res) => {
   }
   res.json({ok: true, sessionId, sessionSecret: rawSecret,
     expiresAt: new Date(expiresAt).toISOString(), heartbeatSeconds: 10,
-    launch: {browser, flags: PRESETS[presetId], userAgent: USER_AGENTS[userAgentId]}});
+    launch: {browser, startupOptions: browserLaunchFlags(browser, presetId),
+      userAgent: USER_AGENTS[userAgentId]}});
 }));
 
 app.post("/api/session/heartbeat", route(async (req, res) => {
