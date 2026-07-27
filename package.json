@@ -1,5 +1,5 @@
 {
-  "name": "share-browser-functions",
+  "name": "share-browser-api",
   "version": "1.0.0",
   "private": true,
   "main": "index.js",
@@ -8,6 +8,7 @@
     "check": "node --check index.js && node --test test/*.test.js",
     "start": "node index.js",
     "dev": "node --watch index.js",
+    "setup": "bash setup-firebase.sh",
     "deploy": "vercel --prod"
   },
   "dependencies": {
