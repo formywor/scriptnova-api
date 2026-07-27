@@ -117,6 +117,97 @@ async function pendingReferralPoints(accountId) {
       .reduce((total, referral) =>
         total + Number(referral.pendingReward || 0), 0);
 }
+async function registerDeviceForAccount(accountId, proof) {
+  const rawProof = String(proof || "");
+  if (rawProof.length < 20) fail("Computer identity is missing.");
+  const account = await read(`accounts/${accountId}`);
+  if (!account || account.accountStatus !== "ACTIVE") {
+    fail("Account restricted.", 403);
+  }
+  const deviceHash = hmac(rawProof);
+  const allDevices = await read("devices") || {};
+  const usedByAnother = Object.values(allDevices)
+      .some((device) =>
+        device.deviceHash === deviceHash && device.accountId !== accountId);
+  if (account.registeredDeviceId) {
+    const existing = allDevices[account.registeredDeviceId];
+    if (existing?.deviceHash === deviceHash) {
+      return {
+        alreadyRegistered: true,
+        deviceId: account.registeredDeviceId,
+        riskStatus: existing.status === "ACTIVE" ? "PASSED" : "REVIEW",
+      };
+    }
+    fail("This account already has a different registered computer.");
+  }
+
+  const deviceId = id("devices");
+  await atomic((data) => {
+    const fresh = data.accounts?.[accountId];
+    if (!fresh) fail("Account not found.", 404);
+    if (fresh.registeredDeviceId) fail("A computer is already registered.");
+    ensure(data, "devices")[deviceId] = {
+      accountId,
+      deviceHash,
+      status: usedByAnother ? "REVIEW" : "ACTIVE",
+      riskScore: usedByAnother ? 100 : 0,
+      registeredAt: Date.now(),
+    };
+    fresh.registeredDeviceId = deviceId;
+    fresh.fraudStatus = usedByAnother ? "REVIEW" : "CLEAR";
+    fresh.updatedAt = Date.now();
+    if (!usedByAnother && fresh.referredByAccountId) {
+      fresh.pointBalance = Number(fresh.pointBalance || 0) + 2;
+      fresh.pendingPointBalance =
+        Math.max(0, Number(fresh.pendingPointBalance || 0) - 2);
+      const referralId = data.referralsByReferred?.[accountId];
+      const referral = data.referrals?.[referralId];
+      if (referral?.status === "WAITING_FOR_DEVICE") {
+        referral.status = "DEVICE_PASSED";
+        referral.signupRewardAwarded = 3;
+        referral.devicePassedAt = Date.now();
+        const referrer = data.accounts?.[referral.referrerAccountId];
+        if (referrer) {
+          referrer.pointBalance = Number(referrer.pointBalance || 0) + 3;
+        }
+      }
+    }
+    return data;
+  });
+  return {
+    alreadyRegistered: false,
+    deviceId,
+    riskStatus: usedByAnother ? "REVIEW" : "PASSED",
+  };
+}
+
+async function rewardWaitPolicy(accountId, account) {
+  const [referrals, sessions] = await Promise.all([
+    read("referrals"),
+    read("sessions"),
+  ]);
+  const referralHistory = Object.values(referrals || {}).filter((referral) =>
+    referral.referrerAccountId === accountId ||
+    referral.referredAccountId === accountId);
+  const wasFraudReversed = referralHistory.some((referral) =>
+    referral.status === "FRAUD_REVERSED");
+  const wasFlagged =
+    !["CLEAR", undefined, null].includes(account.fraudStatus) ||
+    wasFraudReversed;
+  const hasRealSession = Object.values(sessions || {}).some((session) =>
+    session.accountId === accountId &&
+    ["ACTIVE", "FINISHED"].includes(session.status));
+  const accountAge = Date.now() - Number(account.createdAt || Date.now());
+  const isNew = accountAge < 7 * 86400000 || !hasRealSession;
+
+  if (wasFlagged) {
+    return {tier: "REVIEW", minutes: crypto.randomInt(12, 15)};
+  }
+  if (isNew) {
+    return {tier: "NEW", minutes: crypto.randomInt(5, 15)};
+  }
+  return {tier: "ESTABLISHED", minutes: crypto.randomInt(0, 5)};
+}
 async function atomic(mutator) {
   let thrown = null;
   const result = await root.transaction((current) => {
@@ -284,44 +375,45 @@ app.post("/api/logout", route(async (req, res) => {
 
 app.post("/api/device/register", route(async (req, res) => {
   const account = await requireAccount(req);
-  const proof = String(req.body.deviceProof || ""); if (proof.length < 20) fail("Device proof missing.");
-  const deviceHash = hmac(proof); const allDevices = await read("devices") || {};
-  const usedByAnother = Object.values(allDevices)
-      .some((device) => device.deviceHash === deviceHash && device.accountId !== account.id);
-  if (account.data.registeredDeviceId) {
-    const existing = allDevices[account.data.registeredDeviceId];
-    if (existing?.deviceHash === deviceHash) {
-      return res.json({ok: true, alreadyRegistered: true, deviceId: account.data.registeredDeviceId});
-    }
-    fail("This account already has a different registered computer.");
-  }
-  const deviceId = id("devices");
-  await atomic((data) => {
-    const fresh = data.accounts?.[account.id];
-    if (!fresh) fail("Account not found.", 404);
-    if (fresh.registeredDeviceId) fail("A computer is already registered.");
-    ensure(data, "devices")[deviceId] = {
-      accountId: account.id, deviceHash, status: usedByAnother ? "REVIEW" : "ACTIVE",
-      riskScore: usedByAnother ? 100 : 0, registeredAt: Date.now(),
-    };
-    fresh.registeredDeviceId = deviceId;
-    fresh.fraudStatus = usedByAnother ? "REVIEW" : "CLEAR";
-    fresh.updatedAt = Date.now();
-    if (!usedByAnother && fresh.referredByAccountId) {
-      fresh.pointBalance = Number(fresh.pointBalance || 0) + 2;
-      fresh.pendingPointBalance = Math.max(0, Number(fresh.pendingPointBalance || 0) - 2);
-      const referralId = data.referralsByReferred?.[account.id];
-      const referral = data.referrals?.[referralId];
-      if (referral?.status === "WAITING_FOR_DEVICE") {
-        referral.status = "DEVICE_PASSED"; referral.signupRewardAwarded = 3;
-        referral.devicePassedAt = Date.now();
-        const referrer = data.accounts?.[referral.referrerAccountId];
-        if (referrer) referrer.pointBalance = Number(referrer.pointBalance || 0) + 3;
-      }
-    }
-    return data;
+  const result = await registerDeviceForAccount(
+      account.id, req.body.deviceProof);
+  res.json({ok: true, ...result});
+}));
+
+app.post("/api/device/pairing/start", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const pairingCode = crypto.randomBytes(5).toString("hex").toUpperCase();
+  const pairingHash = hmac(pairingCode);
+  const expiresAt = Date.now() + 10 * 60000;
+  await root.child(`devicePairings/${pairingHash}`).set({
+    accountId: account.id,
+    status: "OPEN",
+    createdAt: Date.now(),
+    expiresAt,
   });
-  res.json({ok: true, deviceId, riskStatus: usedByAnother ? "REVIEW" : "PASSED"});
+  res.json({ok: true, pairingCode, expiresAt: new Date(expiresAt).toISOString()});
+}));
+
+app.post("/api/device/pairing/complete", route(async (req, res) => {
+  const pairingCode = String(req.body.pairingCode || "")
+      .replace(/[^A-F0-9]/gi, "").toUpperCase();
+  if (pairingCode.length !== 10) fail("Connection code is invalid.");
+  await rateLimit(ipPrefix(req), "DEVICE_PAIRING", 10, 900);
+  const pairingHash = hmac(pairingCode);
+  const pairing = await read(`devicePairings/${pairingHash}`);
+  if (!pairing || pairing.status !== "OPEN" ||
+      Number(pairing.expiresAt || 0) <= Date.now()) {
+    fail("Connection code is invalid or expired.");
+  }
+  const result = await registerDeviceForAccount(
+      pairing.accountId, req.body.deviceProof);
+  await root.child(`devicePairings/${pairingHash}`).update({
+    status: "USED",
+    usedAt: Date.now(),
+  });
+  const launcherToken = await newLogin(
+      pairing.accountId, "Share Browser launcher");
+  res.json({ok: true, ...result, launcherToken});
 }));
 
 app.get("/api/tokens", route(async (req, res) => {
@@ -455,11 +547,13 @@ app.post("/api/redirect/start", route(async (req, res) => {
   if (count >= 44) fail("44-redirect limit reached for this rolling 14-hour window.");
   const attemptId = id("redirectAttempts");
   const claimCode = crypto.randomBytes(24).toString("base64url");
-  const claimableAt = Date.now() + crypto.randomInt(4, 31) * 60000;
+  const waitPolicy = await rewardWaitPolicy(account.id, account.data);
+  const claimableAt = Date.now() + waitPolicy.minutes * 60000;
   await root.child(`redirectAttempts/${attemptId}`).set({
     accountId: account.id, campaignId: String(req.body.campaignId || "default").slice(0, 80),
     claimHash: hmac(claimCode), status: "OPENED", rewardAmount: 0.5,
     ipPrefix: ipPrefix(req), createdAt: Date.now(), claimableAt,
+    waitTier: waitPolicy.tier, waitMinutes: waitPolicy.minutes,
   });
   res.status(201).json({ok: true, attemptId, claimCode,
     claimableAt: new Date(claimableAt).toISOString(),
