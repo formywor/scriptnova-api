@@ -550,51 +550,36 @@ app.post("/api/tokens/create", route(async (req, res) => {
   const option = requestedTokenOption(req.body);
   if (!option) fail("Invalid token duration.");
   const rawToken = code("SHARE"); const tokenHash = hmac(rawToken); const tokenId = id("tokens");
-  const accountReference = root.child(`accounts/${account.id}`);
-  await accountReference.get();
-  let rejection = null;
-  const reservation = await accountReference.transaction((fresh) => {
-    rejection = null;
-    if (!fresh) {
-      rejection = {message: "Account not found.", statusCode: 404};
-      return;
-    }
+  const lockId = crypto.randomBytes(12).toString("hex");
+  const lockReference = root.child(`tokenCreationLocks/${account.id}`);
+  const lockedAt = Date.now();
+  const lock = await lockReference.transaction((current) => {
+    if (current && Number(current.lockedAt || 0) > lockedAt - 30000) return;
+    return {lockId, lockedAt};
+  }, undefined, false);
+  if (!lock.committed) fail("A token is already being created. Try again.", 409);
+
+  try {
+    const fresh = await read(`accounts/${account.id}`);
+    if (!fresh) fail("Authentication required. Sign in again.", 401);
     if (Number(fresh.pointBalance || 0) < option.points) {
-      rejection = {message: "Not enough points for this token.", statusCode: 400};
-      return;
+      fail("Not enough points for this token.");
     }
     if (!fresh.registeredDeviceId) {
-      rejection = {message: "Register your computer first.", statusCode: 400};
-      return;
+      fail("Register your computer first.");
     }
     if (fresh.fraudStatus !== "CLEAR") {
-      rejection = {message: "Your account is under review.", statusCode: 403};
-      return;
+      fail("Your account is under review.", 403);
     }
     if (Number(fresh.unusedTokenCount || 0) >= ECONOMY.maximumUnusedTokens) {
-      rejection = {message: "Maximum two unused tokens.", statusCode: 400};
-      return;
+      fail("Maximum two unused tokens.");
     }
     if (option.id === LIMITED_FREE_TOKEN.id && fresh.limitedFreeTokenClaimedAt) {
-      rejection = {message: "Your free limited token was already claimed.", statusCode: 400};
-      return;
+      fail("Your free limited token was already claimed.");
     }
-    const updated = {...fresh};
-    updated.pointBalance = Number(updated.pointBalance || 0) - option.points;
-    updated.unusedTokenCount = Number(updated.unusedTokenCount || 0) + 1;
-    updated.tokenReservation = tokenId;
-    updated.updatedAt = Date.now();
-    if (option.id === LIMITED_FREE_TOKEN.id) {
-      updated.limitedFreeTokenClaimedAt = Date.now();
-    }
-    return updated;
-  }, undefined, false);
-  if (rejection) fail(rejection.message, rejection.statusCode);
-  if (!reservation.committed) fail("Token creation conflicted with another request.", 409);
 
-  const createdAt = Date.now();
-  try {
-    await root.update({
+    const createdAt = Date.now();
+    const updates = {
       [`tokens/${tokenId}`]: {
         tokenHash,
         displayToken: rawToken,
@@ -610,7 +595,9 @@ app.post("/api/tokens/create", route(async (req, res) => {
         createdAt,
       },
       [`tokenHashes/${tokenHash}`]: tokenId,
-      [`accounts/${account.id}/tokenReservation`]: null,
+      [`accounts/${account.id}/pointBalance`]: ServerValue.increment(-option.points),
+      [`accounts/${account.id}/unusedTokenCount`]: ServerValue.increment(1),
+      [`accounts/${account.id}/updatedAt`]: createdAt,
       [`pointTransactions/${id("pointTransactions")}`]: {
         accountId: account.id,
         amount: -option.points,
@@ -618,30 +605,25 @@ app.post("/api/tokens/create", route(async (req, res) => {
         sourceId: tokenId,
         createdAt,
       },
+    };
+    if (option.id === LIMITED_FREE_TOKEN.id) {
+      updates[`accounts/${account.id}/limitedFreeTokenClaimedAt`] = createdAt;
+    }
+    await root.update({
+      ...updates,
     });
-  } catch (error) {
-    await accountReference.transaction((fresh) => {
-      if (!fresh || fresh.tokenReservation !== tokenId) return fresh;
-      const rolledBack = {...fresh};
-      rolledBack.pointBalance = Number(rolledBack.pointBalance || 0) + option.points;
-      rolledBack.unusedTokenCount =
-        Math.max(0, Number(rolledBack.unusedTokenCount || 0) - 1);
-      delete rolledBack.tokenReservation;
-      if (option.id === LIMITED_FREE_TOKEN.id) {
-        delete rolledBack.limitedFreeTokenClaimedAt;
-      }
-      return rolledBack;
+    res.status(201).json({
+      ok: true,
+      token: rawToken,
+      durationMinutes: option.minutes,
+      durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
+        `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
+      pointCost: option.points,
     });
-    throw error;
+  } finally {
+    const activeLock = await read(`tokenCreationLocks/${account.id}`);
+    if (activeLock?.lockId === lockId) await lockReference.remove();
   }
-  res.status(201).json({
-    ok: true,
-    token: rawToken,
-    durationMinutes: option.minutes,
-    durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
-      `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
-    pointCost: option.points,
-  });
 }));
 
 app.post("/api/session/activate", route(async (req, res) => {
@@ -801,40 +783,36 @@ app.post("/api/redirect/claim", route(async (req, res) => {
   const account = await requireAccount(req);
   const attemptId = String(req.body.attemptId || "");
   if (!attemptId) fail("Reward attempt is missing.");
-  const attemptReference = root.child(`redirectAttempts/${attemptId}`);
-  const attempt = (await attemptReference.get()).val();
-  if (!attempt || attempt.accountId !== account.id) {
-    fail("This reward does not belong to the signed-in account.");
-  }
-  if (attempt.status === "CLAIMING" &&
-      (!attempt.claimingAt || Number(attempt.claimingAt) < Date.now() - 60000)) {
-    await attemptReference.update({
-      status: "OPENED",
-      claimingAt: null,
-      claimId: null,
-    });
-    attempt.status = "OPENED";
-  }
-  if (attempt.status !== "OPENED") fail("Reward already claimed.");
-  if (Number(attempt.claimableAt || 0) > Date.now()) {
-    fail("Reward is still pending.");
-  }
-
-  const statusReference = attemptReference.child("status");
   const claimId = crypto.randomBytes(12).toString("hex");
-  const lock = await statusReference.transaction((status) =>
-    status === "OPENED" ? "CLAIMING" : undefined, undefined, false);
-  if (!lock.committed) fail("Reward already claimed or is being processed.", 409);
-  await attemptReference.update({claimId, claimingAt: Date.now()});
-
-  const transactionId = id("pointTransactions");
-  const rewardedAt = Date.now();
+  const lockReference = root.child(`rewardClaimLocks/${attemptId}`);
+  const lockedAt = Date.now();
+  const lock = await lockReference.transaction((current) => {
+    if (current && Number(current.lockedAt || 0) > lockedAt - 30000) return;
+    return {claimId, lockedAt};
+  }, undefined, false);
+  if (!lock.committed) fail("Reward is being processed. Try again shortly.", 409);
   try {
+    const attempt = await read(`redirectAttempts/${attemptId}`);
+    if (!attempt || attempt.accountId !== account.id) {
+      fail("This reward does not belong to the signed-in account.");
+    }
+    if (attempt.status === "CLAIMING" &&
+        (!attempt.claimingAt || Number(attempt.claimingAt) < Date.now() - 60000)) {
+      attempt.status = "OPENED";
+    }
+    if (attempt.status !== "OPENED") fail("Reward already claimed.");
+    if (Number(attempt.claimableAt || 0) > Date.now()) {
+      fail("Reward is still pending.");
+    }
+
+    const transactionId = id("pointTransactions");
+    const rewardedAt = Date.now();
     await root.update({
       [`redirectAttempts/${attemptId}/status`]: "REWARDED",
       [`redirectAttempts/${attemptId}/rewardedAt`]: rewardedAt,
       [`redirectAttempts/${attemptId}/claimId`]: null,
       [`redirectAttempts/${attemptId}/claimingAt`]: null,
+      [`rewardClaimLocks/${attemptId}`]: null,
       [`accounts/${account.id}/pointBalance`]: ServerValue.increment(0.5),
       [`accounts/${account.id}/updatedAt`]: rewardedAt,
       [`pointTransactions/${transactionId}`]: {
@@ -845,18 +823,11 @@ app.post("/api/redirect/claim", route(async (req, res) => {
         createdAt: rewardedAt,
       },
     });
-  } catch (error) {
-    const currentClaimId = await read(`redirectAttempts/${attemptId}/claimId`);
-    if (currentClaimId === claimId) {
-      await attemptReference.update({
-        status: "OPENED",
-        claimId: null,
-        claimingAt: null,
-      });
-    }
-    throw error;
+    res.json({ok: true, awardedPoints: 0.5});
+  } finally {
+    const activeLock = await read(`rewardClaimLocks/${attemptId}`);
+    if (activeLock?.claimId === claimId) await lockReference.remove();
   }
-  res.json({ok: true, awardedPoints: 0.5});
 }));
 
 app.post("/api/admin/referrals/reverse", route(async (req, res) => {
