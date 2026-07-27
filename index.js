@@ -109,6 +109,14 @@ function route(handler) {
 }
 function ensure(data, key) { if (!data[key]) data[key] = {}; return data[key]; }
 async function read(path) { return (await root.child(path).get()).val(); }
+async function pendingReferralPoints(accountId) {
+  return Object.values(await read("referrals") || {})
+      .filter((referral) =>
+        referral.referrerAccountId === accountId &&
+        ["WAITING_FOR_DEVICE", "RISK_REVIEW"].includes(referral.status))
+      .reduce((total, referral) =>
+        total + Number(referral.pendingReward || 0), 0);
+}
 async function atomic(mutator) {
   let thrown = null;
   const result = await root.transaction((current) => {
@@ -259,7 +267,10 @@ app.post("/api/recover", route(async (req, res) => {
 
 app.get("/api/account", route(async (req, res) => {
   const account = await requireAccount(req);
-  res.json({ok: true, account: publicAccount(account.data)});
+  const pendingReferrals = await pendingReferralPoints(account.id);
+  const summary = publicAccount(account.data);
+  summary.pendingPointBalance += pendingReferrals;
+  res.json({ok: true, account: summary});
 }));
 
 app.post("/api/logout", route(async (req, res) => {
@@ -487,10 +498,12 @@ app.get("/api/redirect/status", route(async (req, res) => {
 app.post("/api/redirect/claim", route(async (req, res) => {
   const account = await requireAccount(req);
   const attemptId = String(req.body.attemptId || "");
+  if (!attemptId) fail("Reward attempt is missing.");
   await atomic((data) => {
     const attempt = data.redirectAttempts?.[attemptId];
-    if (!attempt || attempt.accountId !== account.id ||
-        attempt.claimHash !== hmac(req.body.claimCode)) fail("Invalid claim.");
+    if (!attempt || attempt.accountId !== account.id) {
+      fail("This reward does not belong to the signed-in account.");
+    }
     if (attempt.status !== "OPENED") fail("Reward already claimed.");
     if (attempt.claimableAt > Date.now()) fail("Reward is still pending.");
     attempt.status = "REWARDED"; attempt.rewardedAt = Date.now();
