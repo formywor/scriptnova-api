@@ -457,6 +457,33 @@ app.post("/api/redirect/start", route(async (req, res) => {
       DEFAULT_REDIRECT_URL : process.env.REDIRECT_TARGET_URL});
 }));
 
+app.get("/api/redirect/status", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const cutoff = Date.now() - 14 * 3600000;
+  const attempts = Object.entries(await read("redirectAttempts") || {})
+      .filter(([, attempt]) =>
+        attempt.accountId === account.id && attempt.createdAt >= cutoff)
+      .map(([attemptId, attempt]) => ({
+        attemptId,
+        status: attempt.status,
+        rewardAmount: Number(attempt.rewardAmount || 0),
+        createdAt: Number(attempt.createdAt || 0),
+        claimableAt: Number(attempt.claimableAt || 0),
+      }))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  const rewardedCount = attempts.filter((attempt) =>
+    attempt.status === "REWARDED").length;
+  res.json({
+    ok: true,
+    openedCount: attempts.length,
+    rewardedCount,
+    earnedPoints: rewardedCount * ECONOMY.redirectReward,
+    maximumCount: ECONOMY.redirectMaximumCount,
+    rollingHours: ECONOMY.redirectRollingHours,
+    attempts,
+  });
+}));
+
 app.post("/api/redirect/claim", route(async (req, res) => {
   const account = await requireAccount(req);
   const attemptId = String(req.body.attemptId || "");
