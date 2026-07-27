@@ -107,9 +107,9 @@ ADMIN_SECRET="$(node -e \
   'process.stdout.write(require("crypto").randomBytes(48).toString("base64url"))')"
 
 read -r -p \
-  "Reward redirect URL (or press Enter for https://example.com/): " \
+  "Reward redirect URL (press Enter for https://omg10.com/4/11435374): " \
   REDIRECT_URL
-REDIRECT_URL="${REDIRECT_URL:-https://example.com/}"
+REDIRECT_URL="${REDIRECT_URL:-https://omg10.com/4/11435374}"
 
 heading "6/8 Linking this folder to the Vercel API project"
 npx --yes vercel link

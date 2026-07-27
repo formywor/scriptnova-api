@@ -57,6 +57,7 @@ const PRESETS = {
     "--disable-features=AutofillServerCommunication"],
   minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync"],
 };
+const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
 
 function fail(message, statusCode = 400) {
   const error = new Error(message); error.statusCode = statusCode; throw error;
@@ -134,17 +135,19 @@ async function newLogin(accountId, clientDescription) {
   const raw = crypto.randomBytes(32).toString("base64url");
   await root.child(`loginSessions/${hmac(raw)}`).set({
     accountId, clientDescription: String(clientDescription || "").slice(0, 250),
-    revoked: false, createdAt: Date.now(), expiresAt: Date.now() + 7 * 86400000,
+    revoked: false, createdAt: Date.now(), lastUsedAt: Date.now(),
   });
   return raw;
 }
 async function requireAccount(req) {
   const raw = bearer(req); if (!raw) fail("Authentication required.", 401);
-  const login = await read(`loginSessions/${hmac(raw)}`);
-  if (!login || login.revoked || login.expiresAt <= Date.now()) fail("Authentication required.", 401);
+  const loginId = hmac(raw);
+  const login = await read(`loginSessions/${loginId}`);
+  if (!login || login.revoked) fail("Authentication required.", 401);
   const account = await read(`accounts/${login.accountId}`);
   if (!account || account.accountStatus !== "ACTIVE") fail("Account restricted.", 403);
-  return {id: login.accountId, data: account};
+  root.child(`loginSessions/${loginId}/lastUsedAt`).set(Date.now()).catch(console.error);
+  return {id: login.accountId, data: account, loginId};
 }
 async function requireBrowserSession(req) {
   const sessionId = String(req.body.sessionId || "");
@@ -240,9 +243,16 @@ app.post("/api/recover", route(async (req, res) => {
     fail("Recovery failed.", 401);
   }
   const pin = validatePin(req.body.newPin); const replacement = code("RCVY", 12);
-  await root.child(`accounts/${usernameRecord.accountId}`).update({
-    pinCredential: credential(pin, "PIN_PEPPER"),
-    recoveryCredential: credential(replacement, "RECOVERY_PEPPER"), updatedAt: Date.now(),
+  await atomic((data) => {
+    const fresh = data.accounts?.[usernameRecord.accountId];
+    if (!fresh) fail("Recovery failed.", 401);
+    fresh.pinCredential = credential(pin, "PIN_PEPPER");
+    fresh.recoveryCredential = credential(replacement, "RECOVERY_PEPPER");
+    fresh.updatedAt = Date.now();
+    Object.values(data.loginSessions || {}).forEach((session) => {
+      if (session.accountId === usernameRecord.accountId) session.revoked = true;
+    });
+    return data;
   });
   res.json({ok: true, newRecoveryCode: replacement});
 }));
@@ -250,6 +260,15 @@ app.post("/api/recover", route(async (req, res) => {
 app.get("/api/account", route(async (req, res) => {
   const account = await requireAccount(req);
   res.json({ok: true, account: publicAccount(account.data)});
+}));
+
+app.post("/api/logout", route(async (req, res) => {
+  const account = await requireAccount(req);
+  await root.child(`loginSessions/${account.loginId}`).update({
+    revoked: true,
+    revokedAt: Date.now(),
+  });
+  res.json({ok: true});
 }));
 
 app.post("/api/device/register", route(async (req, res) => {
@@ -433,7 +452,9 @@ app.post("/api/redirect/start", route(async (req, res) => {
   });
   res.status(201).json({ok: true, attemptId, claimCode,
     claimableAt: new Date(claimableAt).toISOString(),
-    redirectUrl: process.env.REDIRECT_TARGET_URL || "https://example.com/"});
+    redirectUrl: !process.env.REDIRECT_TARGET_URL ||
+      process.env.REDIRECT_TARGET_URL === "https://example.com/" ?
+      DEFAULT_REDIRECT_URL : process.env.REDIRECT_TARGET_URL});
 }));
 
 app.post("/api/redirect/claim", route(async (req, res) => {
