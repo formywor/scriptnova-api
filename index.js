@@ -66,6 +66,12 @@ const PRESETS = {
     "--disable-features=AutofillServerCommunication"],
   minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync"],
 };
+const USER_AGENTS = {
+  default: "",
+  shareDesktop: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 " +
+    "Safari/537.36 ShareBrowser/1.0",
+};
 const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
 const LIMITED_FREE_TOKEN = Object.freeze({
   id: "free-4m-2026",
@@ -628,63 +634,114 @@ app.post("/api/tokens/create", route(async (req, res) => {
 
 app.post("/api/session/activate", route(async (req, res) => {
   const account = await requireAccount(req);
-  const browser = String(req.body.browser || ""); const presetId = String(req.body.presetId || "balanced");
-  if (!["chrome", "edge"].includes(browser) || !PRESETS[presetId]) fail("Unsupported browser setting.");
+  const browser = String(req.body.browser || "");
+  const presetId = String(req.body.presetId || "balanced");
+  const userAgentId = String(req.body.userAgentId || "default");
+  if (!["chrome", "edge"].includes(browser) || !PRESETS[presetId] ||
+    !Object.prototype.hasOwnProperty.call(USER_AGENTS, userAgentId)) {
+    fail("Unsupported browser setting.");
+  }
   const tokenHash = hmac(req.body.token); const tokenId = await read(`tokenHashes/${tokenHash}`);
   if (!tokenId) fail("Token is invalid.");
   const sessionId = id("sessions"); const rawSecret = crypto.randomBytes(32).toString("base64url");
+  const activationId = crypto.randomBytes(12).toString("hex");
+  const lockedAt = Date.now();
+  const lockReference = root.child(`sessionActivationLocks/${account.id}`);
+  const lock = await lockReference.transaction((current) => {
+    if (current && Number(current.lockedAt || 0) > lockedAt - 30000) return;
+    return {activationId, lockedAt};
+  }, undefined, false);
+  if (!lock.committed) fail("A browser session is already starting. Try again.", 409);
   let expiresAt = 0;
-  await atomic((data) => {
-    const freshAccount = data.accounts?.[account.id];
-    const token = data.tokens?.[tokenId];
-    const device = data.devices?.[freshAccount?.registeredDeviceId];
+  try {
+    const freshAccount = await read(`accounts/${account.id}`);
+    if (!freshAccount || freshAccount.accountStatus !== "ACTIVE") {
+      fail("Account not found or restricted.", 401);
+    }
+    const [token, device] = await Promise.all([
+      read(`tokens/${tokenId}`),
+      freshAccount.registeredDeviceId ?
+        read(`devices/${freshAccount.registeredDeviceId}`) : Promise.resolve(null),
+    ]);
     if (!token || token.status !== "UNUSED" || token.ownerAccountId !== account.id) {
       fail("Token cannot be used.");
     }
+    if (!device || device.status !== "ACTIVE" ||
+      device.deviceHash !== hmac(req.body.deviceProof)) {
+      fail("Computer is not authorized. Reconnect this computer from the Tokens page.", 403);
+    }
+
+    const updates = {};
     if (freshAccount.activeSessionId) {
-      const previous = data.sessions?.[freshAccount.activeSessionId];
+      const previousSessionId = freshAccount.activeSessionId;
+      const previous = await read(`sessions/${previousSessionId}`);
       const stale = !previous || previous.status !== "ACTIVE" ||
         Number(previous.lastHeartbeatAt || 0) < Date.now() - 30000;
       if (!stale) fail("An active session already exists.");
-      if (previous?.status === "ACTIVE") {
-        previous.status = "FINISHED"; previous.endReason = "HEARTBEAT_TIMEOUT";
-        previous.endedAt = Date.now();
-        const previousToken = data.tokens?.[previous.tokenId];
+      if (previous && previous.status === "ACTIVE") {
+        const endedAt = Date.now();
+        updates[`sessions/${previousSessionId}/status`] = "FINISHED";
+        updates[`sessions/${previousSessionId}/endReason`] = "HEARTBEAT_TIMEOUT";
+        updates[`sessions/${previousSessionId}/endedAt`] = endedAt;
+        const previousToken = previous.tokenId ? await read(`tokens/${previous.tokenId}`) : null;
         if (previousToken) {
-          previousToken.status = "COMPLETED"; previousToken.endReason = "HEARTBEAT_TIMEOUT";
-          previousToken.endedAt = Date.now(); delete previousToken.displayToken;
+          updates[`tokens/${previous.tokenId}/status`] = "COMPLETED";
+          updates[`tokens/${previous.tokenId}/endReason`] = "HEARTBEAT_TIMEOUT";
+          updates[`tokens/${previous.tokenId}/endedAt`] = endedAt;
+          updates[`tokens/${previous.tokenId}/displayToken`] = null;
         }
       }
-      freshAccount.activeSessionId = null;
     }
-    if (!device || device.status !== "ACTIVE" || device.deviceHash !== hmac(req.body.deviceProof)) {
-      fail("Computer is not authorized.");
+
+    const startedAt = Date.now();
+    expiresAt = startedAt + Number(token.durationSeconds) * 1000;
+    if (!Number.isFinite(expiresAt) || expiresAt <= startedAt) {
+      fail("Token duration is invalid.");
     }
-    const startedAt = Date.now(); expiresAt = startedAt + token.durationSeconds * 1000;
-    Object.assign(token, {status: "ACTIVE", sessionId, deviceId: freshAccount.registeredDeviceId,
-      activatedAt: startedAt, expiresAt});
-    freshAccount.activeSessionId = sessionId;
-    freshAccount.unusedTokenCount = Math.max(0, freshAccount.unusedTokenCount - 1);
-    freshAccount.updatedAt = startedAt;
-    ensure(data, "sessions")[sessionId] = {
+    Object.assign(updates, {
+      [`tokens/${tokenId}/status`]: "ACTIVE",
+      [`tokens/${tokenId}/sessionId`]: sessionId,
+      [`tokens/${tokenId}/deviceId`]: freshAccount.registeredDeviceId,
+      [`tokens/${tokenId}/activatedAt`]: startedAt,
+      [`tokens/${tokenId}/expiresAt`]: expiresAt,
+      [`accounts/${account.id}/activeSessionId`]: sessionId,
+      [`accounts/${account.id}/unusedTokenCount`]: ServerValue.increment(-1),
+      [`accounts/${account.id}/updatedAt`]: startedAt,
+    });
+    updates[`sessions/${sessionId}`] = {
       accountId: account.id, tokenId, deviceId: freshAccount.registeredDeviceId,
-      browser, presetId, status: "ACTIVE", sessionSecretHash: hmac(rawSecret),
+      browser, presetId, userAgentId, status: "ACTIVE", sessionSecretHash: hmac(rawSecret),
       startedAt, expiresAt, lastHeartbeatAt: startedAt,
     };
-    const referralId = data.referralsByReferred?.[account.id];
-    const referral = data.referrals?.[referralId];
-    if (referral?.status === "DEVICE_PASSED") {
-      referral.status = "COMPLETED"; referral.firstSessionRewardAwarded = 4;
-      referral.reviewBonusAwarded = 1; referral.totalRewardAwarded = 8;
-      referral.completedAt = startedAt;
-      const referrer = data.accounts?.[referral.referrerAccountId];
-      if (referrer) referrer.pointBalance = Number(referrer.pointBalance || 0) + 5;
+
+    const referralId = await read(`referralsByReferred/${account.id}`);
+    const referral = referralId ? await read(`referrals/${referralId}`) : null;
+    if (referral && referral.status === "DEVICE_PASSED" && referral.referrerAccountId) {
+      updates[`referrals/${referralId}/status`] = "COMPLETED";
+      updates[`referrals/${referralId}/firstSessionRewardAwarded`] = 4;
+      updates[`referrals/${referralId}/reviewBonusAwarded`] = 1;
+      updates[`referrals/${referralId}/totalRewardAwarded`] = 8;
+      updates[`referrals/${referralId}/completedAt`] = startedAt;
+      updates[`accounts/${referral.referrerAccountId}/pointBalance`] =
+        ServerValue.increment(5);
+      updates[`accounts/${referral.referrerAccountId}/updatedAt`] = startedAt;
+      updates[`rewards/${id("rewards")}`] = {
+        accountId: referral.referrerAccountId,
+        referralId,
+        amount: 5,
+        type: "REFERRAL_FIRST_SESSION_AND_REVIEW",
+        status: "AVAILABLE",
+        createdAt: startedAt,
+      };
     }
-    return data;
-  });
+    await root.update(updates);
+  } finally {
+    const activeLock = await read(`sessionActivationLocks/${account.id}`);
+    if (activeLock?.activationId === activationId) await lockReference.remove();
+  }
   res.json({ok: true, sessionId, sessionSecret: rawSecret,
     expiresAt: new Date(expiresAt).toISOString(), heartbeatSeconds: 10,
-    launch: {browser, flags: PRESETS[presetId]}});
+    launch: {browser, flags: PRESETS[presetId], userAgent: USER_AGENTS[userAgentId]}});
 }));
 
 app.post("/api/session/heartbeat", route(async (req, res) => {
