@@ -49,7 +49,8 @@ app.use((req, res, next) => {
   const origin = String(req.headers.origin || "");
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Secret");
+    res.setHeader("Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   }
   if (req.method === "OPTIONS") {
@@ -753,6 +754,33 @@ app.post("/api/launcher/config", route(async (req, res) => {
     ok: true,
     configuration: LAUNCHER_CONFIGURATION,
   });
+}));
+
+app.post("/api/launcher/diagnostic", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const event = String(req.body.event || "UNKNOWN")
+      .replace(/[^A-Z0-9_-]/gi, "").slice(0, 50).toUpperCase();
+  const detail = String(req.body.detail || "").slice(0, 500);
+  const browser = String(req.body.browser || "").replace(/[^a-z]/gi, "").slice(0, 20);
+  const launcherVersion = String(
+      req.body.launcherVersion || req.headers["x-launcher-version"] || "unknown",
+  ).slice(0, 30);
+  const processCountValue = Number(req.body.processCount);
+  const processCount = Number.isFinite(processCountValue) ? processCountValue : null;
+  const diagnosticId = id("launcherDiagnostics");
+  const diagnostic = {
+    accountId: account.id,
+    username: account.data.username,
+    event,
+    detail,
+    browser,
+    launcherVersion,
+    processCount,
+    createdAt: Date.now(),
+  };
+  await root.child(`launcherDiagnostics/${diagnosticId}`).set(diagnostic);
+  console.warn("Launcher diagnostic", diagnostic);
+  res.json({ok: true, diagnosticId});
 }));
 
 app.get("/api/support/tickets", route(async (req, res) => {
