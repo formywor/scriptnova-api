@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "main": "index.js",
-  "engines": {"node": "20"},
+  "engines": {"node": "24.x"},
   "scripts": {
     "check": "node --check index.js && node --test test/*.test.js",
     "start": "node index.js",
