@@ -72,6 +72,14 @@ const USER_AGENTS = {
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 " +
     "Safari/537.36 ShareBrowser/1.0",
 };
+const SUPPORT_CATEGORIES = new Set([
+  "CONNECTION_CODE_REPLACEMENT",
+  "BROWSER_PROBLEM",
+  "ACCOUNT_ACCESS",
+  "POINTS_OR_REWARDS",
+  "REFERRAL_PROBLEM",
+  "OTHER",
+]);
 const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
 const LIMITED_FREE_TOKEN = Object.freeze({
   id: "free-4m-2026",
@@ -142,6 +150,51 @@ function publicAccount(a) {
     unusedTokenCount: Number(a.unusedTokenCount || 0),
     limitedFreeTokenClaimed: Boolean(a.limitedFreeTokenClaimedAt),
     fraudStatus: a.fraudStatus || "CLEAR", activeSessionId: a.activeSessionId || null};
+}
+function publicSupportTicket(ticketId, ticket) {
+  return {
+    ticketId,
+    category: ticket.category,
+    subject: ticket.subject,
+    message: ticket.message,
+    status: ticket.status || "PENDING",
+    adminResponse: ticket.adminResponse || "",
+    createdAt: Number(ticket.createdAt || 0),
+    updatedAt: Number(ticket.updatedAt || ticket.createdAt || 0),
+    replacementConsumedAt: Number(ticket.replacementConsumedAt || 0) || null,
+  };
+}
+async function accountSupportTickets(accountId) {
+  return Object.entries(await read("supportTickets") || {})
+      .filter(([, ticket]) => ticket.accountId === accountId)
+      .sort((a, b) => Number(b[1].createdAt || 0) - Number(a[1].createdAt || 0));
+}
+async function pairingContext(accountId, account) {
+  const [activeHash, pairings, tickets] = await Promise.all([
+    read(`activeDevicePairings/${accountId}`),
+    read("devicePairings"),
+    accountSupportTickets(accountId),
+  ]);
+  const activePairing = activeHash ? pairings?.[activeHash] : null;
+  const hasPairingHistory = Object.values(pairings || {})
+      .some((pairing) => pairing.accountId === accountId);
+  const replacementEntry = tickets.find(([, ticket]) =>
+    ticket.category === "CONNECTION_CODE_REPLACEMENT" &&
+    ["PENDING", "APPROVED", "DECLINED", "FULFILLED"].includes(ticket.status));
+  const approvedEntry = tickets.find(([, ticket]) =>
+    ticket.category === "CONNECTION_CODE_REPLACEMENT" &&
+    ticket.status === "APPROVED" && !ticket.replacementConsumedAt);
+  return {
+    activeHash,
+    activePairing,
+    hasIssued: Boolean(account.pairingCodeIssuedAt ||
+      account.registeredDeviceId || activeHash || hasPairingHistory),
+    migrationAvailable: Boolean(account.registeredDeviceId &&
+      !account.persistentLauncherPairedAt &&
+      !account.persistentMigrationCodeIssuedAt),
+    replacementEntry,
+    approvedEntry,
+  };
 }
 function route(handler) {
   return async (req, res) => {
@@ -472,23 +525,51 @@ app.post("/api/device/register", route(async (req, res) => {
 
 app.post("/api/device/pairing/start", route(async (req, res) => {
   const account = await requireAccount(req);
+  const context = await pairingContext(account.id, account.data);
+  if (context.activePairing?.pairingCode &&
+      context.activePairing.status === "OPEN" &&
+      Number(context.activePairing.expiresAt || 0) > Date.now()) {
+    res.json({
+      ok: true,
+      pairingCode: context.activePairing.pairingCode,
+      expiresAt: new Date(context.activePairing.expiresAt).toISOString(),
+      restored: true,
+    });
+    return;
+  }
+  if (context.hasIssued && !context.approvedEntry && !context.migrationAvailable) {
+    fail("Your connection code cannot be replaced automatically. Submit a connection-code request on the Support page.", 403);
+  }
+
   const pairingCode = crypto.randomBytes(5).toString("hex").toUpperCase();
   const pairingHash = hmac(pairingCode);
   const expiresAt = Date.now() + 10 * 60000;
-  const previousHash = await read(`activeDevicePairings/${account.id}`);
+  const createdAt = Date.now();
   const updates = {
     [`devicePairings/${pairingHash}`]: {
       accountId: account.id,
       pairingCode,
       status: "OPEN",
-      createdAt: Date.now(),
+      createdAt,
       expiresAt,
     },
     [`activeDevicePairings/${account.id}`]: pairingHash,
+    [`accounts/${account.id}/pairingCodeIssuedAt`]: createdAt,
+    [`accounts/${account.id}/updatedAt`]: createdAt,
   };
-  if (previousHash && previousHash !== pairingHash) {
-    updates[`devicePairings/${previousHash}/status`] = "REPLACED";
-    updates[`devicePairings/${previousHash}/replacedAt`] = Date.now();
+  if (context.migrationAvailable) {
+    updates[`accounts/${account.id}/persistentMigrationCodeIssuedAt`] = createdAt;
+  }
+  if (context.activeHash && context.activeHash !== pairingHash) {
+    updates[`devicePairings/${context.activeHash}/status`] = "REPLACED";
+    updates[`devicePairings/${context.activeHash}/replacedAt`] = createdAt;
+  }
+  if (context.approvedEntry) {
+    const [ticketId] = context.approvedEntry;
+    updates[`supportTickets/${ticketId}/status`] = "FULFILLED";
+    updates[`supportTickets/${ticketId}/replacementConsumedAt`] = createdAt;
+    updates[`supportTickets/${ticketId}/updatedAt`] = createdAt;
+    updates[`supportTickets/${ticketId}/generatedPairingHash`] = pairingHash;
   }
   await root.update(updates);
   res.json({ok: true, pairingCode, expiresAt: new Date(expiresAt).toISOString()});
@@ -496,8 +577,9 @@ app.post("/api/device/pairing/start", route(async (req, res) => {
 
 app.get("/api/device/pairing/current", route(async (req, res) => {
   const account = await requireAccount(req);
-  const pairingHash = await read(`activeDevicePairings/${account.id}`);
-  const pairing = pairingHash ? await read(`devicePairings/${pairingHash}`) : null;
+  const context = await pairingContext(account.id, account.data);
+  const pairingHash = context.activeHash;
+  const pairing = context.activePairing;
   if (!pairing || !pairing.pairingCode || pairing.status !== "OPEN" ||
       Number(pairing.expiresAt || 0) <= Date.now()) {
     if (pairingHash) {
@@ -507,7 +589,18 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
           pairing?.status === "OPEN" ? "EXPIRED" : pairing?.status || "EXPIRED",
       });
     }
-    res.json({ok: true, pairing: null});
+    res.json({
+      ok: true,
+      pairing: null,
+      registeredComputer: Boolean(account.data.registeredDeviceId),
+      canGenerate: !context.hasIssued || context.migrationAvailable ||
+        Boolean(context.approvedEntry),
+      migrationAvailable: context.migrationAvailable,
+      requiresSupportApproval: context.hasIssued &&
+        !context.migrationAvailable && !context.approvedEntry,
+      replacementRequest: context.replacementEntry ?
+        publicSupportTicket(...context.replacementEntry) : null,
+    });
     return;
   }
   res.json({
@@ -516,6 +609,12 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
       pairingCode: pairing.pairingCode,
       expiresAt: new Date(pairing.expiresAt).toISOString(),
     },
+    registeredComputer: Boolean(account.data.registeredDeviceId),
+    canGenerate: false,
+    migrationAvailable: false,
+    requiresSupportApproval: false,
+    replacementRequest: context.replacementEntry ?
+      publicSupportTicket(...context.replacementEntry) : null,
   });
 }));
 
@@ -536,10 +635,82 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
     [`devicePairings/${pairingHash}/status`]: "USED",
     [`devicePairings/${pairingHash}/usedAt`]: Date.now(),
     [`activeDevicePairings/${pairing.accountId}`]: null,
+    [`accounts/${pairing.accountId}/persistentLauncherPairedAt`]: Date.now(),
   });
   const launcherToken = await newLogin(
       pairing.accountId, "Share Browser launcher");
   res.json({ok: true, ...result, launcherToken});
+}));
+
+app.post("/api/device/launcher/status", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const deviceId = account.data.registeredDeviceId;
+  const device = deviceId ? await read(`devices/${deviceId}`) : null;
+  if (!device || device.status !== "ACTIVE" ||
+      device.deviceHash !== hmac(req.body.deviceProof)) {
+    fail("Saved computer connection is no longer valid.", 403);
+  }
+  res.json({
+    ok: true,
+    connected: true,
+    username: account.data.username,
+    deviceId,
+  });
+}));
+
+app.get("/api/support/tickets", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const tickets = await accountSupportTickets(account.id);
+  res.json({
+    ok: true,
+    tickets: tickets.slice(0, 50)
+        .map(([ticketId, ticket]) => publicSupportTicket(ticketId, ticket)),
+  });
+}));
+
+app.post("/api/support/tickets", route(async (req, res) => {
+  const account = await requireAccount(req);
+  await rateLimit(account.id, "SUPPORT_TICKET", 5, 24 * 60 * 60);
+  const category = String(req.body.category || "").trim().toUpperCase();
+  const subject = String(req.body.subject || "").trim().replace(/\s+/g, " ");
+  const ticketMessage = String(req.body.message || "").trim();
+  if (!SUPPORT_CATEGORIES.has(category)) fail("Choose a valid support category.");
+  if (subject.length < 5 || subject.length > 80) {
+    fail("Subject must contain between 5 and 80 characters.");
+  }
+  if (ticketMessage.length < 20 || ticketMessage.length > 2000) {
+    fail("Explanation must contain between 20 and 2,000 characters.");
+  }
+
+  const existing = await accountSupportTickets(account.id);
+  if (category === "CONNECTION_CODE_REPLACEMENT") {
+    const activeRequest = existing.find(([, ticket]) =>
+      ticket.category === category &&
+      ["PENDING", "APPROVED"].includes(ticket.status) &&
+      !ticket.replacementConsumedAt);
+    if (activeRequest) {
+      fail("You already have an active connection-code request.", 409);
+    }
+  }
+
+  const ticketId = id("supportTickets");
+  const createdAt = Date.now();
+  const ticket = {
+    accountId: account.id,
+    username: account.data.username,
+    category,
+    subject,
+    message: ticketMessage,
+    status: "PENDING",
+    createdAt,
+    updatedAt: createdAt,
+    submittedIpPrefix: ipPrefix(req),
+  };
+  await root.child(`supportTickets/${ticketId}`).set(ticket);
+  res.status(201).json({
+    ok: true,
+    ticket: publicSupportTicket(ticketId, ticket),
+  });
 }));
 
 app.get("/api/tokens", route(async (req, res) => {

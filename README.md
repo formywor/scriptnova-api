@@ -42,6 +42,27 @@ Only run setup when initially configuring or intentionally replacing the
 production secrets. A normal GitHub update does not require running setup
 again because the Vercel project is already linked to the repository.
 
+## Reviewing support tickets
+
+Support tickets are stored in Firebase Realtime Database under:
+
+```text
+supportTickets/{ticketId}
+```
+
+Administrators and developers review them in Firebase Console. For a
+connection-code replacement request, change `status` from `PENDING` to:
+
+```text
+APPROVED
+DECLINED
+```
+
+You can also add an `adminResponse` string that the user will see on the
+Support page. Do not delete the ticket. When an approved replacement code is
+generated, the API automatically changes the ticket to `FULFILLED` and records
+`replacementConsumedAt`.
+
 ## Validation
 
 Install dependencies and run the checks:
