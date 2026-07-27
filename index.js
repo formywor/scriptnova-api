@@ -25,6 +25,7 @@ function firebaseOptions() {
 if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
+let rootCacheWarmed = false;
 const app = express();
 app.disable("x-powered-by");
 app.disable("etag");
@@ -219,6 +220,13 @@ async function rewardWaitPolicy(accountId, account) {
   return {tier: "ESTABLISHED", minutes: crypto.randomInt(0, 5)};
 }
 async function atomic(mutator) {
+  // Warm the Admin SDK cache before a root transaction. On a cold Vercel
+  // instance the first transaction callback can otherwise receive null and
+  // incorrectly report that an existing account is missing.
+  if (!rootCacheWarmed) {
+    await root.get();
+    rootCacheWarmed = true;
+  }
   let thrown = null;
   const result = await root.transaction((current) => {
     try { return mutator(current || {}); } catch (error) { thrown = error; return; }
@@ -401,13 +409,48 @@ app.post("/api/device/pairing/start", route(async (req, res) => {
   const pairingCode = crypto.randomBytes(5).toString("hex").toUpperCase();
   const pairingHash = hmac(pairingCode);
   const expiresAt = Date.now() + 10 * 60000;
-  await root.child(`devicePairings/${pairingHash}`).set({
-    accountId: account.id,
-    status: "OPEN",
-    createdAt: Date.now(),
-    expiresAt,
-  });
+  const previousHash = await read(`activeDevicePairings/${account.id}`);
+  const updates = {
+    [`devicePairings/${pairingHash}`]: {
+      accountId: account.id,
+      pairingCode,
+      status: "OPEN",
+      createdAt: Date.now(),
+      expiresAt,
+    },
+    [`activeDevicePairings/${account.id}`]: pairingHash,
+  };
+  if (previousHash && previousHash !== pairingHash) {
+    updates[`devicePairings/${previousHash}/status`] = "REPLACED";
+    updates[`devicePairings/${previousHash}/replacedAt`] = Date.now();
+  }
+  await root.update(updates);
   res.json({ok: true, pairingCode, expiresAt: new Date(expiresAt).toISOString()});
+}));
+
+app.get("/api/device/pairing/current", route(async (req, res) => {
+  const account = await requireAccount(req);
+  const pairingHash = await read(`activeDevicePairings/${account.id}`);
+  const pairing = pairingHash ? await read(`devicePairings/${pairingHash}`) : null;
+  if (!pairing || !pairing.pairingCode || pairing.status !== "OPEN" ||
+      Number(pairing.expiresAt || 0) <= Date.now()) {
+    if (pairingHash) {
+      await root.update({
+        [`activeDevicePairings/${account.id}`]: null,
+        [`devicePairings/${pairingHash}/status`]:
+          pairing?.status === "OPEN" ? "EXPIRED" : pairing?.status || "EXPIRED",
+      });
+    }
+    res.json({ok: true, pairing: null});
+    return;
+  }
+  res.json({
+    ok: true,
+    pairing: {
+      pairingCode: pairing.pairingCode,
+      expiresAt: new Date(pairing.expiresAt).toISOString(),
+    },
+  });
 }));
 
 app.post("/api/device/pairing/complete", route(async (req, res) => {
@@ -423,9 +466,10 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
   }
   const result = await registerDeviceForAccount(
       pairing.accountId, req.body.deviceProof);
-  await root.child(`devicePairings/${pairingHash}`).update({
-    status: "USED",
-    usedAt: Date.now(),
+  await root.update({
+    [`devicePairings/${pairingHash}/status`]: "USED",
+    [`devicePairings/${pairingHash}/usedAt`]: Date.now(),
+    [`activeDevicePairings/${pairing.accountId}`]: null,
   });
   const launcherToken = await newLogin(
       pairing.accountId, "Share Browser launcher");
