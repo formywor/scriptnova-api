@@ -67,6 +67,34 @@ const PRESETS = {
   minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync"],
 };
 const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
+const LIMITED_FREE_TOKEN = Object.freeze({
+  id: "free-4m-2026",
+  minutes: 4,
+  points: 0,
+  label: "4 minutes — FREE limited token",
+  endsAt: Date.parse("2026-08-28T03:59:59.000Z"),
+});
+
+function availableTokenOptions() {
+  const standard = TOKEN_OPTIONS.map((option) => ({
+    id: `${option.hours}h`,
+    hours: option.hours,
+    minutes: option.hours * 60,
+    points: option.points,
+    label: `${option.hours} hour${option.hours === 1 ? "" : "s"} — ${option.points} points`,
+  }));
+  if (Date.now() < LIMITED_FREE_TOKEN.endsAt) {
+    standard.unshift({...LIMITED_FREE_TOKEN, limited: true});
+  }
+  return standard;
+}
+
+function requestedTokenOption(body) {
+  const options = availableTokenOptions();
+  const optionId = String(body.optionId || "");
+  return options.find((option) => option.id === optionId) ||
+    options.find((option) => option.hours === Number(body.hours));
+}
 
 function fail(message, statusCode = 400) {
   const error = new Error(message); error.statusCode = statusCode; throw error;
@@ -106,6 +134,7 @@ function publicAccount(a) {
     pendingPointBalance: Number(a.pendingPointBalance || 0), referralCode: a.username,
     registeredComputer: Boolean(a.registeredDeviceId),
     unusedTokenCount: Number(a.unusedTokenCount || 0),
+    limitedFreeTokenClaimed: Boolean(a.limitedFreeTokenClaimedAt),
     fraudStatus: a.fraudStatus || "CLEAR", activeSessionId: a.activeSessionId || null};
 }
 function route(handler) {
@@ -327,8 +356,14 @@ app.get("/", (req, res) => res.json({
 }));
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
-  ok: true, tokenOptions: TOKEN_OPTIONS,
+  ok: true, tokenOptions: availableTokenOptions(),
   economy: {...ECONOMY, maximumRedirectPoints: 22},
+  limitedOffer: {
+    active: Date.now() < LIMITED_FREE_TOKEN.endsAt,
+    id: LIMITED_FREE_TOKEN.id,
+    endsAt: new Date(LIMITED_FREE_TOKEN.endsAt).toISOString(),
+    onePerAccount: true,
+  },
   browsers: [{id: "chrome", name: "Google Chrome"}, {id: "edge", name: "Microsoft Edge"}],
 }));
 
@@ -512,25 +547,101 @@ app.get("/api/tokens", route(async (req, res) => {
 
 app.post("/api/tokens/create", route(async (req, res) => {
   const account = await requireAccount(req);
-  const option = TOKEN_OPTIONS.find((item) => item.hours === Number(req.body.hours));
+  const option = requestedTokenOption(req.body);
   if (!option) fail("Invalid token duration.");
   const rawToken = code("SHARE"); const tokenHash = hmac(rawToken); const tokenId = id("tokens");
-  await atomic((data) => {
-    const fresh = data.accounts?.[account.id];
-    if (!fresh?.registeredDeviceId) fail("Register your computer first.");
-    if (fresh.fraudStatus !== "CLEAR") fail("Your account is under review.");
-    if (Number(fresh.unusedTokenCount || 0) >= 2) fail("Maximum two unused tokens.");
-    if (Number(fresh.pointBalance || 0) < option.points) fail("You do not have enough points.");
-    ensure(data, "tokens")[tokenId] = {
-      tokenHash, displayToken: rawToken, ownerAccountId: account.id,
-      durationHours: option.hours, durationSeconds: option.hours * 3600,
-      pointCost: option.points, status: "UNUSED", createdAt: Date.now(),
-    };
-    ensure(data, "tokenHashes")[tokenHash] = tokenId;
-    fresh.pointBalance -= option.points; fresh.unusedTokenCount += 1; fresh.updatedAt = Date.now();
-    return data;
+  const accountReference = root.child(`accounts/${account.id}`);
+  await accountReference.get();
+  let rejection = null;
+  const reservation = await accountReference.transaction((fresh) => {
+    rejection = null;
+    if (!fresh) {
+      rejection = {message: "Account not found.", statusCode: 404};
+      return;
+    }
+    if (Number(fresh.pointBalance || 0) < option.points) {
+      rejection = {message: "Not enough points for this token.", statusCode: 400};
+      return;
+    }
+    if (!fresh.registeredDeviceId) {
+      rejection = {message: "Register your computer first.", statusCode: 400};
+      return;
+    }
+    if (fresh.fraudStatus !== "CLEAR") {
+      rejection = {message: "Your account is under review.", statusCode: 403};
+      return;
+    }
+    if (Number(fresh.unusedTokenCount || 0) >= ECONOMY.maximumUnusedTokens) {
+      rejection = {message: "Maximum two unused tokens.", statusCode: 400};
+      return;
+    }
+    if (option.id === LIMITED_FREE_TOKEN.id && fresh.limitedFreeTokenClaimedAt) {
+      rejection = {message: "Your free limited token was already claimed.", statusCode: 400};
+      return;
+    }
+    const updated = {...fresh};
+    updated.pointBalance = Number(updated.pointBalance || 0) - option.points;
+    updated.unusedTokenCount = Number(updated.unusedTokenCount || 0) + 1;
+    updated.tokenReservation = tokenId;
+    updated.updatedAt = Date.now();
+    if (option.id === LIMITED_FREE_TOKEN.id) {
+      updated.limitedFreeTokenClaimedAt = Date.now();
+    }
+    return updated;
+  }, undefined, false);
+  if (rejection) fail(rejection.message, rejection.statusCode);
+  if (!reservation.committed) fail("Token creation conflicted with another request.", 409);
+
+  const createdAt = Date.now();
+  try {
+    await root.update({
+      [`tokens/${tokenId}`]: {
+        tokenHash,
+        displayToken: rawToken,
+        ownerAccountId: account.id,
+        durationHours: option.hours || null,
+        durationMinutes: option.minutes,
+        durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
+          `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
+        durationSeconds: option.minutes * 60,
+        pointCost: option.points,
+        limitedOfferId: option.limited ? option.id : null,
+        status: "UNUSED",
+        createdAt,
+      },
+      [`tokenHashes/${tokenHash}`]: tokenId,
+      [`accounts/${account.id}/tokenReservation`]: null,
+      [`pointTransactions/${id("pointTransactions")}`]: {
+        accountId: account.id,
+        amount: -option.points,
+        type: option.limited ? "LIMITED_FREE_TOKEN" : "TOKEN_PURCHASE",
+        sourceId: tokenId,
+        createdAt,
+      },
+    });
+  } catch (error) {
+    await accountReference.transaction((fresh) => {
+      if (!fresh || fresh.tokenReservation !== tokenId) return fresh;
+      const rolledBack = {...fresh};
+      rolledBack.pointBalance = Number(rolledBack.pointBalance || 0) + option.points;
+      rolledBack.unusedTokenCount =
+        Math.max(0, Number(rolledBack.unusedTokenCount || 0) - 1);
+      delete rolledBack.tokenReservation;
+      if (option.id === LIMITED_FREE_TOKEN.id) {
+        delete rolledBack.limitedFreeTokenClaimedAt;
+      }
+      return rolledBack;
+    });
+    throw error;
+  }
+  res.status(201).json({
+    ok: true,
+    token: rawToken,
+    durationMinutes: option.minutes,
+    durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
+      `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
+    pointCost: option.points,
   });
-  res.status(201).json({ok: true, token: rawToken, hours: option.hours, pointCost: option.points});
 }));
 
 app.post("/api/session/activate", route(async (req, res) => {
@@ -650,17 +761,29 @@ app.post("/api/redirect/start", route(async (req, res) => {
 app.get("/api/redirect/status", route(async (req, res) => {
   const account = await requireAccount(req);
   const cutoff = Date.now() - 14 * 3600000;
+  const recoveryUpdates = {};
   const attempts = Object.entries(await read("redirectAttempts") || {})
       .filter(([, attempt]) =>
         attempt.accountId === account.id && attempt.createdAt >= cutoff)
-      .map(([attemptId, attempt]) => ({
-        attemptId,
-        status: attempt.status,
-        rewardAmount: Number(attempt.rewardAmount || 0),
-        createdAt: Number(attempt.createdAt || 0),
-        claimableAt: Number(attempt.claimableAt || 0),
-      }))
+      .map(([attemptId, attempt]) => {
+        const staleClaim = attempt.status === "CLAIMING" &&
+          (!attempt.claimingAt || Number(attempt.claimingAt) < Date.now() - 60000);
+        if (staleClaim) {
+          attempt.status = "OPENED";
+          recoveryUpdates[`redirectAttempts/${attemptId}/status`] = "OPENED";
+          recoveryUpdates[`redirectAttempts/${attemptId}/claimingAt`] = null;
+          recoveryUpdates[`redirectAttempts/${attemptId}/claimId`] = null;
+        }
+        return {
+          attemptId,
+          status: attempt.status,
+          rewardAmount: Number(attempt.rewardAmount || 0),
+          createdAt: Number(attempt.createdAt || 0),
+          claimableAt: Number(attempt.claimableAt || 0),
+        };
+      })
       .sort((a, b) => b.createdAt - a.createdAt);
+  if (Object.keys(recoveryUpdates).length) await root.update(recoveryUpdates);
   const rewardedCount = attempts.filter((attempt) =>
     attempt.status === "REWARDED").length;
   res.json({
@@ -683,15 +806,26 @@ app.post("/api/redirect/claim", route(async (req, res) => {
   if (!attempt || attempt.accountId !== account.id) {
     fail("This reward does not belong to the signed-in account.");
   }
+  if (attempt.status === "CLAIMING" &&
+      (!attempt.claimingAt || Number(attempt.claimingAt) < Date.now() - 60000)) {
+    await attemptReference.update({
+      status: "OPENED",
+      claimingAt: null,
+      claimId: null,
+    });
+    attempt.status = "OPENED";
+  }
   if (attempt.status !== "OPENED") fail("Reward already claimed.");
   if (Number(attempt.claimableAt || 0) > Date.now()) {
     fail("Reward is still pending.");
   }
 
   const statusReference = attemptReference.child("status");
+  const claimId = crypto.randomBytes(12).toString("hex");
   const lock = await statusReference.transaction((status) =>
     status === "OPENED" ? "CLAIMING" : undefined, undefined, false);
   if (!lock.committed) fail("Reward already claimed or is being processed.", 409);
+  await attemptReference.update({claimId, claimingAt: Date.now()});
 
   const transactionId = id("pointTransactions");
   const rewardedAt = Date.now();
@@ -699,6 +833,8 @@ app.post("/api/redirect/claim", route(async (req, res) => {
     await root.update({
       [`redirectAttempts/${attemptId}/status`]: "REWARDED",
       [`redirectAttempts/${attemptId}/rewardedAt`]: rewardedAt,
+      [`redirectAttempts/${attemptId}/claimId`]: null,
+      [`redirectAttempts/${attemptId}/claimingAt`]: null,
       [`accounts/${account.id}/pointBalance`]: ServerValue.increment(0.5),
       [`accounts/${account.id}/updatedAt`]: rewardedAt,
       [`pointTransactions/${transactionId}`]: {
@@ -710,8 +846,14 @@ app.post("/api/redirect/claim", route(async (req, res) => {
       },
     });
   } catch (error) {
-    await statusReference.transaction((status) =>
-      status === "CLAIMING" ? "OPENED" : status);
+    const currentClaimId = await read(`redirectAttempts/${attemptId}/claimId`);
+    if (currentClaimId === claimId) {
+      await attemptReference.update({
+        status: "OPENED",
+        claimId: null,
+        claimingAt: null,
+      });
+    }
     throw error;
   }
   res.json({ok: true, awardedPoints: 0.5});
