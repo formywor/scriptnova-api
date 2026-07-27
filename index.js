@@ -678,18 +678,42 @@ app.post("/api/redirect/claim", route(async (req, res) => {
   const account = await requireAccount(req);
   const attemptId = String(req.body.attemptId || "");
   if (!attemptId) fail("Reward attempt is missing.");
-  await atomic((data) => {
-    const attempt = data.redirectAttempts?.[attemptId];
-    if (!attempt || attempt.accountId !== account.id) {
-      fail("This reward does not belong to the signed-in account.");
-    }
-    if (attempt.status !== "OPENED") fail("Reward already claimed.");
-    if (attempt.claimableAt > Date.now()) fail("Reward is still pending.");
-    attempt.status = "REWARDED"; attempt.rewardedAt = Date.now();
-    data.accounts[account.id].pointBalance =
-      Number(data.accounts[account.id].pointBalance || 0) + 0.5;
-    return data;
-  });
+  const attemptReference = root.child(`redirectAttempts/${attemptId}`);
+  const attempt = (await attemptReference.get()).val();
+  if (!attempt || attempt.accountId !== account.id) {
+    fail("This reward does not belong to the signed-in account.");
+  }
+  if (attempt.status !== "OPENED") fail("Reward already claimed.");
+  if (Number(attempt.claimableAt || 0) > Date.now()) {
+    fail("Reward is still pending.");
+  }
+
+  const statusReference = attemptReference.child("status");
+  const lock = await statusReference.transaction((status) =>
+    status === "OPENED" ? "CLAIMING" : undefined, undefined, false);
+  if (!lock.committed) fail("Reward already claimed or is being processed.", 409);
+
+  const transactionId = id("pointTransactions");
+  const rewardedAt = Date.now();
+  try {
+    await root.update({
+      [`redirectAttempts/${attemptId}/status`]: "REWARDED",
+      [`redirectAttempts/${attemptId}/rewardedAt`]: rewardedAt,
+      [`accounts/${account.id}/pointBalance`]: ServerValue.increment(0.5),
+      [`accounts/${account.id}/updatedAt`]: rewardedAt,
+      [`pointTransactions/${transactionId}`]: {
+        accountId: account.id,
+        amount: 0.5,
+        type: "REDIRECT_REWARD",
+        sourceId: attemptId,
+        createdAt: rewardedAt,
+      },
+    });
+  } catch (error) {
+    await statusReference.transaction((status) =>
+      status === "CLAIMING" ? "OPENED" : status);
+    throw error;
+  }
   res.json({ok: true, awardedPoints: 0.5});
 }));
 
