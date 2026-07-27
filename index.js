@@ -3,7 +3,7 @@
 const crypto = require("crypto");
 const express = require("express");
 const {initializeApp, cert, getApps} = require("firebase-admin/app");
-const {getDatabase} = require("firebase-admin/database");
+const {getDatabase, ServerValue} = require("firebase-admin/database");
 const {TOKEN_OPTIONS, ECONOMY, normalizeUsername, validateUsername, validatePin} =
   require("./lib/policy");
 
@@ -113,6 +113,10 @@ function route(handler) {
     try { await handler(req, res); } catch (error) {
       const statusCode = error.statusCode || 400;
       if (statusCode >= 500) console.error(error);
+      if (req.path === "/api/device/pairing/complete" && statusCode < 500) {
+        console.warn("Pairing request rejected:", statusCode,
+            error.message || "Request failed.");
+      }
       res.status(statusCode)
           .json({ok: false, error: error.message || "Request failed."});
     }
@@ -153,38 +157,59 @@ async function registerDeviceForAccount(accountId, proof) {
   }
 
   const deviceId = id("devices");
-  await atomic((data) => {
-    const fresh = data.accounts?.[accountId];
-    if (!fresh) fail("Account not found.", 404);
-    if (fresh.registeredDeviceId) fail("A computer is already registered.");
-    ensure(data, "devices")[deviceId] = {
+  const registeredDeviceReference =
+    root.child(`accounts/${accountId}/registeredDeviceId`);
+  const claim = await registeredDeviceReference.transaction((current) => {
+    if (current) return;
+    return deviceId;
+  }, undefined, false);
+  if (!claim.committed) {
+    const currentDeviceId = claim.snapshot.val();
+    const currentDevice = currentDeviceId ?
+      await read(`devices/${currentDeviceId}`) : null;
+    if (currentDevice?.deviceHash === deviceHash) {
+      return {
+        alreadyRegistered: true,
+        deviceId: currentDeviceId,
+        riskStatus: currentDevice.status === "ACTIVE" ? "PASSED" : "REVIEW",
+      };
+    }
+    fail("This account already has a different registered computer.", 409);
+  }
+
+  const now = Date.now();
+  const updates = {
+    [`devices/${deviceId}`]: {
       accountId,
       deviceHash,
       status: usedByAnother ? "REVIEW" : "ACTIVE",
       riskScore: usedByAnother ? 100 : 0,
-      registeredAt: Date.now(),
-    };
-    fresh.registeredDeviceId = deviceId;
-    fresh.fraudStatus = usedByAnother ? "REVIEW" : "CLEAR";
-    fresh.updatedAt = Date.now();
-    if (!usedByAnother && fresh.referredByAccountId) {
-      fresh.pointBalance = Number(fresh.pointBalance || 0) + 2;
-      fresh.pendingPointBalance =
-        Math.max(0, Number(fresh.pendingPointBalance || 0) - 2);
-      const referralId = data.referralsByReferred?.[accountId];
-      const referral = data.referrals?.[referralId];
-      if (referral?.status === "WAITING_FOR_DEVICE") {
-        referral.status = "DEVICE_PASSED";
-        referral.signupRewardAwarded = 3;
-        referral.devicePassedAt = Date.now();
-        const referrer = data.accounts?.[referral.referrerAccountId];
-        if (referrer) {
-          referrer.pointBalance = Number(referrer.pointBalance || 0) + 3;
-        }
-      }
+      registeredAt: now,
+    },
+    [`accounts/${accountId}/fraudStatus`]: usedByAnother ? "REVIEW" : "CLEAR",
+    [`accounts/${accountId}/updatedAt`]: now,
+  };
+  if (!usedByAnother && account.referredByAccountId) {
+    updates[`accounts/${accountId}/pointBalance`] = ServerValue.increment(2);
+    updates[`accounts/${accountId}/pendingPointBalance`] =
+      Math.max(0, Number(account.pendingPointBalance || 0) - 2);
+    const referralId = await read(`referralsByReferred/${accountId}`);
+    const referral = referralId ? await read(`referrals/${referralId}`) : null;
+    if (referral?.status === "WAITING_FOR_DEVICE") {
+      updates[`referrals/${referralId}/status`] = "DEVICE_PASSED";
+      updates[`referrals/${referralId}/signupRewardAwarded`] = 3;
+      updates[`referrals/${referralId}/devicePassedAt`] = now;
+      updates[`accounts/${referral.referrerAccountId}/pointBalance`] =
+        ServerValue.increment(3);
     }
-    return data;
-  });
+  }
+  try {
+    await root.update(updates);
+  } catch (error) {
+    await registeredDeviceReference.transaction((current) =>
+      current === deviceId ? null : current);
+    throw error;
+  }
   return {
     alreadyRegistered: false,
     deviceId,
