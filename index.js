@@ -26,6 +26,9 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
+const CURRENT_LAUNCHER_VERSION = "1.2.0";
+const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
+const DEVICE_SETUP_BONUS = 2;
 const app = express();
 app.disable("x-powered-by");
 app.disable("etag");
@@ -160,8 +163,11 @@ function requestedTokenOption(body) {
     options.find((option) => option.hours === Number(body.hours));
 }
 
-function fail(message, statusCode = 400) {
-  const error = new Error(message); error.statusCode = statusCode; throw error;
+function fail(message, statusCode = 400, code = "") {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.apiCode = code;
+  throw error;
 }
 function envSecret(name) {
   const value = process.env[name];
@@ -199,6 +205,8 @@ function publicAccount(a) {
     registeredComputer: Boolean(a.registeredDeviceId),
     unusedTokenCount: Number(a.unusedTokenCount || 0),
     limitedFreeTokenClaimed: Boolean(a.limitedFreeTokenClaimedAt),
+    deviceSetupBonusAwarded: Boolean(a.deviceSetupBonusAwardedAt),
+    deviceSetupNoticePending: Boolean(a.deviceSetupNoticePending),
     fraudStatus: a.fraudStatus || "CLEAR", activeSessionId: a.activeSessionId || null};
 }
 function publicSupportTicket(ticketId, ticket) {
@@ -255,8 +263,13 @@ function route(handler) {
         console.warn("Pairing request rejected:", statusCode,
             error.message || "Request failed.");
       }
-      res.status(statusCode)
-          .json({ok: false, error: error.message || "Request failed."});
+      const response = {ok: false, error: error.message || "Request failed."};
+      if (error.apiCode) response.code = error.apiCode;
+      if (error.apiCode === "LAUNCHER_UPDATE_REQUIRED") {
+        response.currentVersion = CURRENT_LAUNCHER_VERSION;
+        response.updateUrl = LAUNCHER_DOWNLOAD_URL;
+      }
+      res.status(statusCode).json(response);
     }
   };
 }
@@ -269,6 +282,61 @@ async function pendingReferralPoints(accountId) {
         ["WAITING_FOR_DEVICE", "RISK_REVIEW"].includes(referral.status))
       .reduce((total, referral) =>
         total + Number(referral.pendingReward || 0), 0);
+}
+function requireCurrentLauncherVersion(req) {
+  const supplied = String(req.headers["x-launcher-version"] || "");
+  if (supplied !== CURRENT_LAUNCHER_VERSION) {
+    fail(
+        `Share Browser ${CURRENT_LAUNCHER_VERSION} is required. Download the latest version from scriptnovaa.com.`,
+        426,
+        "LAUNCHER_UPDATE_REQUIRED",
+    );
+  }
+}
+async function ensureDeviceSetupBonus(accountId, account) {
+  if (!account.registeredDeviceId || account.deviceSetupBonusAwardedAt ||
+      account.fraudStatus !== "CLEAR") {
+    return account;
+  }
+  const registeredDevice = await read(`devices/${account.registeredDeviceId}`);
+  if (!registeredDevice || registeredDevice.status !== "ACTIVE" ||
+      registeredDevice.accountId !== accountId) {
+    return account;
+  }
+  const updated = await atomic((data) => {
+    const fresh = data.accounts?.[accountId];
+    if (!fresh || !fresh.registeredDeviceId || fresh.deviceSetupBonusAwardedAt ||
+        fresh.fraudStatus !== "CLEAR") {
+      return data;
+    }
+    const now = Date.now();
+    const referredBonusAlreadyPaid = Boolean(fresh.referredByAccountId) &&
+      Number(fresh.pendingPointBalance || 0) < DEVICE_SETUP_BONUS;
+    fresh.deviceSetupBonusAwardedAt = now;
+    fresh.deviceSetupNoticePending = true;
+    fresh.updatedAt = now;
+    if (!referredBonusAlreadyPaid) {
+      fresh.pointBalance = Number(fresh.pointBalance || 0) + DEVICE_SETUP_BONUS;
+      if (fresh.referredByAccountId) {
+        fresh.pendingPointBalance = Math.max(
+            0,
+            Number(fresh.pendingPointBalance || 0) - DEVICE_SETUP_BONUS,
+        );
+      }
+      const transactionId = id("pointTransactions");
+      ensure(data, "pointTransactions")[transactionId] = {
+        accountId,
+        amount: DEVICE_SETUP_BONUS,
+        type: "DEVICE_SETUP_BONUS",
+        sourceId: fresh.registeredDeviceId,
+        createdAt: now,
+      };
+    } else {
+      fresh.deviceSetupBonusMigratedAt = now;
+    }
+    return data;
+  });
+  return updated.accounts?.[accountId] || account;
 }
 async function registerDeviceForAccount(accountId, proof) {
   const rawProof = String(proof || "");
@@ -328,9 +396,10 @@ async function registerDeviceForAccount(accountId, proof) {
     [`accounts/${accountId}/updatedAt`]: now,
   };
   if (!usedByAnother && account.referredByAccountId) {
-    updates[`accounts/${accountId}/pointBalance`] = ServerValue.increment(2);
+    updates[`accounts/${accountId}/pointBalance`] =
+      ServerValue.increment(DEVICE_SETUP_BONUS);
     updates[`accounts/${accountId}/pendingPointBalance`] =
-      Math.max(0, Number(account.pendingPointBalance || 0) - 2);
+      Math.max(0, Number(account.pendingPointBalance || 0) - DEVICE_SETUP_BONUS);
     const referralId = await read(`referralsByReferred/${accountId}`);
     const referral = referralId ? await read(`referrals/${referralId}`) : null;
     if (referral?.status === "WAITING_FOR_DEVICE") {
@@ -340,6 +409,20 @@ async function registerDeviceForAccount(accountId, proof) {
       updates[`accounts/${referral.referrerAccountId}/pointBalance`] =
         ServerValue.increment(3);
     }
+  } else if (!usedByAnother) {
+    updates[`accounts/${accountId}/pointBalance`] =
+      ServerValue.increment(DEVICE_SETUP_BONUS);
+  }
+  if (!usedByAnother) {
+    updates[`accounts/${accountId}/deviceSetupBonusAwardedAt`] = now;
+    updates[`accounts/${accountId}/deviceSetupNoticePending`] = true;
+    updates[`pointTransactions/${id("pointTransactions")}`] = {
+      accountId,
+      amount: DEVICE_SETUP_BONUS,
+      type: "DEVICE_SETUP_BONUS",
+      sourceId: deviceId,
+      createdAt: now,
+    };
   }
   try {
     await root.update(updates);
@@ -497,6 +580,7 @@ async function finishSession(sessionId, session, reason) {
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
+  launcherVersion: CURRENT_LAUNCHER_VERSION,
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -507,6 +591,10 @@ app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
   ok: true, tokenOptions: availableTokenOptions(),
   economy: {...ECONOMY, maximumRedirectPoints: 22},
+  launcher: {
+    currentVersion: CURRENT_LAUNCHER_VERSION,
+    downloadUrl: LAUNCHER_DOWNLOAD_URL,
+  },
   limitedOffer: {
     active: Date.now() < LIMITED_FREE_TOKEN.endsAt,
     id: LIMITED_FREE_TOKEN.id,
@@ -591,10 +679,20 @@ app.post("/api/recover", route(async (req, res) => {
 
 app.get("/api/account", route(async (req, res) => {
   const account = await requireAccount(req);
+  const currentAccount = await ensureDeviceSetupBonus(account.id, account.data);
   const pendingReferrals = await pendingReferralPoints(account.id);
-  const summary = publicAccount(account.data);
+  const summary = publicAccount(currentAccount);
   summary.pendingPointBalance += pendingReferrals;
   res.json({ok: true, account: summary});
+}));
+
+app.post("/api/account/device-welcome/acknowledge", route(async (req, res) => {
+  const account = await requireAccount(req);
+  await root.child(`accounts/${account.id}`).update({
+    deviceSetupNoticePending: false,
+    deviceSetupNoticeAcknowledgedAt: Date.now(),
+  });
+  res.json({ok: true});
 }));
 
 app.post("/api/logout", route(async (req, res) => {
@@ -709,6 +807,7 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
 }));
 
 app.post("/api/device/pairing/complete", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   const pairingCode = String(req.body.pairingCode || "")
       .replace(/[^A-F0-9]/gi, "").toUpperCase();
   if (pairingCode.length !== 10) fail("Connection code is invalid.");
@@ -733,6 +832,7 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
 }));
 
 app.post("/api/device/launcher/status", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   const account = await requireAccount(req);
   const deviceId = account.data.registeredDeviceId;
   const device = deviceId ? await read(`devices/${deviceId}`) : null;
@@ -749,6 +849,7 @@ app.post("/api/device/launcher/status", route(async (req, res) => {
 }));
 
 app.post("/api/launcher/config", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   await requireAccount(req);
   res.json({
     ok: true,
@@ -929,6 +1030,7 @@ app.post("/api/tokens/create", route(async (req, res) => {
 }));
 
 app.post("/api/session/activate", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   const account = await requireAccount(req);
   const browser = String(req.body.browser || "");
   const presetId = String(req.body.presetId || "balanced");
@@ -1042,6 +1144,7 @@ app.post("/api/session/activate", route(async (req, res) => {
 }));
 
 app.post("/api/session/heartbeat", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   const session = await requireBrowserSession(req);
   if (session.data.status !== "ACTIVE") {
     return res.status(409).json({ok: false, action: "CLOSE_BROWSER",
@@ -1065,6 +1168,7 @@ app.post("/api/session/heartbeat", route(async (req, res) => {
 }));
 
 app.post("/api/session/launched", route(async (req, res) => {
+  requireCurrentLauncherVersion(req);
   const session = await requireBrowserSession(req);
   if (session.data.status !== "ACTIVE") {
     fail("Browser session is no longer active.", 409);

@@ -6,6 +6,13 @@ Backend for Share Browser, served publicly from:
 
 The API uses Firebase Realtime Database and is deployed through Vercel.
 
+Current public launcher version: **1.2.0**
+
+The API rejects outdated launchers on pairing, connection validation,
+configuration, activation, launch confirmation, and active-session
+heartbeats. Update the `CURRENT_LAUNCHER_VERSION` value in `index.js` only
+when the matching launcher is already available on the website.
+
 ## Uploading to GitHub
 
 Upload the contents of this folder to the root of the `scriptnova-api`
@@ -77,4 +84,11 @@ After Vercel finishes deploying, verify:
 `https://api.scriptnovaa.com/api/health`
 
 The response should identify the Share Browser API and Firebase Realtime
-Database.
+Database and report launcher version `1.2.0`.
+
+## Normal release
+
+Do not rerun the setup script for ordinary code updates. Push the updated API
+files to GitHub and allow the linked Vercel project to deploy them. When a
+release changes the required launcher version, publish the matching website
+download first, then deploy the API.
