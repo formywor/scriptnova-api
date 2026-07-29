@@ -131,6 +131,7 @@ const SUPPORT_CATEGORIES = new Set([
   "ACCOUNT_ACCESS",
   "POINTS_OR_REWARDS",
   "REFERRAL_PROBLEM",
+  "DEVELOPER_PROGRAM",
   "OTHER",
 ]);
 const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
@@ -1192,20 +1193,30 @@ app.post("/api/redirect/start", route(async (req, res) => {
   const attempts = Object.values(await read("redirectAttempts") || {});
   const cutoff = Date.now() - 14 * 3600000;
   const count = attempts.filter((attempt) =>
-    attempt.accountId === account.id && attempt.createdAt >= cutoff).length;
+    attempt.accountId === account.id &&
+    attempt.createdAt >= cutoff &&
+    attempt.status !== "AD_BLOCKED").length;
   if (count >= 44) fail("44-redirect limit reached for this rolling 14-hour window.");
   const attemptId = id("redirectAttempts");
   const claimCode = crypto.randomBytes(24).toString("base64url");
   const waitPolicy = await rewardWaitPolicy(account.id, account.data);
   const claimableAt = Date.now() + waitPolicy.minutes * 60000;
+  const adBlockDetected = req.body.adBlockDetected === true;
   await root.child(`redirectAttempts/${attemptId}`).set({
     accountId: account.id, campaignId: String(req.body.campaignId || "default").slice(0, 80),
-    claimHash: hmac(claimCode), status: "OPENED", rewardAmount: 0.5,
+    claimHash: hmac(claimCode),
+    status: adBlockDetected ? "AD_BLOCKED" : "OPENED",
+    rewardAmount: adBlockDetected ? 0 : 0.5,
+    rewardEligible: !adBlockDetected,
+    adBlockDetected,
     ipPrefix: ipPrefix(req), createdAt: Date.now(), claimableAt,
     waitTier: waitPolicy.tier, waitMinutes: waitPolicy.minutes,
   });
   res.status(201).json({ok: true, attemptId, claimCode,
     claimableAt: new Date(claimableAt).toISOString(),
+    rewardEligible: !adBlockDetected,
+    notice: adBlockDetected ?
+      "Redirect didn't count because an ad blocker was detected." : null,
     redirectUrl: !process.env.REDIRECT_TARGET_URL ||
       process.env.REDIRECT_TARGET_URL === "https://example.com/" ?
       DEFAULT_REDIRECT_URL : process.env.REDIRECT_TARGET_URL});
@@ -1239,9 +1250,14 @@ app.get("/api/redirect/status", route(async (req, res) => {
   if (Object.keys(recoveryUpdates).length) await root.update(recoveryUpdates);
   const rewardedCount = attempts.filter((attempt) =>
     attempt.status === "REWARDED").length;
+  const eligibleCount = attempts.filter((attempt) =>
+    attempt.status !== "AD_BLOCKED").length;
+  const blockedCount = attempts.filter((attempt) =>
+    attempt.status === "AD_BLOCKED").length;
   res.json({
     ok: true,
-    openedCount: attempts.length,
+    openedCount: eligibleCount,
+    blockedCount,
     rewardedCount,
     earnedPoints: rewardedCount * ECONOMY.redirectReward,
     maximumCount: ECONOMY.redirectMaximumCount,
@@ -1266,6 +1282,9 @@ app.post("/api/redirect/claim", route(async (req, res) => {
     const attempt = await read(`redirectAttempts/${attemptId}`);
     if (!attempt || attempt.accountId !== account.id) {
       fail("This reward does not belong to the signed-in account.");
+    }
+    if (attempt.status === "AD_BLOCKED" || attempt.adBlockDetected === true) {
+      fail("Redirect didn't count because an ad blocker was detected.", 409);
     }
     if (attempt.status === "CLAIMING" &&
         (!attempt.claimingAt || Number(attempt.claimingAt) < Date.now() - 60000)) {
