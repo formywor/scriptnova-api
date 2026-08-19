@@ -4,7 +4,15 @@ const crypto = require("crypto");
 const express = require("express");
 const {initializeApp, cert, getApps} = require("firebase-admin/app");
 const {getDatabase, ServerValue} = require("firebase-admin/database");
-const {TOKEN_OPTIONS, ECONOMY, normalizeUsername, validateUsername, validatePin} =
+const {
+  TOKEN_OPTIONS,
+  ECONOMY,
+  REDIRECT_WAIT_CHANCES,
+  redirectWaitPlan,
+  normalizeUsername,
+  validateUsername,
+  validatePin,
+} =
   require("./lib/policy");
 
 function firebaseOptions() {
@@ -29,6 +37,9 @@ let rootCacheWarmed = false;
 const CURRENT_LAUNCHER_VERSION = "1.2.0";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
+const ONLINE_DEMO_MINUTES = 10;
+const ONLINE_DEMO_COOLDOWN_HOURS = 24;
+const ONLINE_DEMO_IP_DAILY_LIMIT = 20;
 const app = express();
 app.disable("x-powered-by");
 app.disable("etag");
@@ -440,10 +451,7 @@ async function registerDeviceForAccount(accountId, proof) {
 }
 
 async function rewardWaitPolicy(accountId, account) {
-  const [referrals, sessions] = await Promise.all([
-    read("referrals"),
-    read("sessions"),
-  ]);
+  const referrals = await read("referrals");
   const referralHistory = Object.values(referrals || {}).filter((referral) =>
     referral.referrerAccountId === accountId ||
     referral.referredAccountId === accountId);
@@ -452,19 +460,15 @@ async function rewardWaitPolicy(accountId, account) {
   const wasFlagged =
     !["CLEAR", undefined, null].includes(account.fraudStatus) ||
     wasFraudReversed;
-  const hasRealSession = Object.values(sessions || {}).some((session) =>
-    session.accountId === accountId &&
-    ["ACTIVE", "FINISHED"].includes(session.status));
   const accountAge = Date.now() - Number(account.createdAt || Date.now());
-  const isNew = accountAge < 7 * 86400000 || !hasRealSession;
-
-  if (wasFlagged) {
-    return {tier: "REVIEW", minutes: crypto.randomInt(12, 15)};
-  }
-  if (isNew) {
-    return {tier: "NEW", minutes: crypto.randomInt(5, 15)};
-  }
-  return {tier: "ESTABLISHED", minutes: crypto.randomInt(0, 5)};
+  const plan = redirectWaitPlan(
+      accountAge / 86400000,
+      crypto.randomInt(0, 100),
+      wasFlagged,
+  );
+  if (plan.zeroWait) return {...plan, minutes: 0};
+  if (wasFlagged) return {...plan, minutes: crypto.randomInt(12, 15)};
+  return {...plan, minutes: crypto.randomInt(1, plan.maximumMinutes + 1)};
 }
 async function atomic(mutator) {
   // Warm the Admin SDK cache before a root transaction. On a cold Vercel
@@ -492,8 +496,13 @@ async function rateLimit(key, action, maximum, windowSeconds) {
     if (Number(value.count || 0) >= maximum) return;
     return {...value, count: Number(value.count || 0) + 1, updatedAt: now};
   }).then((result) => {
-    if (!result.committed) fail("Too many attempts. Try again later.", 429);
+    if (!result.committed) {
+      const minutes = Math.max(1, Math.ceil(windowSeconds / 60));
+      fail(`Too many attempts. Try again in up to ${minutes} minutes.`, 429,
+          "RATE_LIMITED");
+    }
   });
+  return root.child(`rateLimits/${keyHash}`);
 }
 async function newLogin(accountId, clientDescription) {
   const raw = crypto.randomBytes(32).toString("base64url");
@@ -592,6 +601,7 @@ app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
   ok: true, tokenOptions: availableTokenOptions(),
   economy: {...ECONOMY, maximumRedirectPoints: 22},
+  redirectWaitChances: REDIRECT_WAIT_CHANCES,
   launcher: {
     currentVersion: CURRENT_LAUNCHER_VERSION,
     downloadUrl: LAUNCHER_DOWNLOAD_URL,
@@ -603,10 +613,90 @@ app.get("/api/public-config", (req, res) => res.json({
     onePerAccount: true,
   },
   browsers: [{id: "chrome", name: "Google Chrome"}, {id: "edge", name: "Microsoft Edge"}],
+  onlineDemo: {
+    minutes: ONLINE_DEMO_MINUTES,
+    cooldownHours: ONLINE_DEMO_COOLDOWN_HOURS,
+    schoolFriendlyIpCapacity: ONLINE_DEMO_IP_DAILY_LIMIT,
+  },
+}));
+
+app.post("/api/demo/start", route(async (req, res) => {
+  const browserId = String(req.body.browserId || "").trim();
+  if (!/^[A-Za-z0-9_-]{24,128}$/.test(browserId)) {
+    fail("The online demo could not identify this browser. Refresh and try again.");
+  }
+  const network = ipPrefix(req);
+  await rateLimit(network, "ONLINE_DEMO_START", 60, 3600);
+  const now = Date.now();
+  const dayAgo = now - 24 * 60 * 60 * 1000;
+  const browserKey = hmac(`online-demo-browser:${browserId}`);
+  const ipKey = hmac(`online-demo-ip:${network}`);
+  const existingBrowserTrial = await read(`onlineDemoBrowsers/${browserKey}`);
+  if (existingBrowserTrial && Number(existingBrowserTrial.cooldownUntil || 0) > now) {
+    fail("This browser has already used its online demo. Try again after the 24-hour reset.",
+        429, "DEMO_COOLDOWN");
+  }
+  const ipUsage = Object.values(await read(`onlineDemoIpUsage/${ipKey}`) || {})
+      .filter((usage) => Number(usage.startedAt || 0) >= dayAgo);
+  if (ipUsage.length >= ONLINE_DEMO_IP_DAILY_LIMIT) {
+    fail("This network has reached today's online-demo capacity. Try again later.",
+        429, "DEMO_NETWORK_CAPACITY");
+  }
+
+  const trialId = id("onlineDemoTrials");
+  const trialSecret = crypto.randomBytes(24).toString("base64url");
+  const expiresAt = now + ONLINE_DEMO_MINUTES * 60 * 1000;
+  const cooldownUntil = now + ONLINE_DEMO_COOLDOWN_HOURS * 60 * 60 * 1000;
+  await root.update({
+    [`onlineDemoTrials/${trialId}`]: {
+      browserKey,
+      ipKey,
+      secretHash: hmac(trialSecret),
+      status: "ACTIVE",
+      startedAt: now,
+      expiresAt,
+    },
+    [`onlineDemoBrowsers/${browserKey}`]: {
+      trialId,
+      startedAt: now,
+      expiresAt,
+      cooldownUntil,
+    },
+    [`onlineDemoIpUsage/${ipKey}/${trialId}`]: {startedAt: now, expiresAt},
+  });
+  res.status(201).json({
+    ok: true,
+    trialId,
+    trialSecret,
+    expiresAt: new Date(expiresAt).toISOString(),
+    minutes: ONLINE_DEMO_MINUTES,
+  });
+}));
+
+app.post("/api/demo/status", route(async (req, res) => {
+  const trialId = String(req.body.trialId || "");
+  const trialSecret = String(req.body.trialSecret || "");
+  const trial = await read(`onlineDemoTrials/${trialId}`);
+  if (!trial || !trialSecret || trial.secretHash !== hmac(trialSecret)) {
+    fail("Online demo session not found.", 401);
+  }
+  const active = trial.status === "ACTIVE" && Number(trial.expiresAt || 0) > Date.now();
+  if (!active && trial.status === "ACTIVE") {
+    await root.child(`onlineDemoTrials/${trialId}`).update({
+      status: "EXPIRED",
+      endedAt: Date.now(),
+    });
+  }
+  res.json({
+    ok: true,
+    active,
+    status: active ? "ACTIVE" : "EXPIRED",
+    expiresAt: new Date(Number(trial.expiresAt || 0)).toISOString(),
+  });
 }));
 
 app.post("/api/signup", route(async (req, res) => {
-  await rateLimit(ipPrefix(req), "SIGNUP", 3, 3600);
+  await rateLimit(ipPrefix(req), "SIGNUP", 6, 3600);
   const username = validateUsername(req.body.username);
   const pin = validatePin(req.body.pin);
   const referralUsername = normalizeUsername(req.body.referralUsername);
@@ -643,13 +733,14 @@ app.post("/api/signup", route(async (req, res) => {
 
 app.post("/api/login", route(async (req, res) => {
   const username = normalizeUsername(req.body.username);
-  await rateLimit(`${ipPrefix(req)}:${username}`, "LOGIN", 5, 900);
+  const loginLimit = await rateLimit(`${ipPrefix(req)}:${username}`, "LOGIN", 12, 900);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
   if (!account || !verifies(req.body.pin, account.pinCredential, "PIN_PEPPER")) {
     fail("Incorrect username or PIN.", 401);
   }
   if (account.accountStatus !== "ACTIVE") fail("This account is restricted.", 403);
+  await loginLimit.remove();
   res.json({ok: true,
     loginToken: await newLogin(usernameRecord.accountId, req.body.clientDescription),
     account: publicAccount(account)});
@@ -657,7 +748,7 @@ app.post("/api/login", route(async (req, res) => {
 
 app.post("/api/recover", route(async (req, res) => {
   const username = normalizeUsername(req.body.username);
-  await rateLimit(`${ipPrefix(req)}:${username}`, "RECOVER", 3, 3600);
+  await rateLimit(`${ipPrefix(req)}:${username}`, "RECOVER", 6, 3600);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
   if (!account || !verifies(req.body.recoveryCode, account.recoveryCredential, "RECOVERY_PEPPER")) {
@@ -812,7 +903,7 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
   const pairingCode = String(req.body.pairingCode || "")
       .replace(/[^A-F0-9]/gi, "").toUpperCase();
   if (pairingCode.length !== 10) fail("Connection code is invalid.");
-  await rateLimit(ipPrefix(req), "DEVICE_PAIRING", 10, 900);
+  await rateLimit(ipPrefix(req), "DEVICE_PAIRING", 30, 900);
   const pairingHash = hmac(pairingCode);
   const pairing = await read(`devicePairings/${pairingHash}`);
   if (!pairing || pairing.status !== "OPEN" ||
@@ -897,7 +988,7 @@ app.get("/api/support/tickets", route(async (req, res) => {
 
 app.post("/api/support/tickets", route(async (req, res) => {
   const account = await requireAccount(req);
-  await rateLimit(account.id, "SUPPORT_TICKET", 5, 24 * 60 * 60);
+  await rateLimit(account.id, "SUPPORT_TICKET", 12, 24 * 60 * 60);
   const category = String(req.body.category || "").trim().toUpperCase();
   const subject = String(req.body.subject || "").trim().replace(/\s+/g, " ");
   const ticketMessage = String(req.body.message || "").trim();
@@ -1211,9 +1302,12 @@ app.post("/api/redirect/start", route(async (req, res) => {
     adBlockDetected,
     ipPrefix: ipPrefix(req), createdAt: Date.now(), claimableAt,
     waitTier: waitPolicy.tier, waitMinutes: waitPolicy.minutes,
+    zeroWaitChance: waitPolicy.zeroWaitChance,
   });
   res.status(201).json({ok: true, attemptId, claimCode,
     claimableAt: new Date(claimableAt).toISOString(),
+    waitTier: waitPolicy.tier,
+    zeroWaitChance: waitPolicy.zeroWaitChance,
     rewardEligible: !adBlockDetected,
     notice: adBlockDetected ?
       "Redirect didn't count because an ad blocker was detected." : null,
@@ -1244,6 +1338,8 @@ app.get("/api/redirect/status", route(async (req, res) => {
           rewardAmount: Number(attempt.rewardAmount || 0),
           createdAt: Number(attempt.createdAt || 0),
           claimableAt: Number(attempt.claimableAt || 0),
+          waitTier: attempt.waitTier || "NEW",
+          zeroWaitChance: Number(attempt.zeroWaitChance || 0),
         };
       })
       .sort((a, b) => b.createdAt - a.createdAt);

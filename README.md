@@ -13,6 +13,16 @@ configuration, activation, launch confirmation, and active-session
 heartbeats. Update the `CURRENT_LAUNCHER_VERSION` value in `index.js` only
 when the matching launcher is already available on the website.
 
+The public website also uses `/api/demo/start` and `/api/demo/status` for a
+10-minute online interface preview. A browser can start one preview per rolling
+24 hours. A shared network can start up to 20 previews in that period so school
+and library networks are not treated as one person.
+
+Sponsored-reward waits use account-age trust tiers. Clean accounts have an
+instant-claim chance of 20% when new, 55% after four days, 84% after one week,
+and 99% after four weeks. Accounts under fraud or reversal review always wait
+12–14 minutes.
+
 ## Uploading to GitHub
 
 Upload the contents of this folder to the root of the `scriptnova-api`
@@ -91,4 +101,5 @@ Database and report launcher version `1.2.0`.
 Do not rerun the setup script for ordinary code updates. Push the updated API
 files to GitHub and allow the linked Vercel project to deploy them. When a
 release changes the required launcher version, publish the matching website
-download first, then deploy the API.
+download first, then deploy the API. For the online-demo update, deploy this API
+before the website so visitors never reach a missing route.
