@@ -51,6 +51,11 @@ app.use((req, res, next) => {
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
   res.setHeader("Vary", "Origin, Authorization");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 
@@ -145,6 +150,10 @@ const SUPPORT_CATEGORIES = new Set([
   "DEVELOPER_PROGRAM",
   "OTHER",
 ]);
+const ACCOUNT_STATUSES = new Set(["ACTIVE", "SUSPENDED", "BANNED", "TERMINATED"]);
+const APPEAL_STATUSES = new Set(["PENDING", "APPROVED", "DENIED"]);
+const ADMIN_ROLES = new Set(["ADMIN", "SUPPORT"]);
+const CHAT_MESSAGE_LIMIT = 800;
 const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
 const LIMITED_FREE_TOKEN = Object.freeze({
   id: "free-4m-2026",
@@ -211,6 +220,20 @@ function ipPrefix(req) {
   const ip = String(req.headers["x-forwarded-for"] || req.ip || "unknown").split(",")[0].trim();
   return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip.split(".").slice(0, 3).join(".");
 }
+function recoveryConfirmationRequired(account) {
+  // Existing accounts are grandfathered. Only records explicitly marked as
+  // requiring confirmation are held at the backup-code screen.
+  return account.recoveryPromptRequired === true && !account.recoveryAcknowledgedAt;
+}
+function publicRestriction(account) {
+  return {
+    status: ACCOUNT_STATUSES.has(account.accountStatus) ? account.accountStatus : "ACTIVE",
+    reason: String(account.statusReason || "").slice(0, 500),
+    startsAt: Number(account.statusChangedAt || 0) || null,
+    endsAt: Number(account.statusEndsAt || 0) || null,
+    appealAllowed: account.accountStatus !== "ACTIVE",
+  };
+}
 function publicAccount(a) {
   return {username: a.username, pointBalance: Number(a.pointBalance || 0),
     pendingPointBalance: Number(a.pendingPointBalance || 0), referralCode: a.username,
@@ -219,11 +242,15 @@ function publicAccount(a) {
     limitedFreeTokenClaimed: Boolean(a.limitedFreeTokenClaimedAt),
     deviceSetupBonusAwarded: Boolean(a.deviceSetupBonusAwardedAt),
     deviceSetupNoticePending: Boolean(a.deviceSetupNoticePending),
+    recoveryConfirmationRequired: recoveryConfirmationRequired(a),
+    accountStatus: a.accountStatus || "ACTIVE",
+    restriction: publicRestriction(a),
     fraudStatus: a.fraudStatus || "CLEAR", activeSessionId: a.activeSessionId || null};
 }
 function publicSupportTicket(ticketId, ticket) {
   return {
     ticketId,
+    username: String(ticket.username || ""),
     category: ticket.category,
     subject: ticket.subject,
     message: ticket.message,
@@ -233,6 +260,45 @@ function publicSupportTicket(ticketId, ticket) {
     updatedAt: Number(ticket.updatedAt || ticket.createdAt || 0),
     replacementConsumedAt: Number(ticket.replacementConsumedAt || 0) || null,
   };
+}
+function publicAppeal(appealId, appeal) {
+  return {
+    appealId,
+    accountId: appeal.accountId,
+    username: appeal.username,
+    restrictionStatus: appeal.restrictionStatus,
+    subject: appeal.subject,
+    message: appeal.message,
+    status: APPEAL_STATUSES.has(appeal.status) ? appeal.status : "PENDING",
+    adminResponse: String(appeal.adminResponse || ""),
+    createdAt: Number(appeal.createdAt || 0),
+    updatedAt: Number(appeal.updatedAt || appeal.createdAt || 0),
+  };
+}
+function publicChat(chatId, chat) {
+  const messages = Object.entries(chat.messages || {})
+      .map(([messageId, item]) => ({
+        messageId,
+        sender: item.sender === "AGENT" ? "AGENT" : item.sender === "SYSTEM" ? "SYSTEM" : "USER",
+        senderName: String(item.senderName || "").slice(0, 40),
+        message: String(item.message || "").slice(0, CHAT_MESSAGE_LIMIT),
+        createdAt: Number(item.createdAt || 0),
+      }))
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(-100);
+  return {
+    chatId,
+    accountId: chat.accountId,
+    username: chat.username,
+    status: ["WAITING", "ACTIVE", "CLOSED"].includes(chat.status) ? chat.status : "WAITING",
+    assignedAgentName: String(chat.assignedAgentName || ""),
+    createdAt: Number(chat.createdAt || 0),
+    updatedAt: Number(chat.updatedAt || chat.createdAt || 0),
+    messages,
+  };
+}
+function cleanLine(value, maximum) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, maximum);
 }
 async function accountSupportTickets(accountId) {
   return Object.entries(await read("supportTickets") || {})
@@ -277,6 +343,7 @@ function route(handler) {
       }
       const response = {ok: false, error: error.message || "Request failed."};
       if (error.apiCode) response.code = error.apiCode;
+      if (error.gate) response.gate = error.gate;
       if (error.apiCode === "LAUNCHER_UPDATE_REQUIRED") {
         response.currentVersion = CURRENT_LAUNCHER_VERSION;
         response.updateUrl = LAUNCHER_DOWNLOAD_URL;
@@ -466,9 +533,19 @@ async function rewardWaitPolicy(accountId, account) {
       crypto.randomInt(0, 100),
       wasFlagged,
   );
-  if (plan.zeroWait) return {...plan, minutes: 0};
   if (wasFlagged) return {...plan, minutes: crypto.randomInt(12, 15)};
-  return {...plan, minutes: crypto.randomInt(1, plan.maximumMinutes + 1)};
+  const trustScore = Math.max(0, Math.min(100, Number(account.trustScore ?? 50)));
+  const trustAdjustment = Math.round((trustScore - 50) * 0.4);
+  const zeroWaitChance = Math.max(5, Math.min(99,
+      Number(plan.zeroWaitChance || 0) + trustAdjustment));
+  const trustRoll = crypto.randomInt(0, 100);
+  if (trustRoll < zeroWaitChance) {
+    return {...plan, trustScore, zeroWaitChance, zeroWait: true, minutes: 0};
+  }
+  const maximumMinutes = Math.max(1,
+      Math.min(14, plan.maximumMinutes + Math.ceil((50 - trustScore) / 20)));
+  return {...plan, trustScore, zeroWaitChance, zeroWait: false,
+    maximumMinutes, minutes: crypto.randomInt(1, maximumMinutes + 1)};
 }
 async function atomic(mutator) {
   // Warm the Admin SDK cache before a root transaction. On a cold Vercel
@@ -504,23 +581,86 @@ async function rateLimit(key, action, maximum, windowSeconds) {
   });
   return root.child(`rateLimits/${keyHash}`);
 }
-async function newLogin(accountId, clientDescription) {
+async function newLogin(accountId, clientDescription, networkPrefix = "unknown") {
   const raw = crypto.randomBytes(32).toString("base64url");
   await root.child(`loginSessions/${hmac(raw)}`).set({
     accountId, clientDescription: String(clientDescription || "").slice(0, 250),
+    networkPrefix: String(networkPrefix || "unknown").slice(0, 80),
     revoked: false, createdAt: Date.now(), lastUsedAt: Date.now(),
   });
   return raw;
 }
-async function requireAccount(req) {
+async function resolveExpiredSuspension(accountId, account) {
+  if (account.accountStatus === "SUSPENDED" && Number(account.statusEndsAt || 0) > 0 &&
+      Number(account.statusEndsAt) <= Date.now()) {
+    const now = Date.now();
+    await root.child(`accounts/${accountId}`).update({
+      accountStatus: "ACTIVE",
+      statusReason: null,
+      statusEndsAt: null,
+      statusChangedAt: now,
+      statusAutomaticallyRestoredAt: now,
+      updatedAt: now,
+    });
+    return {...account, accountStatus: "ACTIVE", statusReason: null, statusEndsAt: null};
+  }
+  return account;
+}
+function accountGateError(account) {
+  const status = account.accountStatus || "ACTIVE";
+  const error = new Error(status === "SUSPENDED" ? "This account is suspended." :
+    status === "BANNED" ? "This account is banned." : "This account is terminated.");
+  error.statusCode = 403;
+  error.apiCode = `ACCOUNT_${status}`;
+  error.gate = {type: "RESTRICTION", ...publicRestriction(account)};
+  return error;
+}
+async function requireAccount(req, options = {}) {
   const raw = bearer(req); if (!raw) fail("Authentication required.", 401);
   const loginId = hmac(raw);
   const login = await read(`loginSessions/${loginId}`);
   if (!login || login.revoked) fail("Authentication required.", 401);
-  const account = await read(`accounts/${login.accountId}`);
-  if (!account || account.accountStatus !== "ACTIVE") fail("Account restricted.", 403);
+  let account = await read(`accounts/${login.accountId}`);
+  if (!account) fail("Authentication required.", 401);
+  account = await resolveExpiredSuspension(login.accountId, account);
+  account.accountStatus = account.accountStatus || "ACTIVE";
+  if (account.accountStatus !== "ACTIVE" && !options.allowRestricted) {
+    throw accountGateError(account);
+  }
+  if (recoveryConfirmationRequired(account) && !options.allowRecoveryPending) {
+    const error = new Error("Save and confirm your backup recovery code before continuing.");
+    error.statusCode = 428;
+    error.apiCode = "RECOVERY_CONFIRMATION_REQUIRED";
+    error.gate = {type: "RECOVERY_CONFIRMATION"};
+    throw error;
+  }
   root.child(`loginSessions/${loginId}/lastUsedAt`).set(Date.now()).catch(console.error);
   return {id: login.accountId, data: account, loginId};
+}
+async function requireAdmin(req, capability = "SUPPORT") {
+  const account = await requireAccount(req);
+  const administrator = await read(`administrators/${account.id}`);
+  if (!administrator || administrator.active !== true ||
+      !ADMIN_ROLES.has(String(administrator.role || "").toUpperCase())) {
+    fail("Administrator authorization required.", 403, "ADMIN_REQUIRED");
+  }
+  const role = String(administrator.role).toUpperCase();
+  if (capability === "ADMIN" && role !== "ADMIN") {
+    fail("This administrator role cannot perform that action.", 403, "ADMIN_PERMISSION_REQUIRED");
+  }
+  return {...account, administrator: {...administrator, role}};
+}
+async function adminAudit(admin, action, targetAccountId, detail = {}) {
+  const auditId = id("adminAuditLog");
+  await root.child(`adminAuditLog/${auditId}`).set({
+    administratorAccountId: admin.id,
+    administratorUsername: admin.data.username,
+    action,
+    targetAccountId: targetAccountId || null,
+    detail,
+    createdAt: Date.now(),
+  });
+  return auditId;
 }
 async function requireBrowserSession(req) {
   const sessionId = String(req.body.sessionId || "");
@@ -705,15 +845,25 @@ app.post("/api/signup", route(async (req, res) => {
     const usernames = ensure(data, "usernames");
     const accounts = ensure(data, "accounts");
     if (usernames[username]) fail("That username is already taken.");
+    if (referralUsername === username) {
+      fail("You cannot refer your own new account.");
+    }
+    if (referralUsername && !usernames[referralUsername]) {
+      fail("That referral username was not found. Check the spelling or leave it blank.");
+    }
     const referrerAccountId = referralUsername && referralUsername !== username ?
       usernames[referralUsername]?.accountId || null : null;
     usernames[username] = {accountId, createdAt: Date.now()};
     accounts[accountId] = {
       username, pinCredential: credential(pin, "PIN_PEPPER"),
       recoveryCredential: credential(recoveryCode, "RECOVERY_PEPPER"),
+      recoveryPromptRequired: true,
+      recoveryAcknowledgedAt: null,
       pointBalance: 0, pendingPointBalance: referrerAccountId ? 2 : 0,
       registeredDeviceId: null, activeSessionId: null, unusedTokenCount: 0,
       accountStatus: "ACTIVE", fraudStatus: "CLEAR", referredByAccountId: referrerAccountId,
+      trustScore: 50,
+      createdNetworkPrefix: ipPrefix(req),
       createdAt: Date.now(), updatedAt: Date.now(),
     };
     if (referrerAccountId) {
@@ -727,28 +877,34 @@ app.post("/api/signup", route(async (req, res) => {
     return data;
   });
   res.status(201).json({ok: true,
-    loginToken: await newLogin(accountId, req.body.clientDescription), recoveryCode,
+    loginToken: await newLogin(accountId, req.body.clientDescription, ipPrefix(req)), recoveryCode,
     warning: "Save this recovery code now. It will not be shown again."});
 }));
 
 app.post("/api/login", route(async (req, res) => {
   const username = normalizeUsername(req.body.username);
   const loginLimit = await rateLimit(`${ipPrefix(req)}:${username}`, "LOGIN", 12, 900);
+  const accountLoginLimit = await rateLimit(username || "missing", "LOGIN_ACCOUNT", 20, 3600);
+  await rateLimit(ipPrefix(req), "LOGIN_NETWORK", 120, 3600);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
   if (!account || !verifies(req.body.pin, account.pinCredential, "PIN_PEPPER")) {
     fail("Incorrect username or PIN.", 401);
   }
-  if (account.accountStatus !== "ACTIVE") fail("This account is restricted.", 403);
   await loginLimit.remove();
+  await accountLoginLimit.remove();
   res.json({ok: true,
-    loginToken: await newLogin(usernameRecord.accountId, req.body.clientDescription),
-    account: publicAccount(account)});
+    loginToken: await newLogin(usernameRecord.accountId, req.body.clientDescription, ipPrefix(req)),
+    account: publicAccount(account),
+    gate: account.accountStatus !== "ACTIVE" ?
+      {type: "RESTRICTION", ...publicRestriction(account)} :
+      recoveryConfirmationRequired(account) ? {type: "RECOVERY_CONFIRMATION"} : null});
 }));
 
 app.post("/api/recover", route(async (req, res) => {
   const username = normalizeUsername(req.body.username);
   await rateLimit(`${ipPrefix(req)}:${username}`, "RECOVER", 6, 3600);
+  await rateLimit(username || "missing", "RECOVER_ACCOUNT", 8, 24 * 60 * 60);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
   if (!account || !verifies(req.body.recoveryCode, account.recoveryCredential, "RECOVERY_PEPPER")) {
@@ -760,13 +916,68 @@ app.post("/api/recover", route(async (req, res) => {
     if (!fresh) fail("Recovery failed.", 401);
     fresh.pinCredential = credential(pin, "PIN_PEPPER");
     fresh.recoveryCredential = credential(replacement, "RECOVERY_PEPPER");
+    fresh.recoveryPromptRequired = true;
+    fresh.recoveryAcknowledgedAt = null;
     fresh.updatedAt = Date.now();
     Object.values(data.loginSessions || {}).forEach((session) => {
       if (session.accountId === usernameRecord.accountId) session.revoked = true;
     });
     return data;
   });
-  res.json({ok: true, newRecoveryCode: replacement});
+  res.json({ok: true,
+    loginToken: await newLogin(usernameRecord.accountId,
+        req.body.clientDescription, ipPrefix(req)),
+    newRecoveryCode: replacement,
+    warning: "Save the replacement recovery code before leaving this page."});
+}));
+
+app.get("/api/account/gate", route(async (req, res) => {
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  res.json({
+    ok: true,
+    gate: account.data.accountStatus !== "ACTIVE" ?
+      {type: "RESTRICTION", ...publicRestriction(account.data)} :
+      recoveryConfirmationRequired(account.data) ?
+        {type: "RECOVERY_CONFIRMATION"} : {type: "CLEAR"},
+    account: publicAccount(account.data),
+  });
+}));
+
+app.post("/api/account/recovery/acknowledge", route(async (req, res) => {
+  const account = await requireAccount(req, {allowRecoveryPending: true});
+  if (req.body.saved !== true) fail("Confirm that you saved the backup code.");
+  if (!recoveryConfirmationRequired(account.data)) {
+    return res.json({ok: true, alreadyAcknowledged: true});
+  }
+  const now = Date.now();
+  await root.child(`accounts/${account.id}`).update({
+    recoveryAcknowledgedAt: now,
+    recoveryPromptRequired: false,
+    updatedAt: now,
+  });
+  res.json({ok: true, acknowledgedAt: now});
+}));
+
+app.post("/api/account/recovery/regenerate", route(async (req, res) => {
+  const account = await requireAccount(req, {allowRecoveryPending: true});
+  await rateLimit(account.id, "RECOVERY_REGENERATE", 3, 24 * 60 * 60);
+  if (!recoveryConfirmationRequired(account.data)) {
+    fail("A backup code can only be regenerated during required confirmation.", 409);
+  }
+  if (!verifies(req.body.pin, account.data.pinCredential, "PIN_PEPPER")) {
+    fail("Incorrect PIN.", 401);
+  }
+  const replacement = code("RCVY", 12);
+  await root.child(`accounts/${account.id}`).update({
+    recoveryCredential: credential(replacement, "RECOVERY_PEPPER"),
+    recoveryRegeneratedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  res.json({ok: true, recoveryCode: replacement,
+    warning: "The previous backup code no longer works. Save this replacement."});
 }));
 
 app.get("/api/account", route(async (req, res) => {
@@ -788,7 +999,10 @@ app.post("/api/account/device-welcome/acknowledge", route(async (req, res) => {
 }));
 
 app.post("/api/logout", route(async (req, res) => {
-  const account = await requireAccount(req);
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
   await root.child(`loginSessions/${account.loginId}`).update({
     revoked: true,
     revokedAt: Date.now(),
@@ -977,7 +1191,7 @@ app.post("/api/launcher/diagnostic", route(async (req, res) => {
 }));
 
 app.get("/api/support/tickets", route(async (req, res) => {
-  const account = await requireAccount(req);
+  const account = await requireAccount(req, {allowRecoveryPending: true});
   const tickets = await accountSupportTickets(account.id);
   res.json({
     ok: true,
@@ -987,7 +1201,7 @@ app.get("/api/support/tickets", route(async (req, res) => {
 }));
 
 app.post("/api/support/tickets", route(async (req, res) => {
-  const account = await requireAccount(req);
+  const account = await requireAccount(req, {allowRecoveryPending: true});
   await rateLimit(account.id, "SUPPORT_TICKET", 12, 24 * 60 * 60);
   const category = String(req.body.category || "").trim().toUpperCase();
   const subject = String(req.body.subject || "").trim().replace(/\s+/g, " ");
@@ -1029,6 +1243,127 @@ app.post("/api/support/tickets", route(async (req, res) => {
     ok: true,
     ticket: publicSupportTicket(ticketId, ticket),
   });
+}));
+
+app.get("/api/support/chat", route(async (req, res) => {
+  const account = await requireAccount(req, {allowRecoveryPending: true});
+  const chats = Object.entries(await read("supportChats") || {})
+      .filter(([, chat]) => chat.accountId === account.id)
+      .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0));
+  res.json({ok: true, chats: chats.slice(0, 10)
+      .map(([chatId, chat]) => publicChat(chatId, chat))});
+}));
+
+app.post("/api/support/chat/start", route(async (req, res) => {
+  const account = await requireAccount(req, {allowRecoveryPending: true});
+  await rateLimit(account.id, "SUPPORT_CHAT_START", 3, 24 * 60 * 60);
+  if (req.body.acceptedPolicy !== true) {
+    fail("Accept the support-chat notice before starting a chat.");
+  }
+  const initialMessage = String(req.body.message || "").trim();
+  if (initialMessage.length < 20 || initialMessage.length > CHAT_MESSAGE_LIMIT) {
+    fail(`Message must contain between 20 and ${CHAT_MESSAGE_LIMIT} characters.`);
+  }
+  const existing = Object.entries(await read("supportChats") || {})
+      .find(([, chat]) => chat.accountId === account.id &&
+        ["WAITING", "ACTIVE"].includes(chat.status));
+  if (existing) {
+    return res.json({ok: true, existing: true,
+      chat: publicChat(existing[0], existing[1])});
+  }
+  const chatId = id("supportChats");
+  const messageId = id(`supportChats/${chatId}/messages`);
+  const now = Date.now();
+  const chat = {
+    accountId: account.id,
+    username: account.data.username,
+    status: "WAITING",
+    createdAt: now,
+    updatedAt: now,
+    submittedNetworkPrefix: ipPrefix(req),
+    messages: {
+      [messageId]: {
+        sender: "USER",
+        senderName: account.data.username,
+        message: initialMessage,
+        createdAt: now,
+      },
+    },
+  };
+  await root.child(`supportChats/${chatId}`).set(chat);
+  res.status(201).json({ok: true, chat: publicChat(chatId, chat)});
+}));
+
+app.post("/api/support/chat/:chatId/messages", route(async (req, res) => {
+  const account = await requireAccount(req, {allowRecoveryPending: true});
+  await rateLimit(account.id, "SUPPORT_CHAT_MESSAGE", 40, 60 * 60);
+  const chatId = String(req.params.chatId || "");
+  const chat = await read(`supportChats/${chatId}`);
+  if (!chat || chat.accountId !== account.id) fail("Support chat not found.", 404);
+  if (chat.status === "CLOSED") fail("This support chat is closed.", 409);
+  const chatMessage = String(req.body.message || "").trim();
+  if (chatMessage.length < 1 || chatMessage.length > CHAT_MESSAGE_LIMIT) {
+    fail(`Message must contain between 1 and ${CHAT_MESSAGE_LIMIT} characters.`);
+  }
+  const messageId = id(`supportChats/${chatId}/messages`);
+  const now = Date.now();
+  await root.update({
+    [`supportChats/${chatId}/messages/${messageId}`]: {
+      sender: "USER",
+      senderName: account.data.username,
+      message: chatMessage,
+      createdAt: now,
+    },
+    [`supportChats/${chatId}/updatedAt`]: now,
+  });
+  res.status(201).json({ok: true, messageId});
+}));
+
+app.get("/api/appeals", route(async (req, res) => {
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  const appeals = Object.entries(await read("appeals") || {})
+      .filter(([, appeal]) => appeal.accountId === account.id)
+      .sort((a, b) => Number(b[1].createdAt || 0) - Number(a[1].createdAt || 0));
+  res.json({ok: true, appeals: appeals.slice(0, 10)
+      .map(([appealId, appeal]) => publicAppeal(appealId, appeal))});
+}));
+
+app.post("/api/appeals", route(async (req, res) => {
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  if (account.data.accountStatus === "ACTIVE") {
+    fail("This account does not currently have a restriction to appeal.", 409);
+  }
+  await rateLimit(account.id, "ACCOUNT_APPEAL", 2, 30 * 24 * 60 * 60);
+  const existing = Object.values(await read("appeals") || {})
+      .find((appeal) => appeal.accountId === account.id && appeal.status === "PENDING");
+  if (existing) fail("You already have a pending appeal.", 409);
+  const subject = cleanLine(req.body.subject, 100);
+  const appealMessage = String(req.body.message || "").trim();
+  if (subject.length < 5) fail("Appeal subject must contain at least 5 characters.");
+  if (appealMessage.length < 50 || appealMessage.length > 2500) {
+    fail("Appeal explanation must contain between 50 and 2,500 characters.");
+  }
+  const appealId = id("appeals");
+  const now = Date.now();
+  const appeal = {
+    accountId: account.id,
+    username: account.data.username,
+    restrictionStatus: account.data.accountStatus,
+    subject,
+    message: appealMessage,
+    status: "PENDING",
+    submittedNetworkPrefix: ipPrefix(req),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await root.child(`appeals/${appealId}`).set(appeal);
+  res.status(201).json({ok: true, appeal: publicAppeal(appealId, appeal)});
 }));
 
 app.get("/api/tokens", route(async (req, res) => {
@@ -1414,6 +1749,308 @@ app.post("/api/redirect/claim", route(async (req, res) => {
     const activeLock = await read(`rewardClaimLocks/${attemptId}`);
     if (activeLock?.claimId === claimId) await lockReference.remove();
   }
+}));
+
+app.get("/api/admin/me", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "SUPPORT");
+  res.json({ok: true, administrator: {
+    username: administrator.data.username,
+    role: administrator.administrator.role,
+    displayName: cleanLine(administrator.administrator.displayName ||
+      administrator.data.username, 40),
+  }});
+}));
+
+app.post("/api/admin/accounts/search", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const username = normalizeUsername(req.body.username);
+  if (!username) fail("Enter an exact username.");
+  const usernameRecord = await read(`usernames/${username}`);
+  const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
+  if (!account) fail("Account not found.", 404);
+  res.json({ok: true, account: {
+    accountId: usernameRecord.accountId,
+    ...publicAccount(account),
+    trustScore: Math.max(0, Math.min(100, Number(account.trustScore ?? 50))),
+    createdAt: Number(account.createdAt || 0),
+    updatedAt: Number(account.updatedAt || 0),
+  }});
+}));
+
+app.get("/api/admin/accounts/:accountId", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const accountId = String(req.params.accountId || "");
+  const account = await read(`accounts/${accountId}`);
+  if (!account) fail("Account not found.", 404);
+  const [loginSessions, devices, tickets, appeals, referrals, pointTransactions] =
+    await Promise.all([
+      read("loginSessions"), read("devices"), read("supportTickets"),
+      read("appeals"), read("referrals"), read("pointTransactions"),
+    ]);
+  const networkHistory = Object.values(loginSessions || {})
+      .filter((session) => session.accountId === accountId)
+      .map((session) => ({
+        networkPrefix: String(session.networkPrefix || "unknown"),
+        client: cleanLine(session.clientDescription || "Unknown client", 180),
+        createdAt: Number(session.createdAt || 0),
+        lastUsedAt: Number(session.lastUsedAt || 0),
+        revoked: Boolean(session.revoked),
+      }))
+      .sort((a, b) => b.lastUsedAt - a.lastUsedAt)
+      .slice(0, 30);
+  const deviceHistory = Object.entries(devices || {})
+      .filter(([, device]) => device.accountId === accountId)
+      .map(([deviceId, device]) => ({
+        deviceId,
+        status: device.status || "UNKNOWN",
+        riskScore: Number(device.riskScore || 0),
+        registeredAt: Number(device.registeredAt || 0),
+      }));
+  res.json({ok: true, account: {
+    accountId,
+    ...publicAccount(account),
+    trustScore: Math.max(0, Math.min(100, Number(account.trustScore ?? 50))),
+    createdAt: Number(account.createdAt || 0),
+    updatedAt: Number(account.updatedAt || 0),
+    createdNetworkPrefix: String(account.createdNetworkPrefix || "unknown"),
+    statusReason: String(account.statusReason || ""),
+    statusEndsAt: Number(account.statusEndsAt || 0) || null,
+    networkHistory,
+    deviceHistory,
+    ticketCount: Object.values(tickets || {}).filter((item) => item.accountId === accountId).length,
+    appealCount: Object.values(appeals || {}).filter((item) => item.accountId === accountId).length,
+    referralCount: Object.values(referrals || {}).filter((item) =>
+      item.referrerAccountId === accountId).length,
+    recentPointTransactions: Object.entries(pointTransactions || {})
+        .filter(([, item]) => item.accountId === accountId)
+        .map(([transactionId, item]) => ({transactionId, amount: Number(item.amount || 0),
+          type: item.type || "UNKNOWN", reason: String(item.reason || ""),
+          createdAt: Number(item.createdAt || 0)}))
+        .sort((a, b) => b.createdAt - a.createdAt).slice(0, 25),
+  }});
+}));
+
+app.post("/api/admin/accounts/:accountId/status", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const accountId = String(req.params.accountId || "");
+  if (accountId === administrator.id) fail("You cannot restrict your own administrator account.");
+  const target = await read(`accounts/${accountId}`);
+  if (!target) fail("Account not found.", 404);
+  const status = String(req.body.status || "").toUpperCase();
+  if (!ACCOUNT_STATUSES.has(status)) fail("Choose a valid account status.");
+  const reason = cleanLine(req.body.reason, 500);
+  if (status !== "ACTIVE" && reason.length < 8) {
+    fail("Give a clear reason containing at least 8 characters.");
+  }
+  let endsAt = null;
+  if (status === "SUSPENDED") {
+    endsAt = Number(req.body.endsAt || 0);
+    if (!Number.isFinite(endsAt) || endsAt <= Date.now() ||
+        endsAt > Date.now() + 366 * 24 * 60 * 60 * 1000) {
+      fail("Suspension end must be in the future and no more than one year away.");
+    }
+  }
+  if (target.activeSessionId) {
+    const session = await read(`sessions/${target.activeSessionId}`);
+    if (session?.status === "ACTIVE") {
+      await finishSession(target.activeSessionId, session, `ACCOUNT_${status}`);
+    }
+  }
+  const now = Date.now();
+  await root.child(`accounts/${accountId}`).update({
+    accountStatus: status,
+    statusReason: status === "ACTIVE" ? null : reason,
+    statusEndsAt: endsAt,
+    statusChangedAt: now,
+    statusChangedBy: administrator.id,
+    updatedAt: now,
+  });
+  await adminAudit(administrator, "ACCOUNT_STATUS_CHANGED", accountId,
+      {status, reason: status === "ACTIVE" ? "" : reason, endsAt});
+  res.json({ok: true, status, endsAt});
+}));
+
+app.post("/api/admin/accounts/:accountId/trust", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const accountId = String(req.params.accountId || "");
+  const target = await read(`accounts/${accountId}`);
+  if (!target) fail("Account not found.", 404);
+  const trustScore = Number(req.body.trustScore);
+  const reason = cleanLine(req.body.reason, 300);
+  if (!Number.isInteger(trustScore) || trustScore < 0 || trustScore > 100) {
+    fail("Trust score must be a whole number from 0 to 100.");
+  }
+  if (reason.length < 8) fail("Give a reason for changing trust.");
+  await root.child(`accounts/${accountId}`).update({
+    trustScore,
+    trustChangedAt: Date.now(),
+    trustChangedBy: administrator.id,
+    updatedAt: Date.now(),
+  });
+  await adminAudit(administrator, "ACCOUNT_TRUST_CHANGED", accountId,
+      {from: Number(target.trustScore ?? 50), to: trustScore, reason});
+  res.json({ok: true, trustScore});
+}));
+
+app.post("/api/admin/accounts/:accountId/points", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const accountId = String(req.params.accountId || "");
+  const target = await read(`accounts/${accountId}`);
+  if (!target) fail("Account not found.", 404);
+  const amount = Number(req.body.amount);
+  const reason = cleanLine(req.body.reason, 300);
+  if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1000 ||
+      Math.round(amount * 2) !== amount * 2) {
+    fail("Point change must be in 0.5-point steps between -1,000 and 1,000.");
+  }
+  if (reason.length < 8) fail("Give a reason for changing points.");
+  const transactionId = id("pointTransactions");
+  const now = Date.now();
+  await root.update({
+    [`accounts/${accountId}/pointBalance`]: ServerValue.increment(amount),
+    [`accounts/${accountId}/updatedAt`]: now,
+    [`pointTransactions/${transactionId}`]: {
+      accountId,
+      amount,
+      type: "ADMIN_ADJUSTMENT",
+      reason,
+      administratorAccountId: administrator.id,
+      createdAt: now,
+    },
+  });
+  await adminAudit(administrator, "ACCOUNT_POINTS_CHANGED", accountId, {amount, reason});
+  res.json({ok: true, amount, pointBalance: Number(target.pointBalance || 0) + amount});
+}));
+
+app.get("/api/admin/support/tickets", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const status = String(req.query.status || "").toUpperCase();
+  const tickets = Object.entries(await read("supportTickets") || {})
+      .filter(([, ticket]) => !status || ticket.status === status)
+      .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
+      .slice(0, 100)
+      .map(([ticketId, ticket]) => publicSupportTicket(ticketId, ticket));
+  res.json({ok: true, tickets});
+}));
+
+app.post("/api/admin/support/tickets/:ticketId/respond", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "SUPPORT");
+  const ticketId = String(req.params.ticketId || "");
+  const ticket = await read(`supportTickets/${ticketId}`);
+  if (!ticket) fail("Support ticket not found.", 404);
+  const adminResponse = String(req.body.response || "").trim();
+  const status = String(req.body.status || "PENDING").toUpperCase();
+  const allowedStatuses = ticket.category === "CONNECTION_CODE_REPLACEMENT" ?
+    new Set(["PENDING", "APPROVED", "DECLINED"]) :
+    new Set(["PENDING", "ANSWERED", "CLOSED"]);
+  if (!allowedStatuses.has(status)) fail("Choose a valid ticket status.");
+  if (adminResponse.length < 2 || adminResponse.length > 2000) {
+    fail("Response must contain between 2 and 2,000 characters.");
+  }
+  const now = Date.now();
+  await root.child(`supportTickets/${ticketId}`).update({
+    adminResponse,
+    status,
+    respondedByAccountId: administrator.id,
+    respondedByName: cleanLine(administrator.administrator.displayName ||
+      administrator.data.username, 40),
+    respondedAt: now,
+    updatedAt: now,
+  });
+  await adminAudit(administrator, "SUPPORT_TICKET_RESPONDED", ticket.accountId,
+      {ticketId, status});
+  res.json({ok: true, status});
+}));
+
+app.get("/api/admin/support/chats", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const chats = Object.entries(await read("supportChats") || {})
+      .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
+      .slice(0, 50)
+      .map(([chatId, chat]) => publicChat(chatId, chat));
+  res.json({ok: true, chats});
+}));
+
+app.post("/api/admin/support/chats/:chatId/messages", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "SUPPORT");
+  const chatId = String(req.params.chatId || "");
+  const chat = await read(`supportChats/${chatId}`);
+  if (!chat) fail("Support chat not found.", 404);
+  if (chat.status === "CLOSED") fail("This support chat is closed.", 409);
+  const chatMessage = String(req.body.message || "").trim();
+  if (chatMessage.length < 1 || chatMessage.length > CHAT_MESSAGE_LIMIT) {
+    fail(`Message must contain between 1 and ${CHAT_MESSAGE_LIMIT} characters.`);
+  }
+  const messageId = id(`supportChats/${chatId}/messages`);
+  const now = Date.now();
+  const displayName = cleanLine(administrator.administrator.displayName ||
+    administrator.data.username, 40);
+  await root.update({
+    [`supportChats/${chatId}/messages/${messageId}`]: {
+      sender: "AGENT", senderName: displayName, message: chatMessage, createdAt: now,
+    },
+    [`supportChats/${chatId}/status`]: "ACTIVE",
+    [`supportChats/${chatId}/assignedAgentAccountId`]: administrator.id,
+    [`supportChats/${chatId}/assignedAgentName`]: displayName,
+    [`supportChats/${chatId}/updatedAt`]: now,
+  });
+  await adminAudit(administrator, "SUPPORT_CHAT_MESSAGE", chat.accountId, {chatId});
+  res.status(201).json({ok: true, messageId});
+}));
+
+app.post("/api/admin/support/chats/:chatId/status", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "SUPPORT");
+  const chatId = String(req.params.chatId || "");
+  const chat = await read(`supportChats/${chatId}`);
+  if (!chat) fail("Support chat not found.", 404);
+  const status = String(req.body.status || "").toUpperCase();
+  if (!["WAITING", "ACTIVE", "CLOSED"].includes(status)) fail("Invalid chat status.");
+  await root.child(`supportChats/${chatId}`).update({status, updatedAt: Date.now()});
+  await adminAudit(administrator, "SUPPORT_CHAT_STATUS", chat.accountId, {chatId, status});
+  res.json({ok: true, status});
+}));
+
+app.get("/api/admin/appeals", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const appeals = Object.entries(await read("appeals") || {})
+      .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0))
+      .slice(0, 100)
+      .map(([appealId, appeal]) => publicAppeal(appealId, appeal));
+  res.json({ok: true, appeals});
+}));
+
+app.post("/api/admin/appeals/:appealId/review", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const appealId = String(req.params.appealId || "");
+  const appeal = await read(`appeals/${appealId}`);
+  if (!appeal) fail("Appeal not found.", 404);
+  if (appeal.status !== "PENDING") fail("This appeal has already been reviewed.", 409);
+  const status = String(req.body.status || "").toUpperCase();
+  if (!["APPROVED", "DENIED"].includes(status)) fail("Choose approved or denied.");
+  const adminResponse = String(req.body.response || "").trim();
+  if (adminResponse.length < 10 || adminResponse.length > 2000) {
+    fail("Appeal response must contain between 10 and 2,000 characters.");
+  }
+  const now = Date.now();
+  const updates = {
+    [`appeals/${appealId}/status`]: status,
+    [`appeals/${appealId}/adminResponse`]: adminResponse,
+    [`appeals/${appealId}/reviewedByAccountId`]: administrator.id,
+    [`appeals/${appealId}/reviewedAt`]: now,
+    [`appeals/${appealId}/updatedAt`]: now,
+  };
+  if (status === "APPROVED" && req.body.restoreAccount === true) {
+    updates[`accounts/${appeal.accountId}/accountStatus`] = "ACTIVE";
+    updates[`accounts/${appeal.accountId}/statusReason`] = null;
+    updates[`accounts/${appeal.accountId}/statusEndsAt`] = null;
+    updates[`accounts/${appeal.accountId}/statusChangedAt`] = now;
+    updates[`accounts/${appeal.accountId}/statusChangedBy`] = administrator.id;
+    updates[`accounts/${appeal.accountId}/updatedAt`] = now;
+  }
+  await root.update(updates);
+  await adminAudit(administrator, "ACCOUNT_APPEAL_REVIEWED", appeal.accountId,
+      {appealId, status, restored: status === "APPROVED" && req.body.restoreAccount === true});
+  res.json({ok: true, status});
 }));
 
 app.post("/api/admin/referrals/reverse", route(async (req, res) => {

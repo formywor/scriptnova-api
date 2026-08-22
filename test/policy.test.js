@@ -18,6 +18,8 @@ test("username policy normalizes and blocks impersonation", () => {
   assert.equal(validateUsername("User_24"), "user_24");
   assert.throws(() => validateUsername("adm1n_team"));
   assert.throws(() => validateUsername("support"));
+  assert.throws(() => validateUsername("verified_news"));
+  assert.throws(() => validateUsername("suuuupport_team"));
 });
 test("PIN policy accepts 4–8 digits and rejects weak PINs", () => {
   assert.equal(validatePin("4826"), "4826");

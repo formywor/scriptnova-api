@@ -59,6 +59,41 @@ Only run setup when initially configuring or intentionally replacing the
 production secrets. A normal GitHub update does not require running setup
 again because the Vercel project is already linked to the repository.
 
+## Creating an administrator
+
+The `/admin44` website page is not the security boundary. Every privileged API
+request checks an active role stored in Realtime Database.
+
+1. Find the account ID at `usernames/{username}/accountId` in Firebase.
+2. Create `administrators/{accountId}` with:
+
+```json
+{
+  "active": true,
+  "role": "ADMIN",
+  "displayName": "ScriptNovaa Admin"
+}
+```
+
+Use `ADMIN` for full account, point, trust, appeal, ticket, and chat controls.
+Use `SUPPORT` for ticket and live-chat access without sanctions, trust changes,
+point adjustments, or appeal decisions. Never grant a role from a public API
+request. Removing the record or setting `active` to `false` revokes access on
+the next request.
+
+All privileged changes are recorded under `adminAuditLog`. Do not delete audit
+entries during routine moderation.
+
+## Account safety states
+
+New accounts store only a protected recovery-code credential and remain in a
+`recoveryPromptRequired` state until the user confirms the one-time code screen.
+Accounts created before this feature are grandfathered and are not locked.
+
+Supported moderation states are `ACTIVE`, `SUSPENDED`, `BANNED`, and
+`TERMINATED`. The API—not the web page—blocks normal endpoints for restricted
+accounts. Appeals remain available through the restricted session.
+
 ## Reviewing support tickets
 
 Support tickets are stored in Firebase Realtime Database under:
@@ -67,8 +102,8 @@ Support tickets are stored in Firebase Realtime Database under:
 supportTickets/{ticketId}
 ```
 
-Administrators and developers review them in Firebase Console. For a
-connection-code replacement request, change `status` from `PENDING` to:
+Administrators can review them from `/admin44` or Firebase Console. For a
+connection-code replacement request, the review states include:
 
 ```text
 APPROVED
@@ -79,6 +114,23 @@ You can also add an `adminResponse` string that the user will see on the
 Support page. Do not delete the ticket. When an approved replacement code is
 generated, the API automatically changes the ticket to `FULFILLED` and records
 `replacementConsumedAt`.
+
+Live chats are stored under `supportChats`; appeals are stored under `appeals`.
+Live chat is best-effort only and cannot authorize point refunds or restore
+lost rewards. Use tickets for decisions that need a durable support record.
+
+## Security notes
+
+- Realtime Database client access remains deny-all. Only the Vercel API uses
+  Firebase Admin credentials.
+- Never upload the service-account JSON or copy private keys into website code.
+- The website does not execute third-party notification scripts on signed-in
+  pages because those pages hold account login data.
+- Network information shown to administrators is reduced to a network prefix;
+  raw full IP addresses and device fingerprints are not shown.
+- No system can be guaranteed impossible to hack. Keep dependencies updated,
+  review Vercel/Firebase access, rotate exposed secrets, and monitor the audit
+  log and failed-login limits.
 
 ## Validation
 
