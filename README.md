@@ -6,7 +6,7 @@ Backend for Share Browser, served publicly from:
 
 The API uses Firebase Realtime Database and is deployed through Vercel.
 
-Current public launcher version: **1.2.4**
+Current public launcher version: **1.2.5**
 
 The API rejects outdated launchers on pairing, connection validation,
 configuration, activation, launch confirmation, and active-session
@@ -17,12 +17,27 @@ An activated session must confirm that its browser process started. If an
 unconfirmed session becomes stale, the API restores its token to `UNUSED`;
 heartbeat timeouts only consume tokens after launch confirmation.
 
-Launcher 1.2.4 retries browser startup once and tolerates up to two temporary
+Launcher 1.2.5 retries browser startup once and tolerates up to two temporary
 network/server heartbeat failures. Authenticated API rejections, revocation,
 expiration, and an outdated launcher still end the session immediately.
 It also uses WMI, `WScript.Shell`, and `ShellExecute` launch fallbacks and
 temporarily locks the End control to prevent queued Start clicks from ending a
 newly launched session.
+It waits for the browser to remain alive before confirming launch. An early
+browser exit triggers one API-provided compatibility launch; an unconfirmed
+failure restores the token. Balanced mode and the browser's standard identity
+are the public defaults, while stronger modes remain optional.
+
+Additional API-controlled browsing modes are available:
+
+- `T44`: normal browser identity with no additional preset options;
+- `T55`: ScriptNovaa compatibility identity with no additional preset options;
+- `T77`: extensions disabled, with local history discarded when the temporary
+  session profile is removed. It does not force Incognito.
+
+The API removes `--incognito` and `--guest` from every preset and fallback
+before returning browser configuration. No public browsing mode can force
+either private-window mechanism.
 
 The public website also uses `/api/demo/start` and `/api/demo/status` for a
 10-minute online interface preview. A browser can start one preview per rolling
@@ -157,7 +172,7 @@ After Vercel finishes deploying, verify:
 `https://api.scriptnovaa.com/api/health`
 
 The response should identify the Share Browser API and Firebase Realtime
-Database and report launcher version `1.2.4`.
+Database and report launcher version `1.2.5`.
 
 ## Normal release
 

@@ -34,7 +34,7 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
-const CURRENT_LAUNCHER_VERSION = "1.2.4";
+const CURRENT_LAUNCHER_VERSION = "1.2.5";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -79,6 +79,9 @@ app.use((req, res, next) => {
 });
 
 const PRESETS = {
+  t44: [],
+  t55: [],
+  t77: ["--disable-extensions"],
   balanced: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
     "--disable-notifications", "--disable-background-mode"],
   privacy: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
@@ -104,6 +107,12 @@ const PRESETS = {
     "--disable-notifications",
   ],
 };
+const MODE_IDENTITY_OVERRIDES = Object.freeze({
+  t44: "default",
+  t55: "chromeOs120",
+  t77: "default",
+});
+const DISALLOWED_BROWSER_OPTIONS = new Set(["--incognito", "--guest"]);
 const USER_AGENTS = {
   default: "",
   shareDesktop: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
@@ -113,9 +122,12 @@ const USER_AGENTS = {
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 const LAUNCHER_CONFIGURATION = Object.freeze({
-  defaultMode: "protected",
-  defaultIdentity: "chromeOs120",
+  defaultMode: "balanced",
+  defaultIdentity: "default",
   modes: [
+    {id: "t44", label: "T44 — Standard identity"},
+    {id: "t55", label: "T55 — Compatibility identity"},
+    {id: "t77", label: "T77 — Private local trace"},
     {id: "balanced", label: "Balanced"},
     {id: "privacy", label: "Private"},
     {id: "minimal", label: "Lightweight"},
@@ -134,8 +146,9 @@ const LAUNCHER_CONFIGURATION = Object.freeze({
   },
 });
 function browserLaunchFlags(browser, presetId) {
-  const flags = [...PRESETS[presetId]];
-  if (browser === "edge") {
+  const flags = PRESETS[presetId].filter((option) =>
+    !DISALLOWED_BROWSER_OPTIONS.has(String(option).toLowerCase()));
+  if (browser === "edge" && !["t44", "t55", "t77"].includes(presetId)) {
     flags.push("--disable-features=msEdgeStartupBoost");
   }
   return flags;
@@ -689,7 +702,7 @@ async function finishSession(sessionId, session, reason) {
     ]);
     const endedAt = Date.now();
     const launchFailedQuickly = clean === "LAUNCH_FAILED" &&
-      endedAt - Number(current.startedAt || 0) <= 60000 &&
+      endedAt - Number(current.startedAt || 0) <= 120000 &&
       !current.launchConfirmedAt &&
       token?.status === "ACTIVE" && token.sessionId === sessionId &&
       Boolean(account);
@@ -1473,6 +1486,7 @@ app.post("/api/session/activate", route(async (req, res) => {
     !Object.prototype.hasOwnProperty.call(USER_AGENTS, userAgentId)) {
     fail("Unsupported browser setting.");
   }
+  const effectiveUserAgentId = MODE_IDENTITY_OVERRIDES[presetId] || userAgentId;
   const tokenHash = hmac(req.body.token); const tokenId = await read(`tokenHashes/${tokenHash}`);
   if (!tokenId) fail("Token is invalid.");
   const sessionId = id("sessions"); const rawSecret = crypto.randomBytes(32).toString("base64url");
@@ -1505,8 +1519,9 @@ app.post("/api/session/activate", route(async (req, res) => {
     if (freshAccount.activeSessionId) {
       const previousSessionId = freshAccount.activeSessionId;
       const previous = await read(`sessions/${previousSessionId}`);
+      const staleWindow = previous?.launchConfirmedAt ? 30000 : 120000;
       const stale = !previous || previous.status !== "ACTIVE" ||
-        Number(previous.lastHeartbeatAt || 0) < Date.now() - 30000;
+        Number(previous.lastHeartbeatAt || 0) < Date.now() - staleWindow;
       if (!stale) fail("An active session already exists.");
       if (previous && previous.status === "ACTIVE") {
         const endedAt = Date.now();
@@ -1562,7 +1577,8 @@ app.post("/api/session/activate", route(async (req, res) => {
     });
     updates[`sessions/${sessionId}`] = {
       accountId: account.id, tokenId, deviceId: freshAccount.registeredDeviceId,
-      browser, presetId, userAgentId, status: "ACTIVE", sessionSecretHash: hmac(rawSecret),
+      browser, presetId, userAgentId: effectiveUserAgentId,
+      status: "ACTIVE", sessionSecretHash: hmac(rawSecret),
       startedAt, expiresAt, lastHeartbeatAt: startedAt,
     };
 
@@ -1594,7 +1610,11 @@ app.post("/api/session/activate", route(async (req, res) => {
   res.json({ok: true, sessionId, sessionSecret: rawSecret,
     expiresAt: new Date(expiresAt).toISOString(), heartbeatSeconds: 10,
     launch: {browser, startupOptions: browserLaunchFlags(browser, presetId),
-      userAgent: USER_AGENTS[userAgentId]}});
+      userAgent: USER_AGENTS[effectiveUserAgentId],
+      fallbackStartupOptions: browserLaunchFlags(browser,
+          ["t44", "t55", "t77"].includes(presetId) ? presetId : "minimal"),
+      fallbackUserAgent: ["t44", "t55", "t77"].includes(presetId) ?
+        USER_AGENTS[effectiveUserAgentId] : ""}});
 }));
 
 app.post("/api/session/heartbeat", route(async (req, res) => {
