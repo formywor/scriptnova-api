@@ -34,7 +34,7 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
-const CURRENT_LAUNCHER_VERSION = "1.2.2";
+const CURRENT_LAUNCHER_VERSION = "1.2.3";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -84,7 +84,7 @@ const PRESETS = {
   privacy: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
     "--disable-notifications", "--disable-extensions",
     "--disable-background-mode",
-    "--disable-features=AutofillServerCommunication", "--incognito"],
+    "--disable-features=AutofillServerCommunication"],
   minimal: ["--no-first-run", "--no-default-browser-check", "--disable-sync",
     "--disable-background-mode"],
   protected: [
@@ -102,7 +102,6 @@ const PRESETS = {
     "--dns-over-https-mode=secure",
     "--dns-over-https-templates=https://cloudflare-dns.com/dns-query",
     "--disable-notifications",
-    "--incognito",
   ],
 };
 const USER_AGENTS = {
@@ -722,6 +721,14 @@ async function finishSession(sessionId, session, reason) {
       updates[`tokens/${current.tokenId}/displayToken`] = null;
     }
     await root.update(updates);
+    console.info("Browser session finished", {
+      sessionId,
+      accountId: current.accountId,
+      browser: current.browser || "unknown",
+      reason: clean,
+      tokenRestored: launchFailedQuickly,
+      launchConfirmed: Boolean(current.launchConfirmedAt),
+    });
   } finally {
     const activeLock = await read(`sessionFinishLocks/${sessionId}`);
     if (activeLock?.finishId === finishId) await lockReference.remove();
@@ -1533,9 +1540,9 @@ app.post("/api/session/activate", route(async (req, res) => {
       }
     }
 
-    if (!token || token.status !== "UNUSED" || token.ownerAccountId !== account.id) {
-      fail("Token cannot be used.");
-    }
+    if (!token || token.ownerAccountId !== account.id) fail("Token cannot be used.");
+    if (token.status === "ACTIVE") fail("This token already has an active session.", 409);
+    if (token.status !== "UNUSED") fail("This token has already been used and cannot be reused.");
 
     const startedAt = Date.now();
     expiresAt = startedAt + Number(token.durationSeconds) * 1000;
