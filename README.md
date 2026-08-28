@@ -6,12 +6,16 @@ Backend for Share Browser, served publicly from:
 
 The API uses Firebase Realtime Database and is deployed through Vercel.
 
-Current public launcher version: **1.2.1**
+Current public launcher version: **1.2.2**
 
 The API rejects outdated launchers on pairing, connection validation,
 configuration, activation, launch confirmation, and active-session
 heartbeats. Update the `CURRENT_LAUNCHER_VERSION` value in `index.js` only
 when the matching launcher is already available on the website.
+
+An activated session must confirm that its browser process started. If an
+unconfirmed session becomes stale, the API restores its token to `UNUSED`;
+heartbeat timeouts only consume tokens after launch confirmation.
 
 The public website also uses `/api/demo/start` and `/api/demo/status` for a
 10-minute online interface preview. A browser can start one preview per rolling
@@ -146,7 +150,7 @@ After Vercel finishes deploying, verify:
 `https://api.scriptnovaa.com/api/health`
 
 The response should identify the Share Browser API and Firebase Realtime
-Database and report launcher version `1.2.1`.
+Database and report launcher version `1.2.2`.
 
 ## Normal release
 

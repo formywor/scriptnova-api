@@ -34,7 +34,7 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
-const CURRENT_LAUNCHER_VERSION = "1.2.1";
+const CURRENT_LAUNCHER_VERSION = "1.2.2";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -1483,20 +1483,18 @@ app.post("/api/session/activate", route(async (req, res) => {
     if (!freshAccount || freshAccount.accountStatus !== "ACTIVE") {
       fail("Account not found or restricted.", 401);
     }
-    const [token, device] = await Promise.all([
+    let [token, device] = await Promise.all([
       read(`tokens/${tokenId}`),
       freshAccount.registeredDeviceId ?
         read(`devices/${freshAccount.registeredDeviceId}`) : Promise.resolve(null),
     ]);
-    if (!token || token.status !== "UNUSED" || token.ownerAccountId !== account.id) {
-      fail("Token cannot be used.");
-    }
     if (!device || device.status !== "ACTIVE" ||
       device.deviceHash !== hmac(req.body.deviceProof)) {
       fail("Computer is not authorized. Reconnect this computer from the Tokens page.", 403);
     }
 
     const updates = {};
+    let restoredUnconfirmedToken = false;
     if (freshAccount.activeSessionId) {
       const previousSessionId = freshAccount.activeSessionId;
       const previous = await read(`sessions/${previousSessionId}`);
@@ -1506,16 +1504,37 @@ app.post("/api/session/activate", route(async (req, res) => {
       if (previous && previous.status === "ACTIVE") {
         const endedAt = Date.now();
         updates[`sessions/${previousSessionId}/status`] = "FINISHED";
-        updates[`sessions/${previousSessionId}/endReason`] = "HEARTBEAT_TIMEOUT";
         updates[`sessions/${previousSessionId}/endedAt`] = endedAt;
         const previousToken = previous.tokenId ? await read(`tokens/${previous.tokenId}`) : null;
-        if (previousToken) {
+        const launchWasNeverConfirmed = !previous.launchConfirmedAt &&
+          previousToken?.status === "ACTIVE" &&
+          previousToken.sessionId === previousSessionId;
+        if (launchWasNeverConfirmed) {
+          restoredUnconfirmedToken = true;
+          updates[`sessions/${previousSessionId}/endReason`] = "LAUNCH_CONFIRMATION_TIMEOUT";
+          updates[`sessions/${previousSessionId}/tokenRestored`] = true;
+          updates[`tokens/${previous.tokenId}/status`] = "UNUSED";
+          updates[`tokens/${previous.tokenId}/sessionId`] = null;
+          updates[`tokens/${previous.tokenId}/deviceId`] = null;
+          updates[`tokens/${previous.tokenId}/activatedAt`] = null;
+          updates[`tokens/${previous.tokenId}/expiresAt`] = null;
+          updates[`tokens/${previous.tokenId}/endReason`] = null;
+          updates[`tokens/${previous.tokenId}/endedAt`] = null;
+          if (previous.tokenId === tokenId) token = {...token, status: "UNUSED"};
+        } else if (previousToken) {
+          updates[`sessions/${previousSessionId}/endReason`] = "HEARTBEAT_TIMEOUT";
           updates[`tokens/${previous.tokenId}/status`] = "COMPLETED";
           updates[`tokens/${previous.tokenId}/endReason`] = "HEARTBEAT_TIMEOUT";
           updates[`tokens/${previous.tokenId}/endedAt`] = endedAt;
           updates[`tokens/${previous.tokenId}/displayToken`] = null;
+        } else {
+          updates[`sessions/${previousSessionId}/endReason`] = "HEARTBEAT_TIMEOUT";
         }
       }
+    }
+
+    if (!token || token.status !== "UNUSED" || token.ownerAccountId !== account.id) {
+      fail("Token cannot be used.");
     }
 
     const startedAt = Date.now();
@@ -1530,7 +1549,8 @@ app.post("/api/session/activate", route(async (req, res) => {
       [`tokens/${tokenId}/activatedAt`]: startedAt,
       [`tokens/${tokenId}/expiresAt`]: expiresAt,
       [`accounts/${account.id}/activeSessionId`]: sessionId,
-      [`accounts/${account.id}/unusedTokenCount`]: ServerValue.increment(-1),
+      [`accounts/${account.id}/unusedTokenCount`]:
+        ServerValue.increment(restoredUnconfirmedToken ? 0 : -1),
       [`accounts/${account.id}/updatedAt`]: startedAt,
     });
     updates[`sessions/${sessionId}`] = {
