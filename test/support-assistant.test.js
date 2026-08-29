@@ -68,3 +68,44 @@ test("suggests useful learning keywords without common filler", () => {
   assert.deepEqual(suggestKnowledgeKeywords("The music widget is silent after loading"),
       ["music", "widget", "silent", "loading"]);
 });
+
+test("does not carry an old ban topic into a developer question", () => {
+  const reply = supportAssistantReply("What is the Developer portal", {
+    account: {accountStatus: "BANNED", statusReason: "Repeated abuse"},
+    previousUserMessages: ["I want to be unbanned", "I didnt do it"],
+  });
+  assert.match(reply.message, /Developer Program is in beta/i);
+  assert.doesNotMatch(reply.message, /account is banned/i);
+});
+
+test("recognizes connection-code replacement wording", () => {
+  const reply = supportAssistantReply("Request another one time activation code", {
+    account: {registeredDeviceId: "device-1"},
+  });
+  assert.match(reply.message, /Connection code replacement ticket/i);
+});
+
+test("gives download-specific guidance without requiring launcher logs", () => {
+  const reply = supportAssistantReply("I clicked download Share Browser and it didnt work");
+  assert.match(reply.message, /Downloads list/i);
+  assert.match(reply.message, /scriptnovaa\.com/i);
+});
+
+test("recognizes a browser that runs and closes quickly", () => {
+  const reply = supportAssistantReply("my browser ran then closed quickly", {
+    diagnostics: [{event: "BROWSER_CLOSED", browser: "chrome", detail: "Exited early"}],
+  });
+  assert.match(reply.message, /exited early/i);
+});
+
+test("redacts bare possible PINs and payment numbers", () => {
+  assert.equal(redactSupportSecrets("19860347"), "[possible PIN removed]");
+  assert.doesNotMatch(redactSupportSecrets("card 1000101010110134312"), /1000101010110134312/);
+});
+
+test("flags an unclear numeric restriction reason", () => {
+  const reply = supportAssistantReply("how long am I banned", {
+    account: {accountStatus: "BANNED", statusReason: "198603471986034719860347"},
+  });
+  assert.match(reply.message, /not written clearly/i);
+});
