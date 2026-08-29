@@ -14,7 +14,11 @@ const {
   validatePin,
 } =
   require("./lib/policy");
-const {supportAssistantReply, redactSupportSecrets} = require("./lib/support-assistant");
+const {
+  supportAssistantReply,
+  redactSupportSecrets,
+  suggestKnowledgeKeywords,
+} = require("./lib/support-assistant");
 
 function firebaseOptions() {
   const options = {
@@ -318,8 +322,16 @@ async function recentLauncherDiagnostics(accountId) {
       .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
 }
 
-async function assistantContext(account) {
-  const diagnostics = await recentLauncherDiagnostics(account.id);
+async function assistantContext(account, chat = null) {
+  const [diagnostics, knowledgeData] = await Promise.all([
+    recentLauncherDiagnostics(account.id),
+    read("supportKnowledge"),
+  ]);
+  const previousUserMessages = Object.values(chat?.messages || {})
+      .filter((item) => item.sender === "USER")
+      .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+      .slice(-5)
+      .map((item) => String(item.message || ""));
   return {
     account: {
       accountStatus: account.data.accountStatus || "ACTIVE",
@@ -330,7 +342,36 @@ async function assistantContext(account) {
       pendingPointBalance: Number(account.data.pendingPointBalance || 0),
     },
     diagnostics,
+    previousUserMessages,
+    knowledge: Object.entries(knowledgeData || {})
+        .map(([knowledgeId, entry]) => ({knowledgeId, ...entry}))
+        .filter((entry) => entry.active === true)
+        .slice(0, 100),
   };
+}
+
+async function createLearningCandidate(chatId, chat, administrator) {
+  const messages = Object.values(chat.messages || {})
+      .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  const userMessages = messages.filter((item) => item.sender === "USER");
+  const agentMessages = messages.filter((item) => item.sender === "AGENT");
+  if (!userMessages.length || !agentMessages.length) return false;
+  const existing = await read(`supportLearningCandidates/${chatId}`);
+  if (existing) return false;
+  const question = userMessages.slice(-3).map((item) => item.message).join("\n").slice(0, 800);
+  const answer = String(agentMessages[agentMessages.length - 1].message || "").slice(0, 800);
+  if (answer.length < 10) return false;
+  await root.child(`supportLearningCandidates/${chatId}`).set({
+    chatId,
+    question,
+    suggestedAnswer: answer,
+    suggestedKeywords: suggestKnowledgeKeywords(question),
+    status: "PENDING",
+    createdByClosingAdministratorId: administrator.id,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  return true;
 }
 function cleanLine(value, maximum) {
   return String(value || "").trim().replace(/\s+/g, " ").slice(0, maximum);
@@ -1392,7 +1433,7 @@ app.post("/api/support/chat/:chatId/messages", route(async (req, res) => {
     const assistantMessageId = id(`supportChats/${chatId}/messages`);
     const assistantReply = supportAssistantReply(
         chatMessage,
-        await assistantContext(account),
+        await assistantContext(account, chat),
     );
     updates[`supportChats/${chatId}/messages/${assistantMessageId}`] = {
       sender: "ASSISTANT",
@@ -2192,7 +2233,63 @@ app.post("/api/admin/support/chats/:chatId/status", route(async (req, res) => {
     };
   }
   await root.update(updates);
+  if (status === "CLOSED") {
+    await createLearningCandidate(chatId, chat, administrator);
+  }
   await adminAudit(administrator, "SUPPORT_CHAT_STATUS", chat.accountId, {chatId, status});
+  res.json({ok: true, status});
+}));
+
+app.get("/api/admin/support/learning", route(async (req, res) => {
+  await requireAdmin(req, "SUPPORT");
+  const candidates = Object.entries(await read("supportLearningCandidates") || {})
+      .map(([candidateId, candidate]) => ({candidateId, ...candidate}))
+      .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+      .slice(0, 100);
+  res.json({ok: true, candidates});
+}));
+
+app.post("/api/admin/support/learning/:candidateId/review", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const candidateId = String(req.params.candidateId || "");
+  const candidate = await read(`supportLearningCandidates/${candidateId}`);
+  if (!candidate) fail("Learning suggestion not found.", 404);
+  const status = String(req.body.status || "").toUpperCase();
+  if (!["APPROVED", "REJECTED"].includes(status)) fail("Choose approved or rejected.");
+  const answer = redactSupportSecrets(String(req.body.answer || "").trim()).slice(0, 800);
+  const suppliedKeywords = Array.isArray(req.body.keywords) ? req.body.keywords :
+    String(req.body.keywords || "").split(",");
+  const keywords = [...new Set(suppliedKeywords.map((item) =>
+    String(item || "").trim().toLowerCase().replace(/[^a-z0-9 -]/g, "").slice(0, 40))
+      .filter((item) => item.length >= 2))].slice(0, 12);
+  if (status === "APPROVED" && (answer.length < 10 || !keywords.length)) {
+    fail("Approved guidance needs an answer and at least one matching keyword.");
+  }
+  const now = Date.now();
+  const updates = {
+    [`supportLearningCandidates/${candidateId}/status`]: status,
+    [`supportLearningCandidates/${candidateId}/reviewedAnswer`]: answer,
+    [`supportLearningCandidates/${candidateId}/reviewedKeywords`]: keywords,
+    [`supportLearningCandidates/${candidateId}/reviewedByAccountId`]: administrator.id,
+    [`supportLearningCandidates/${candidateId}/reviewedAt`]: now,
+    [`supportLearningCandidates/${candidateId}/updatedAt`]: now,
+  };
+  if (status === "APPROVED") {
+    updates[`supportKnowledge/${candidateId}`] = {
+      active: true,
+      answer,
+      keywords,
+      sourceChatId: candidate.chatId || candidateId,
+      approvedByAccountId: administrator.id,
+      approvedAt: now,
+      updatedAt: now,
+    };
+  } else {
+    updates[`supportKnowledge/${candidateId}`] = null;
+  }
+  await root.update(updates);
+  await adminAudit(administrator, "SUPPORT_LEARNING_REVIEWED", null,
+      {candidateId, status, keywords});
   res.json({ok: true, status});
 }));
 

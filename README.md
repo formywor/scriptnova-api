@@ -61,6 +61,13 @@ history and never prevent the user from starting a new conversation. Deploy
 the Realtime Database rules with the `launcherDiagnostics.accountId` index when
 publishing this version.
 
+When a representative resolves and closes a chat, the API may create a private
+learning suggestion. It is never used automatically. A full administrator must
+remove account-specific details, edit the reusable answer and keywords, and
+approve it in Operations → Learning. Approved guidance is stored in
+`supportKnowledge` and can be matched in future conversations. This is reviewed
+knowledge retrieval, not untrusted self-training or code modification.
+
 ## Uploading to GitHub
 
 Upload the contents of this folder to the root of the `scriptnova-api`
