@@ -49,6 +49,18 @@ instant-claim chance of 20% when new, 55% after four days, 84% after one week,
 and 99% after four weeks. Accounts under fraud or reversal review always wait
 12–14 minutes.
 
+## Guided support assistant
+
+Support chat uses a server-side troubleshooting rules engine and the signed-in
+user's sanitized account state and recent launcher diagnostics. It does not use
+Google or a paid AI API. Users can request a representative at any time.
+
+The assistant is read-only: it cannot change points, restrictions, devices,
+tokens, sessions, or administrator data. Closed chats remain available as
+history and never prevent the user from starting a new conversation. Deploy
+the Realtime Database rules with the `launcherDiagnostics.accountId` index when
+publishing this version.
+
 ## Uploading to GitHub
 
 Upload the contents of this folder to the root of the `scriptnova-api`

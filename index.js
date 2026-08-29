@@ -14,6 +14,7 @@ const {
   validatePin,
 } =
   require("./lib/policy");
+const {supportAssistantReply, redactSupportSecrets} = require("./lib/support-assistant");
 
 function firebaseOptions() {
   const options = {
@@ -291,7 +292,7 @@ function publicChat(chatId, chat) {
   const messages = Object.entries(chat.messages || {})
       .map(([messageId, item]) => ({
         messageId,
-        sender: item.sender === "AGENT" ? "AGENT" : item.sender === "SYSTEM" ? "SYSTEM" : "USER",
+        sender: ["AGENT", "ASSISTANT", "SYSTEM"].includes(item.sender) ? item.sender : "USER",
         senderName: String(item.senderName || "").slice(0, 40),
         message: String(item.message || "").slice(0, CHAT_MESSAGE_LIMIT),
         createdAt: Number(item.createdAt || 0),
@@ -302,11 +303,33 @@ function publicChat(chatId, chat) {
     chatId,
     accountId: chat.accountId,
     username: chat.username,
-    status: ["WAITING", "ACTIVE", "CLOSED"].includes(chat.status) ? chat.status : "WAITING",
+    status: ["ASSISTANT", "WAITING", "ACTIVE", "CLOSED"].includes(chat.status) ? chat.status : "ASSISTANT",
     assignedAgentName: String(chat.assignedAgentName || ""),
     createdAt: Number(chat.createdAt || 0),
     updatedAt: Number(chat.updatedAt || chat.createdAt || 0),
     messages,
+  };
+}
+
+async function recentLauncherDiagnostics(accountId) {
+  const snapshot = await root.child("launcherDiagnostics")
+      .orderByChild("accountId").equalTo(accountId).limitToLast(12).get();
+  return Object.values(snapshot.val() || {})
+      .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+}
+
+async function assistantContext(account) {
+  const diagnostics = await recentLauncherDiagnostics(account.id);
+  return {
+    account: {
+      accountStatus: account.data.accountStatus || "ACTIVE",
+      statusReason: String(account.data.statusReason || "").slice(0, 500),
+      statusEndsAt: Number(account.data.statusEndsAt || 0) || null,
+      registeredDeviceId: account.data.registeredDeviceId || null,
+      pointBalance: Number(account.data.pointBalance || 0),
+      pendingPointBalance: Number(account.data.pendingPointBalance || 0),
+    },
+    diagnostics,
   };
 }
 function cleanLine(value, maximum) {
@@ -1211,7 +1234,10 @@ app.post("/api/launcher/diagnostic", route(async (req, res) => {
 }));
 
 app.get("/api/support/tickets", route(async (req, res) => {
-  const account = await requireAccount(req, {allowRecoveryPending: true});
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
   const tickets = await accountSupportTickets(account.id);
   res.json({
     ok: true,
@@ -1221,18 +1247,22 @@ app.get("/api/support/tickets", route(async (req, res) => {
 }));
 
 app.post("/api/support/tickets", route(async (req, res) => {
-  const account = await requireAccount(req, {allowRecoveryPending: true});
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
   await rateLimit(account.id, "SUPPORT_TICKET", 12, 24 * 60 * 60);
   const category = String(req.body.category || "").trim().toUpperCase();
   const subject = String(req.body.subject || "").trim().replace(/\s+/g, " ");
-  const ticketMessage = String(req.body.message || "").trim();
+  const rawTicketMessage = String(req.body.message || "").trim();
   if (!SUPPORT_CATEGORIES.has(category)) fail("Choose a valid support category.");
   if (subject.length < 5 || subject.length > 80) {
     fail("Subject must contain between 5 and 80 characters.");
   }
-  if (ticketMessage.length < 20 || ticketMessage.length > 2000) {
+  if (rawTicketMessage.length < 20 || rawTicketMessage.length > 2000) {
     fail("Explanation must contain between 20 and 2,000 characters.");
   }
+  const ticketMessage = redactSupportSecrets(rawTicketMessage);
 
   const existing = await accountSupportTickets(account.id);
   if (category === "CONNECTION_CODE_REPLACEMENT") {
@@ -1266,7 +1296,10 @@ app.post("/api/support/tickets", route(async (req, res) => {
 }));
 
 app.get("/api/support/chat", route(async (req, res) => {
-  const account = await requireAccount(req, {allowRecoveryPending: true});
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
   const chats = Object.entries(await read("supportChats") || {})
       .filter(([, chat]) => chat.accountId === account.id)
       .sort((a, b) => Number(b[1].updatedAt || 0) - Number(a[1].updatedAt || 0));
@@ -1275,29 +1308,38 @@ app.get("/api/support/chat", route(async (req, res) => {
 }));
 
 app.post("/api/support/chat/start", route(async (req, res) => {
-  const account = await requireAccount(req, {allowRecoveryPending: true});
-  await rateLimit(account.id, "SUPPORT_CHAT_START", 3, 24 * 60 * 60);
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  await rateLimit(account.id, "SUPPORT_CHAT_START", 12, 24 * 60 * 60);
   if (req.body.acceptedPolicy !== true) {
     fail("Accept the support-chat notice before starting a chat.");
   }
-  const initialMessage = String(req.body.message || "").trim();
-  if (initialMessage.length < 20 || initialMessage.length > CHAT_MESSAGE_LIMIT) {
+  const rawInitialMessage = String(req.body.message || "").trim();
+  if (rawInitialMessage.length < 20 || rawInitialMessage.length > CHAT_MESSAGE_LIMIT) {
     fail(`Message must contain between 20 and ${CHAT_MESSAGE_LIMIT} characters.`);
   }
+  const initialMessage = redactSupportSecrets(rawInitialMessage);
   const existing = Object.entries(await read("supportChats") || {})
       .find(([, chat]) => chat.accountId === account.id &&
-        ["WAITING", "ACTIVE"].includes(chat.status));
+        ["ASSISTANT", "WAITING", "ACTIVE"].includes(chat.status));
   if (existing) {
     return res.json({ok: true, existing: true,
       chat: publicChat(existing[0], existing[1])});
   }
   const chatId = id("supportChats");
   const messageId = id(`supportChats/${chatId}/messages`);
+  const assistantMessageId = id(`supportChats/${chatId}/messages`);
   const now = Date.now();
+  const assistantReply = supportAssistantReply(
+      initialMessage,
+      await assistantContext(account),
+  );
   const chat = {
     accountId: account.id,
     username: account.data.username,
-    status: "WAITING",
+    status: assistantReply.transfer ? "WAITING" : "ASSISTANT",
     createdAt: now,
     updatedAt: now,
     submittedNetworkPrefix: ipPrefix(req),
@@ -1308,6 +1350,12 @@ app.post("/api/support/chat/start", route(async (req, res) => {
         message: initialMessage,
         createdAt: now,
       },
+      [assistantMessageId]: {
+        sender: "ASSISTANT",
+        senderName: "ScriptNovaa Assistant",
+        message: assistantReply.message,
+        createdAt: now + 1,
+      },
     },
   };
   await root.child(`supportChats/${chatId}`).set(chat);
@@ -1315,19 +1363,23 @@ app.post("/api/support/chat/start", route(async (req, res) => {
 }));
 
 app.post("/api/support/chat/:chatId/messages", route(async (req, res) => {
-  const account = await requireAccount(req, {allowRecoveryPending: true});
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
   await rateLimit(account.id, "SUPPORT_CHAT_MESSAGE", 40, 60 * 60);
   const chatId = String(req.params.chatId || "");
   const chat = await read(`supportChats/${chatId}`);
   if (!chat || chat.accountId !== account.id) fail("Support chat not found.", 404);
   if (chat.status === "CLOSED") fail("This support chat is closed.", 409);
-  const chatMessage = String(req.body.message || "").trim();
-  if (chatMessage.length < 1 || chatMessage.length > CHAT_MESSAGE_LIMIT) {
+  const rawChatMessage = String(req.body.message || "").trim();
+  if (rawChatMessage.length < 1 || rawChatMessage.length > CHAT_MESSAGE_LIMIT) {
     fail(`Message must contain between 1 and ${CHAT_MESSAGE_LIMIT} characters.`);
   }
+  const chatMessage = redactSupportSecrets(rawChatMessage);
   const messageId = id(`supportChats/${chatId}/messages`);
   const now = Date.now();
-  await root.update({
+  const updates = {
     [`supportChats/${chatId}/messages/${messageId}`]: {
       sender: "USER",
       senderName: account.data.username,
@@ -1335,8 +1387,79 @@ app.post("/api/support/chat/:chatId/messages", route(async (req, res) => {
       createdAt: now,
     },
     [`supportChats/${chatId}/updatedAt`]: now,
-  });
+  };
+  if (chat.status === "ASSISTANT") {
+    const assistantMessageId = id(`supportChats/${chatId}/messages`);
+    const assistantReply = supportAssistantReply(
+        chatMessage,
+        await assistantContext(account),
+    );
+    updates[`supportChats/${chatId}/messages/${assistantMessageId}`] = {
+      sender: "ASSISTANT",
+      senderName: "ScriptNovaa Assistant",
+      message: assistantReply.message,
+      createdAt: now + 1,
+    };
+    updates[`supportChats/${chatId}/status`] = assistantReply.transfer ?
+      "WAITING" : "ASSISTANT";
+  }
+  await root.update(updates);
   res.status(201).json({ok: true, messageId});
+}));
+
+app.post("/api/support/chat/:chatId/transfer", route(async (req, res) => {
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  await rateLimit(account.id, "SUPPORT_CHAT_TRANSFER", 6, 24 * 60 * 60);
+  const chatId = String(req.params.chatId || "");
+  const chat = await read(`supportChats/${chatId}`);
+  if (!chat || chat.accountId !== account.id) fail("Support chat not found.", 404);
+  if (chat.status === "CLOSED") fail("This support chat is closed.", 409);
+  if (["WAITING", "ACTIVE"].includes(chat.status)) {
+    return res.json({ok: true, status: chat.status});
+  }
+  const now = Date.now();
+  const messageId = id(`supportChats/${chatId}/messages`);
+  await root.update({
+    [`supportChats/${chatId}/status`]: "WAITING",
+    [`supportChats/${chatId}/updatedAt`]: now,
+    [`supportChats/${chatId}/messages/${messageId}`]: {
+      sender: "SYSTEM",
+      senderName: "ScriptNovaa",
+      message: "Transfer requested. This chat is waiting for a representative. Response time is not guaranteed.",
+      createdAt: now,
+    },
+  });
+  res.json({ok: true, status: "WAITING"});
+}));
+
+app.post("/api/support/chat/:chatId/close", route(async (req, res) => {
+  const account = await requireAccount(req, {
+    allowRestricted: true,
+    allowRecoveryPending: true,
+  });
+  const chatId = String(req.params.chatId || "");
+  const chat = await read(`supportChats/${chatId}`);
+  if (!chat || chat.accountId !== account.id) fail("Support chat not found.", 404);
+  if (chat.status !== "CLOSED") {
+    const now = Date.now();
+    const messageId = id(`supportChats/${chatId}/messages`);
+    await root.update({
+      [`supportChats/${chatId}/status`]: "CLOSED",
+      [`supportChats/${chatId}/closedBy`]: "USER",
+      [`supportChats/${chatId}/closedAt`]: now,
+      [`supportChats/${chatId}/updatedAt`]: now,
+      [`supportChats/${chatId}/messages/${messageId}`]: {
+        sender: "SYSTEM",
+        senderName: "ScriptNovaa",
+        message: "Chat closed. You can start a new conversation whenever you need help.",
+        createdAt: now,
+      },
+    });
+  }
+  res.json({ok: true, status: "CLOSED"});
 }));
 
 app.get("/api/appeals", route(async (req, res) => {
@@ -2051,8 +2174,24 @@ app.post("/api/admin/support/chats/:chatId/status", route(async (req, res) => {
   const chat = await read(`supportChats/${chatId}`);
   if (!chat) fail("Support chat not found.", 404);
   const status = String(req.body.status || "").toUpperCase();
-  if (!["WAITING", "ACTIVE", "CLOSED"].includes(status)) fail("Invalid chat status.");
-  await root.child(`supportChats/${chatId}`).update({status, updatedAt: Date.now()});
+  if (!["ASSISTANT", "WAITING", "ACTIVE", "CLOSED"].includes(status)) fail("Invalid chat status.");
+  const now = Date.now();
+  const updates = {
+    [`supportChats/${chatId}/status`]: status,
+    [`supportChats/${chatId}/updatedAt`]: now,
+  };
+  if (status === "CLOSED") {
+    const messageId = id(`supportChats/${chatId}/messages`);
+    updates[`supportChats/${chatId}/closedBy`] = "ADMIN";
+    updates[`supportChats/${chatId}/closedAt`] = now;
+    updates[`supportChats/${chatId}/messages/${messageId}`] = {
+      sender: "SYSTEM",
+      senderName: "ScriptNovaa",
+      message: "A representative closed this chat. You can start a new conversation whenever you need help.",
+      createdAt: now,
+    };
+  }
+  await root.update(updates);
   await adminAudit(administrator, "SUPPORT_CHAT_STATUS", chat.accountId, {chatId, status});
   res.json({ok: true, status});
 }));
