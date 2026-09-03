@@ -1229,7 +1229,17 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
       .replace(/[^A-F0-9]/gi, "").toUpperCase();
   if (pairingCode.length !== 10) fail("Connection code is invalid.");
   await rateLimit(ipPrefix(req), "DEVICE_PAIRING", 30, 900);
-  const pairingHash = hmac(pairingCode);
+  const calculatedPairingHash = hmac(pairingCode);
+  let pairingHash = calculatedPairingHash;
+  const calculatedPairing = await read(`devicePairings/${calculatedPairingHash}`);
+  if (!calculatedPairing || calculatedPairing.pairingCode !== pairingCode) {
+    pairingHash = devicePairing.resolveHash(
+        await read("devicePairings") || {}, calculatedPairingHash,
+        pairingCode, Date.now(),
+    );
+    if (!pairingHash) fail("Connection code is invalid or expired.");
+    console.warn("Pairing lookup recovered an open code after a hash-key mismatch.");
+  }
   const rawProof = String(req.body.deviceProof || "");
   if (rawProof.length < 20 || rawProof.length > 2048) fail("Computer identity is missing or invalid.");
   const launcherToken = crypto.randomBytes(32).toString("base64url");

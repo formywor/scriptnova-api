@@ -1,7 +1,7 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {complete} = require("../lib/device-pairing");
+const {complete, resolveHash} = require("../lib/device-pairing");
 const args = {pairingHash: "code", deviceHash: "proof", candidateDeviceId: "pc1", loginHash: "login1", now: 100, ledgerId: "tx1"};
 function fixture() { return {accounts: {alice: {accountStatus: "ACTIVE", fraudStatus: "CLEAR", pointBalance: 0}},
   devicePairings: {code: {accountId: "alice", status: "OPEN", expiresAt: 1000}}, activeDevicePairings: {alice: "code"}}; }
@@ -35,4 +35,11 @@ test("duplicate computer on another account is held for review without points", 
 test("existing fraud status cannot be cleared by pairing", () => {
   const d = fixture(); d.accounts.alice.fraudStatus = "RESTRICTED";
   complete(d, args); assert.equal(d.accounts.alice.fraudStatus, "RESTRICTED"); assert.equal(d.accounts.alice.pointBalance, 0);
+});
+test("open pairing can be recovered when the calculated hash key changed", () => {
+  const pairings = {oldHash: {pairingCode: "86D69655D3", status: "OPEN", expiresAt: 200}};
+  assert.equal(resolveHash(pairings, "newHash", "86D69655D3", 100), "oldHash");
+  assert.equal(resolveHash(pairings, "newHash", "86D69655D3", 200), "");
+  pairings.oldHash.status = "USED";
+  assert.equal(resolveHash(pairings, "newHash", "86D69655D3", 100), "");
 });
