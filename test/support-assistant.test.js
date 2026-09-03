@@ -8,6 +8,10 @@ const {
   suggestKnowledgeKeywords,
 } = require("../lib/support-assistant");
 
+test("redacts Project Z tokens too", () => {
+  assert.equal(redactSupportSecrets("My Z-ABCD-EFGH-IJKL-MNOP token"), "My [browser token removed] token");
+});
+
 test("transfers to a representative when requested", () => {
   const reply = supportAssistantReply("Please transfer me to a representative");
   assert.equal(reply.transfer, true);
@@ -108,4 +112,25 @@ test("flags an unclear numeric restriction reason", () => {
     account: {accountStatus: "BANNED", statusReason: "198603471986034719860347"},
   });
   assert.match(reply.message, /not written clearly/i);
+});
+
+test("understands a curly-apostrophe ban follow-up", () => {
+  const reply = supportAssistantReply("I didn’t do it", {
+    account: {accountStatus: "BANNED", statusReason: "Repeated abuse"},
+    previousUserMessages: ["Why am I banned?"],
+  });
+  assert.match(reply.message, /account is banned/i);
+});
+
+test("understands how long will it last as a restriction follow-up", () => {
+  const reply = supportAssistantReply("How long will it last?", {
+    account: {accountStatus: "BANNED", statusReason: "Repeated abuse"},
+    previousUserMessages: ["Why am I banned?", "I didn’t do it"],
+  });
+  assert.match(reply.message, /no scheduled automatic end date/i);
+});
+
+test("recognizes nothing happened in past tense", () => {
+  const reply = supportAssistantReply("I clicked Start Browser and nothing happened");
+  assert.match(reply.message, /could not find a recent launcher diagnostic/i);
 });

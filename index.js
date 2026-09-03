@@ -19,6 +19,9 @@ const {
   redactSupportSecrets,
   suggestKnowledgeKeywords,
 } = require("./lib/support-assistant");
+const projectZ = require("./lib/project-z");
+const mountProjectZ = require("./lib/project-z-routes");
+const devicePairing = require("./lib/device-pairing");
 
 function firebaseOptions() {
   const options = {
@@ -74,7 +77,7 @@ app.use((req, res, next) => {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version");
+        "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version, X-Project-Z-Version");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   }
   if (req.method === "OPTIONS") {
@@ -180,7 +183,7 @@ const LIMITED_FREE_TOKEN = Object.freeze({
   endsAt: Date.parse("2026-08-28T03:59:59.000Z"),
 });
 
-function availableTokenOptions() {
+function availableTokenOptions(product = "share") {
   const standard = TOKEN_OPTIONS.map((option) => ({
     id: `${option.hours}h`,
     hours: option.hours,
@@ -188,14 +191,14 @@ function availableTokenOptions() {
     points: option.points,
     label: `${option.hours} hour${option.hours === 1 ? "" : "s"} — ${option.points} points`,
   }));
-  if (Date.now() < LIMITED_FREE_TOKEN.endsAt) {
+  if (product === "share" && Date.now() < LIMITED_FREE_TOKEN.endsAt) {
     standard.unshift({...LIMITED_FREE_TOKEN, limited: true});
   }
   return standard;
 }
 
 function requestedTokenOption(body) {
-  const options = availableTokenOptions();
+  const options = availableTokenOptions(projectZ.productChoice(body.product));
   const optionId = String(body.optionId || "");
   return options.find((option) => option.id === optionId) ||
     options.find((option) => option.hours === Number(body.hours));
@@ -448,6 +451,15 @@ function requireCurrentLauncherVersion(req) {
     );
   }
 }
+function requireProjectZVersion(req) {
+  if (req.headers["x-project-z-version"] !== projectZ.VERSION) {
+    fail(`Update Project Z at scriptnovaa.com/project-z. Required version: ${projectZ.VERSION}.`, 426, "Z_UPDATE_REQUIRED");
+  }
+}
+function requirePairingClientVersion(req) {
+  if (req.headers["x-project-z-version"]) requireProjectZVersion(req);
+  else requireCurrentLauncherVersion(req);
+}
 async function ensureDeviceSetupBonus(accountId, account) {
   if (!account.registeredDeviceId || account.deviceSetupBonusAwardedAt ||
       account.fraudStatus !== "CLEAR") {
@@ -633,6 +645,7 @@ async function atomic(mutator) {
   }
   let thrown = null;
   const result = await root.transaction((current) => {
+    thrown = null;
     try { return mutator(current || {}); } catch (error) { thrown = error; return; }
   }, undefined, false);
   if (thrown) throw thrown;
@@ -745,6 +758,7 @@ async function requireBrowserSession(req) {
   if (!session || session.sessionSecretHash !== hmac(raw)) {
     fail("Browser session authentication failed.", 401);
   }
+  if (session.product === "z") fail("Use the Project Z session API.", 403);
   return {id: sessionId, data: session};
 }
 async function finishSession(sessionId, session, reason) {
@@ -815,6 +829,7 @@ async function finishSession(sessionId, session, reason) {
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
+  projectZVersion: projectZ.VERSION,
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -824,6 +839,7 @@ app.get("/", (req, res) => res.json({
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
   ok: true, tokenOptions: availableTokenOptions(),
+  projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
   redirectWaitChances: REDIRECT_WAIT_CHANCES,
   launcher: {
@@ -1197,32 +1213,29 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
 }));
 
 app.post("/api/device/pairing/complete", route(async (req, res) => {
-  requireCurrentLauncherVersion(req);
+  requirePairingClientVersion(req);
   const pairingCode = String(req.body.pairingCode || "")
       .replace(/[^A-F0-9]/gi, "").toUpperCase();
   if (pairingCode.length !== 10) fail("Connection code is invalid.");
   await rateLimit(ipPrefix(req), "DEVICE_PAIRING", 30, 900);
   const pairingHash = hmac(pairingCode);
-  const pairing = await read(`devicePairings/${pairingHash}`);
-  if (!pairing || pairing.status !== "OPEN" ||
-      Number(pairing.expiresAt || 0) <= Date.now()) {
-    fail("Connection code is invalid or expired.");
-  }
-  const result = await registerDeviceForAccount(
-      pairing.accountId, req.body.deviceProof);
-  await root.update({
-    [`devicePairings/${pairingHash}/status`]: "USED",
-    [`devicePairings/${pairingHash}/usedAt`]: Date.now(),
-    [`activeDevicePairings/${pairing.accountId}`]: null,
-    [`accounts/${pairing.accountId}/persistentLauncherPairedAt`]: Date.now(),
-  });
-  const launcherToken = await newLogin(
-      pairing.accountId, "Share Browser launcher");
-  res.json({ok: true, ...result, launcherToken});
+  const rawProof = String(req.body.deviceProof || "");
+  if (rawProof.length < 20 || rawProof.length > 2048) fail("Computer identity is missing or invalid.");
+  const launcherToken = crypto.randomBytes(32).toString("base64url");
+  const candidateDeviceId = id("devices");
+  const ledgerId = id("pointTransactions");
+  const result = await atomic((data) => devicePairing.complete(data, {
+    pairingHash, deviceHash: hmac(rawProof), candidateDeviceId, loginHash: hmac(launcherToken),
+    now: Date.now(), ledgerId,
+  }));
+  const pairing = result.devicePairings[pairingHash];
+  const deviceId = result.accounts[pairing.accountId].registeredDeviceId;
+  res.json({ok: true, alreadyRegistered: pairing.alreadyRegistered, deviceId,
+    riskStatus: result.devices[deviceId].status === "ACTIVE" ? "PASSED" : "REVIEW", launcherToken});
 }));
 
 app.post("/api/device/launcher/status", route(async (req, res) => {
-  requireCurrentLauncherVersion(req);
+  requirePairingClientVersion(req);
   const account = await requireAccount(req);
   const deviceId = account.data.registeredDeviceId;
   const device = deviceId ? await read(`devices/${deviceId}`) : null;
@@ -1563,7 +1576,8 @@ app.post("/api/tokens/create", route(async (req, res) => {
   const account = await requireAccount(req);
   const option = requestedTokenOption(req.body);
   if (!option) fail("Invalid token duration.");
-  const rawToken = code("SHARE"); const tokenHash = hmac(rawToken); const tokenId = id("tokens");
+  const product = projectZ.productChoice(req.body.product);
+  const rawToken = code(product === "z" ? "Z" : "SHARE"); const tokenHash = hmac(rawToken); const tokenId = id("tokens");
   const lockId = crypto.randomBytes(12).toString("hex");
   const lockReference = root.child(`tokenCreationLocks/${account.id}`);
   const lockedAt = Date.now();
@@ -1574,61 +1588,16 @@ app.post("/api/tokens/create", route(async (req, res) => {
   if (!lock.committed) fail("A token is already being created. Try again.", 409);
 
   try {
-    const fresh = await read(`accounts/${account.id}`);
-    if (!fresh) fail("Authentication required. Sign in again.", 401);
-    if (Number(fresh.pointBalance || 0) < option.points) {
-      fail("Not enough points for this token.");
-    }
-    if (!fresh.registeredDeviceId) {
-      fail("Register your computer first.");
-    }
-    if (fresh.fraudStatus !== "CLEAR") {
-      fail("Your account is under review.", 403);
-    }
-    if (Number(fresh.unusedTokenCount || 0) >= ECONOMY.maximumUnusedTokens) {
-      fail("Maximum two unused tokens.");
-    }
-    if (option.id === LIMITED_FREE_TOKEN.id && fresh.limitedFreeTokenClaimedAt) {
-      fail("Your free limited token was already claimed.");
-    }
-
     const createdAt = Date.now();
-    const updates = {
-      [`tokens/${tokenId}`]: {
-        tokenHash,
-        displayToken: rawToken,
-        ownerAccountId: account.id,
-        durationHours: option.hours || null,
-        durationMinutes: option.minutes,
-        durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
-          `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
-        durationSeconds: option.minutes * 60,
-        pointCost: option.points,
-        limitedOfferId: option.limited ? option.id : null,
-        status: "UNUSED",
-        createdAt,
-      },
-      [`tokenHashes/${tokenHash}`]: tokenId,
-      [`accounts/${account.id}/pointBalance`]: ServerValue.increment(-option.points),
-      [`accounts/${account.id}/unusedTokenCount`]: ServerValue.increment(1),
-      [`accounts/${account.id}/updatedAt`]: createdAt,
-      [`pointTransactions/${id("pointTransactions")}`]: {
-        accountId: account.id,
-        amount: -option.points,
-        type: option.limited ? "LIMITED_FREE_TOKEN" : "TOKEN_PURCHASE",
-        sourceId: tokenId,
-        createdAt,
-      },
-    };
-    if (option.id === LIMITED_FREE_TOKEN.id) {
-      updates[`accounts/${account.id}/limitedFreeTokenClaimedAt`] = createdAt;
-    }
-    await root.update({
-      ...updates,
-    });
+    const ledgerId = id("pointTransactions");
+    await atomic((data) => projectZ.purchase(data, {
+      accountId: account.id, tokenId, tokenHash, rawToken, option,
+      product, now: createdAt, ledgerId,
+    }));
     res.status(201).json({
       ok: true,
       token: rawToken,
+      product,
       durationMinutes: option.minutes,
       durationLabel: option.minutes < 60 ? `${option.minutes} minutes` :
         `${option.hours} hour${option.hours === 1 ? "" : "s"}`,
@@ -1720,6 +1689,7 @@ app.post("/api/session/activate", route(async (req, res) => {
     }
 
     if (!token || token.ownerAccountId !== account.id) fail("Token cannot be used.");
+    if (projectZ.productOf(token) !== "share") fail("This is a Project Z token. Open it in Project Z.");
     if (token.status === "ACTIVE") fail("This token already has an active session.", 409);
     if (token.status !== "UNUSED") fail("This token has already been used and cannot be reused.");
 
@@ -1824,6 +1794,9 @@ app.post("/api/session/end", route(async (req, res) => {
   await finishSession(session.id, session.data, req.body.reason);
   res.json({ok: true});
 }));
+
+mountProjectZ(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
+  requireVersion: requireProjectZVersion});
 
 app.post("/api/redirect/start", route(async (req, res) => {
   const account = await requireAccount(req);

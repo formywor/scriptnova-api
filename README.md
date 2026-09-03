@@ -1,5 +1,38 @@
 # ScriptNovaa API
 
+## Project Z addition — September 3, 2026
+
+This upload also supports Project Z **0.1.0** without changing Share Browser's
+required launcher version (1.2.5). Deploy this API before publishing the new
+website/download. No new secrets, paid provider, Firebase index, or separate
+Vercel function is required. Keep the support assistant.
+
+- `GET /api/z/config` — versioned public configuration.
+- `POST /api/z/status` — verifies the paired account and current device proof.
+- `POST /api/z/session/activate` — Z-only token and atomic session activation.
+- `POST /api/z/session/heartbeat` — validates account, device, token and lease.
+- `POST /api/z/session/end` — idempotent terminal operation.
+- `POST /api/tokens/create` accepts `product: "share" | "z"` (default Share).
+- `GET /api/public-config` includes `projectZ.tokenOptions` and connection limits.
+- Shared pairing endpoints accept `X-Project-Z-Version: 0.1.0` or the existing
+  Share header. Pairing completion consumes the code and registers the device
+  atomically, without awarding the setup bonus twice.
+
+Z configuration says **direct**, `vpnAvailable: false`, `fastAvailable: false`.
+Requests asking for a proxy/FAST connection are rejected, not billed. Heartbeats
+require the paired account bearer credential, session secret and device proof.
+An expired 30-second lease is terminal. No scheduled cleanup or paid service was
+added. Root transactions follow the existing database architecture and should be
+load-tested against your real Firebase quotas before scaling.
+
+Tokens without a product field are legacy Share tokens. The two-unused-token
+limit counts both products. Purchases debit points and create the token in one
+transaction. Active Share and Z sessions share the same per-account launch lock.
+
+Run `npm run check` to validate syntax and the policy/pairing/session regression
+tests. Test the deployed app with a real connected computer before public rollout;
+local simulations do not prove production hosting or every website sign-in works.
+
 Backend for Share Browser, served publicly from:
 
 `https://api.scriptnovaa.com`
