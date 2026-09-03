@@ -635,11 +635,11 @@ async function rewardWaitPolicy(accountId, account) {
   return {...plan, trustScore, zeroWaitChance, zeroWait: false,
     maximumMinutes, minutes: crypto.randomInt(1, maximumMinutes + 1)};
 }
-async function atomic(mutator) {
+async function atomic(mutator, forceFresh = false) {
   // Warm the Admin SDK cache before a root transaction. On a cold Vercel
   // instance the first transaction callback can otherwise receive null and
   // incorrectly report that an existing account is missing.
-  if (!rootCacheWarmed) {
+  if (forceFresh || !rootCacheWarmed) {
     await root.get();
     rootCacheWarmed = true;
   }
@@ -841,7 +841,7 @@ app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
-  pairingProtocol: "exact-code-fallback-v2",
+  pairingProtocol: "exact-code-fresh-transaction-v3",
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -850,7 +850,7 @@ app.get("/", (req, res) => res.json({
 }));
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
-  ok: true, pairingProtocol: "exact-code-fallback-v2",
+  ok: true, pairingProtocol: "exact-code-fresh-transaction-v3",
   tokenOptions: availableTokenOptions(),
   projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
@@ -1247,10 +1247,13 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
   const launcherToken = crypto.randomBytes(32).toString("base64url");
   const candidateDeviceId = id("devices");
   const ledgerId = id("pointTransactions");
+  // Pairing starts and completes in separate serverless requests. A prior
+  // rate-limit transaction can leave the Admin SDK's root transaction cache
+  // behind the just-created pairing, so refresh it before consuming the code.
   const result = await atomic((data) => devicePairing.complete(data, {
     pairingHash, deviceHash: hmac(rawProof), candidateDeviceId, loginHash: hmac(launcherToken),
     now: Date.now(), ledgerId,
-  }));
+  }), true);
   const pairing = result.devicePairings[pairingHash];
   const deviceId = result.accounts[pairing.accountId].registeredDeviceId;
   res.json({ok: true, alreadyRegistered: pairing.alreadyRegistered, deviceId,
