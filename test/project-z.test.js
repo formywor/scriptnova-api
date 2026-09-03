@@ -24,6 +24,20 @@ test("purchase debits shared balance exactly once and records product", () => {
   const data = buy(fixture()); assert.equal(data.accounts.alice.pointBalance, 8);
   assert.equal(data.tokens.token1.product, "z"); assert.equal(data.pointTransactions.tx1.amount, -2);
 });
+test("legacy active accounts without status fields can purchase and run Z tokens", () => {
+  const data = fixture();
+  delete data.accounts.alice.accountStatus;
+  delete data.accounts.alice.fraudStatus;
+  buy(data);
+  z.activate(data, input());
+  z.heartbeat(data, input({now: 12000}));
+  assert.equal(data.sessions.session1.status, "ACTIVE");
+  assert.equal(data.accounts.alice.pointBalance, 8);
+});
+test("a missing transaction root requests one safe fresh-data retry", () => {
+  assert.throws(() => buy({}), (error) =>
+    error.message === "Account not available." && error.retryFreshRoot === true);
+});
 test("two unused token cap counts both products, not just cached counter", () => {
   const data = buy(fixture(), {product: "share"});
   buy(data, {tokenId: "token2", tokenHash: "hash2", ledgerId: "tx2"});

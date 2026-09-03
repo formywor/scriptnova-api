@@ -3,7 +3,7 @@
 ## Project Z addition — September 3, 2026
 
 This upload also supports Project Z **0.1.2** without changing Share Browser's
-required launcher version (1.2.5). Deploy this API before publishing the new
+required launcher version (1.2.6). Deploy this API before publishing the new
 website/download. No new secrets, paid provider, Firebase index, or separate
 Vercel function is required. Keep the support assistant.
 
@@ -39,7 +39,7 @@ Backend for Share Browser, served publicly from:
 
 The API uses Firebase Realtime Database and is deployed through Vercel.
 
-Current public launcher version: **1.2.5**
+Current public launcher version: **1.2.6**
 
 The API rejects outdated launchers on pairing, connection validation,
 configuration, activation, launch confirmation, and active-session
@@ -50,7 +50,7 @@ An activated session must confirm that its browser process started. If an
 unconfirmed session becomes stale, the API restores its token to `UNUSED`;
 heartbeat timeouts only consume tokens after launch confirmation.
 
-Launcher 1.2.5 retries browser startup once and tolerates up to two temporary
+Launcher 1.2.6 retries browser startup once, tolerates up to two temporary
 network/server heartbeat failures. Authenticated API rejections, revocation,
 expiration, and an outdated launcher still end the session immediately.
 It also uses WMI, `WScript.Shell`, and `ShellExecute` launch fallbacks and
@@ -224,7 +224,7 @@ After Vercel finishes deploying, verify:
 `https://api.scriptnovaa.com/api/health`
 
 The response should identify the Share Browser API and Firebase Realtime
-Database and report launcher version `1.2.5`.
+Database and report launcher version `1.2.6`.
 
 ## Normal release
 

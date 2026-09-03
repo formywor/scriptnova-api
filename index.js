@@ -42,7 +42,7 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
-const CURRENT_LAUNCHER_VERSION = "1.2.5";
+const CURRENT_LAUNCHER_VERSION = "1.2.6";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -643,14 +643,25 @@ async function atomic(mutator) {
     await root.get();
     rootCacheWarmed = true;
   }
-  let thrown = null;
-  const result = await root.transaction((current) => {
-    thrown = null;
-    try { return mutator(current || {}); } catch (error) { thrown = error; return; }
-  }, undefined, false);
-  if (thrown) throw thrown;
-  if (!result.committed) fail("The request conflicted with another update. Try again.", 409);
-  return result.snapshot.val();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let thrown = null;
+    const result = await root.transaction((current) => {
+      thrown = null;
+      try { return mutator(current || {}); } catch (error) { thrown = error; return; }
+    }, undefined, false);
+    if (thrown?.retryFreshRoot && attempt === 0) {
+      // A cold Admin SDK transaction can invoke its first callback with an
+      // empty local root even though the authenticated account was just read.
+      // Refresh and retry once; a genuinely absent account fails on retry.
+      await root.get();
+      rootCacheWarmed = true;
+      continue;
+    }
+    if (thrown) throw thrown;
+    if (!result.committed) fail("The request conflicted with another update. Try again.", 409);
+    return result.snapshot.val();
+  }
+  fail("Account not available.", 403, "Z_ACCOUNT_UNAVAILABLE");
 }
 async function rateLimit(key, action, maximum, windowSeconds) {
   const keyHash = crypto.createHash("sha256").update(`${action}:${key}`).digest("hex");
@@ -1239,9 +1250,14 @@ app.post("/api/device/launcher/status", route(async (req, res) => {
   const account = await requireAccount(req);
   const deviceId = account.data.registeredDeviceId;
   const device = deviceId ? await read(`devices/${deviceId}`) : null;
-  if (!device || device.status !== "ACTIVE" ||
-      device.deviceHash !== hmac(req.body.deviceProof)) {
+  if (!device || device.deviceHash !== hmac(req.body.deviceProof) ||
+      !["ACTIVE", "REVIEW"].includes(device.status)) {
     fail("Saved computer connection is no longer valid.", 403);
+  }
+  if (device.status === "REVIEW") {
+    res.json({ok: true, connected: false, review: true,
+      username: account.data.username, deviceId});
+    return;
   }
   res.json({
     ok: true,
