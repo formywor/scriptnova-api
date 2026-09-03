@@ -42,7 +42,7 @@ if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
 let rootCacheWarmed = false;
-const CURRENT_LAUNCHER_VERSION = "1.2.6";
+const CURRENT_LAUNCHER_VERSION = "1.2.7";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -841,6 +841,7 @@ app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
+  pairingProtocol: "exact-code-fallback-v2",
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -849,7 +850,8 @@ app.get("/", (req, res) => res.json({
 }));
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
-  ok: true, tokenOptions: availableTokenOptions(),
+  ok: true, pairingProtocol: "exact-code-fallback-v2",
+  tokenOptions: availableTokenOptions(),
   projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
   redirectWaitChances: REDIRECT_WAIT_CHANCES,
