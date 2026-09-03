@@ -2,7 +2,7 @@
 
 ## Project Z addition — September 3, 2026
 
-This upload also supports Project Z **0.1.1** without changing Share Browser's
+This upload also supports Project Z **0.1.2** without changing Share Browser's
 required launcher version (1.2.5). Deploy this API before publishing the new
 website/download. No new secrets, paid provider, Firebase index, or separate
 Vercel function is required. Keep the support assistant.
@@ -14,7 +14,7 @@ Vercel function is required. Keep the support assistant.
 - `POST /api/z/session/end` — idempotent terminal operation.
 - `POST /api/tokens/create` accepts `product: "share" | "z"` (default Share).
 - `GET /api/public-config` includes `projectZ.tokenOptions` and connection limits.
-- Shared pairing endpoints accept `X-Project-Z-Version: 0.1.1` or the existing
+- Shared pairing endpoints accept `X-Project-Z-Version: 0.1.2` or the existing
   Share header. Pairing completion consumes the code and registers the device
   atomically, without awarding the setup bonus twice.
 
