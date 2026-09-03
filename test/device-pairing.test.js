@@ -43,3 +43,9 @@ test("open pairing can be recovered when the calculated hash key changed", () =>
   pairings.oldHash.status = "USED";
   assert.equal(resolveHash(pairings, "newHash", "86D69655D3", 100), "");
 });
+test("a missing pairing requests one fresh-root transaction retry", () => {
+  assert.throws(
+      () => complete({...fixture(), devicePairings: {}}, args),
+      (error) => error.retryFreshRoot === true && /invalid or expired/.test(error.message),
+  );
+});

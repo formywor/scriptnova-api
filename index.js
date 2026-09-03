@@ -605,6 +605,184 @@ async function registerDeviceForAccount(accountId, proof) {
   };
 }
 
+async function releasePairingClaim(pairingRef, claimId, now) {
+  try {
+    const pairing = (await pairingRef.get()).val();
+    if (pairing && pairing.status === "CLAIMING" && pairing.claimId === claimId) {
+      const released = {...pairing};
+      delete released.claimId;
+      delete released.claimingAt;
+      if (Number(released.expiresAt || 0) <= now) {
+        released.status = "EXPIRED";
+        released.expiredAt = now;
+      } else {
+        released.status = "OPEN";
+      }
+      await pairingRef.set(released);
+    }
+  } catch (error) {
+    console.error("Could not release pairing claim:", error.message);
+  }
+}
+
+async function claimPairingWithEtag(pairingHash, claimId, now) {
+  const configuredUrl = String(getApps()[0].options.databaseURL || "")
+      .replace(/\/$/, "");
+  const credentialProvider = getApps()[0].options.credential;
+  if (!configuredUrl || !credentialProvider?.getAccessToken) {
+    fail("Firebase pairing service is not configured.", 500);
+  }
+  const access = await credentialProvider.getAccessToken();
+  const url = `${configuredUrl}/devicePairings/${pairingHash}.json`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const currentResponse = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${access.access_token}`,
+        "X-Firebase-ETag": "true",
+      },
+    });
+    if (!currentResponse.ok) fail("Firebase pairing lookup failed.", 502);
+    const pairing = await currentResponse.json();
+    const etag = currentResponse.headers.get("etag");
+    const staleClaim = pairing?.status === "CLAIMING" &&
+      now - Number(pairing.claimingAt || 0) > 30000;
+    if (!pairing || Number(pairing.expiresAt || 0) <= now ||
+        (pairing.status !== "OPEN" && !staleClaim)) {
+      fail("Connection code is invalid or expired.");
+    }
+    const claimed = {...pairing, status: "CLAIMING", claimId, claimingAt: now};
+    const claimResponse = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${access.access_token}`,
+        "Content-Type": "application/json",
+        "if-match": etag,
+      },
+      body: JSON.stringify(claimed),
+    });
+    if (claimResponse.status === 412) continue;
+    if (!claimResponse.ok) fail("Firebase pairing update failed.", 502);
+    return claimed;
+  }
+  fail("The connection code was used by another request. Try once more.", 409);
+}
+
+async function completeTargetedPairing(pairingHash, rawProof) {
+  const now = Date.now();
+  const claimId = crypto.randomBytes(16).toString("hex");
+  const pairingRef = root.child(`devicePairings/${pairingHash}`);
+  const pairing = await claimPairingWithEtag(pairingHash, claimId, now);
+  try {
+    const accountId = pairing.accountId;
+    const [account, devices] = await Promise.all([
+      read(`accounts/${accountId}`),
+      read("devices"),
+    ]);
+    if (!account || account.accountStatus !== "ACTIVE") {
+      fail("Account restricted.", 403);
+    }
+    if (account.recoveryPromptRequired === true &&
+        !account.recoveryAcknowledgedAt) {
+      fail("Save and confirm your recovery code on the website first.", 428);
+    }
+
+    const deviceHash = hmac(rawProof);
+    const candidateDeviceId = id("devices");
+    const deviceId = account.registeredDeviceId || candidateDeviceId;
+    const alreadyRegistered = Boolean(account.registeredDeviceId);
+    const currentDevices = devices || {};
+    if (alreadyRegistered) {
+      const device = currentDevices[deviceId];
+      if (!device || device.accountId !== accountId ||
+          device.deviceHash !== deviceHash || device.status === "REVOKED") {
+        fail("This account already has a different or revoked computer.", 403);
+      }
+    }
+
+    const reused = !alreadyRegistered && Object.values(currentDevices)
+        .some((device) => device.deviceHash === deviceHash &&
+          device.accountId !== accountId);
+    const launcherToken = crypto.randomBytes(32).toString("base64url");
+    const loginHash = hmac(launcherToken);
+    const ledgerId = id("pointTransactions");
+    const updates = {
+      [`devicePairings/${pairingHash}/status`]: "USED",
+      [`devicePairings/${pairingHash}/usedAt`]: now,
+      [`devicePairings/${pairingHash}/alreadyRegistered`]: alreadyRegistered,
+      [`devicePairings/${pairingHash}/claimId`]: null,
+      [`devicePairings/${pairingHash}/claimingAt`]: null,
+      [`activeDevicePairings/${accountId}`]: null,
+      [`accounts/${accountId}/persistentLauncherPairedAt`]: now,
+      [`accounts/${accountId}/updatedAt`]: now,
+      [`loginSessions/${loginHash}`]: {
+        accountId,
+        clientDescription: "ScriptNovaa paired launcher",
+        revoked: false,
+        createdAt: now,
+        lastUsedAt: now,
+      },
+    };
+
+    let riskStatus = "PASSED";
+    if (!alreadyRegistered) {
+      riskStatus = reused ? "REVIEW" : "PASSED";
+      updates[`devices/${deviceId}`] = {
+        accountId,
+        deviceHash,
+        status: reused ? "REVIEW" : "ACTIVE",
+        riskScore: reused ? 100 : 0,
+        registeredAt: now,
+      };
+      updates[`accounts/${accountId}/registeredDeviceId`] = deviceId;
+      if (reused) updates[`accounts/${accountId}/fraudStatus`] = "REVIEW";
+
+      const awardSetup = !reused && account.fraudStatus === "CLEAR" &&
+        !account.deviceSetupBonusAwardedAt;
+      if (awardSetup) {
+        updates[`accounts/${accountId}/pointBalance`] = ServerValue.increment(2);
+        updates[`accounts/${accountId}/pendingPointBalance`] =
+          Math.max(0, Number(account.pendingPointBalance || 0) - 2);
+        updates[`accounts/${accountId}/deviceSetupBonusAwardedAt`] = now;
+        updates[`accounts/${accountId}/deviceSetupNoticePending`] = true;
+        updates[`pointTransactions/${ledgerId}`] = {
+          accountId,
+          amount: 2,
+          type: "DEVICE_SETUP_BONUS",
+          sourceId: deviceId,
+          createdAt: now,
+        };
+
+        const referralId = await read(`referralsByReferred/${accountId}`);
+        const referral = referralId ? await read(`referrals/${referralId}`) : null;
+        const referrer = referral?.referrerAccountId ?
+          await read(`accounts/${referral.referrerAccountId}`) : null;
+        if (referral?.status === "WAITING_FOR_DEVICE" && referrer) {
+          updates[`referrals/${referralId}/status`] = "DEVICE_PASSED";
+          updates[`referrals/${referralId}/signupRewardAwarded`] = 3;
+          updates[`referrals/${referralId}/devicePassedAt`] = now;
+          updates[`accounts/${referral.referrerAccountId}/pointBalance`] =
+            ServerValue.increment(3);
+          updates[`pointTransactions/${ledgerId}_referral`] = {
+            accountId: referral.referrerAccountId,
+            amount: 3,
+            type: "REFERRAL_SIGNUP",
+            sourceId: referralId,
+            createdAt: now,
+          };
+        }
+      }
+    } else {
+      riskStatus = currentDevices[deviceId].status === "ACTIVE" ? "PASSED" : "REVIEW";
+    }
+
+    await root.update(updates);
+    return {alreadyRegistered, deviceId, riskStatus, launcherToken};
+  } catch (error) {
+    await releasePairingClaim(pairingRef, claimId, Date.now());
+    throw error;
+  }
+}
+
 async function rewardWaitPolicy(accountId, account) {
   const referrals = await read("referrals");
   const referralHistory = Object.values(referrals || {}).filter((referral) =>
@@ -841,7 +1019,7 @@ app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
-  pairingProtocol: "exact-code-fresh-transaction-v3",
+  pairingProtocol: "etag-lock-v4",
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -850,7 +1028,7 @@ app.get("/", (req, res) => res.json({
 }));
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
-  ok: true, pairingProtocol: "exact-code-fresh-transaction-v3",
+  ok: true, pairingProtocol: "etag-lock-v4",
   tokenOptions: availableTokenOptions(),
   projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
@@ -1244,20 +1422,8 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
   }
   const rawProof = String(req.body.deviceProof || "");
   if (rawProof.length < 20 || rawProof.length > 2048) fail("Computer identity is missing or invalid.");
-  const launcherToken = crypto.randomBytes(32).toString("base64url");
-  const candidateDeviceId = id("devices");
-  const ledgerId = id("pointTransactions");
-  // Pairing starts and completes in separate serverless requests. A prior
-  // rate-limit transaction can leave the Admin SDK's root transaction cache
-  // behind the just-created pairing, so refresh it before consuming the code.
-  const result = await atomic((data) => devicePairing.complete(data, {
-    pairingHash, deviceHash: hmac(rawProof), candidateDeviceId, loginHash: hmac(launcherToken),
-    now: Date.now(), ledgerId,
-  }), true);
-  const pairing = result.devicePairings[pairingHash];
-  const deviceId = result.accounts[pairing.accountId].registeredDeviceId;
-  res.json({ok: true, alreadyRegistered: pairing.alreadyRegistered, deviceId,
-    riskStatus: result.devices[deviceId].status === "ACTIVE" ? "PASSED" : "REVIEW", launcherToken});
+  const result = await completeTargetedPairing(pairingHash, rawProof);
+  res.json({ok: true, ...result});
 }));
 
 app.post("/api/device/launcher/status", route(async (req, res) => {
