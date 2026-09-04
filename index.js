@@ -41,7 +41,6 @@ function firebaseOptions() {
 if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
-let rootCacheWarmed = false;
 const CURRENT_LAUNCHER_VERSION = "1.2.7";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
@@ -813,33 +812,52 @@ async function rewardWaitPolicy(accountId, account) {
   return {...plan, trustScore, zeroWaitChance, zeroWait: false,
     maximumMinutes, minutes: crypto.randomInt(1, maximumMinutes + 1)};
 }
-async function atomic(mutator, forceFresh = false) {
-  // Warm the Admin SDK cache before a root transaction. On a cold Vercel
-  // instance the first transaction callback can otherwise receive null and
-  // incorrectly report that an existing account is missing.
-  if (forceFresh || !rootCacheWarmed) {
-    await root.get();
-    rootCacheWarmed = true;
+async function etagTransaction(path, mutator, maximumAttempts = 5) {
+  const configuredUrl = String(getApps()[0].options.databaseURL || "")
+      .replace(/\/$/, "");
+  const credentialProvider = getApps()[0].options.credential;
+  if (!configuredUrl || !credentialProvider?.getAccessToken) {
+    fail("Firebase transaction service is not configured.", 500);
   }
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let thrown = null;
-    const result = await root.transaction((current) => {
-      thrown = null;
-      try { return mutator(current || {}); } catch (error) { thrown = error; return; }
-    }, undefined, false);
-    if (thrown?.retryFreshRoot && attempt === 0) {
-      // A cold Admin SDK transaction can invoke its first callback with an
-      // empty local root even though the authenticated account was just read.
-      // Refresh and retry once; a genuinely absent account fails on retry.
-      await root.get();
-      rootCacheWarmed = true;
-      continue;
+  const access = await credentialProvider.getAccessToken();
+  const suffix = path ? `/${path}` : "/";
+  const url = `${configuredUrl}${suffix}.json`;
+  for (let attempt = 0; attempt < maximumAttempts; attempt++) {
+    const currentResponse = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${access.access_token}`,
+        "X-Firebase-ETag": "true",
+      },
+    });
+    if (!currentResponse.ok) fail("Firebase transaction lookup failed.", 502);
+    const current = await currentResponse.json();
+    const etag = currentResponse.headers.get("etag");
+    const next = mutator(current);
+    if (next === undefined) {
+      return {committed: false, value: current};
     }
-    if (thrown) throw thrown;
-    if (!result.committed) fail("The request conflicted with another update. Try again.", 409);
-    return result.snapshot.val();
+    const updateResponse = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${access.access_token}`,
+        "Content-Type": "application/json",
+        "if-match": etag,
+      },
+      body: JSON.stringify(next),
+    });
+    if (updateResponse.status === 412) continue;
+    if (!updateResponse.ok) fail("Firebase transaction update failed.", 502);
+    return {committed: true, value: next};
   }
-  fail("Account not available.", 403, "Z_ACCOUNT_UNAVAILABLE");
+  fail("The request conflicted with another update. Try again.", 409);
+}
+
+async function atomic(mutator) {
+  const result = await etagTransaction("", (current) => mutator(current || {}));
+  if (!result.committed) {
+    fail("The request conflicted with another update. Try again.", 409);
+  }
+  return result.value;
 }
 async function rateLimit(key, action, maximum, windowSeconds) {
   const keyHash = crypto.createHash("sha256").update(`${action}:${key}`).digest("hex");
@@ -1019,7 +1037,7 @@ app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
-  pairingProtocol: "etag-lock-v4",
+  pairingProtocol: "etag-transactions-v5",
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -1028,7 +1046,7 @@ app.get("/", (req, res) => res.json({
 }));
 app.get(["/favicon.ico", "/favicon.png"], (req, res) => res.status(204).end());
 app.get("/api/public-config", (req, res) => res.json({
-  ok: true, pairingProtocol: "etag-lock-v4",
+  ok: true, pairingProtocol: "etag-transactions-v5",
   tokenOptions: availableTokenOptions(),
   projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
