@@ -42,6 +42,7 @@ test("mounted Z routes complete paired start / heartbeat / end without real Fire
   const body = {token: "Z-TOKEN", deviceProof: "computer-proof", requestId: "f".repeat(32), mode: "privacy", searchEngine: "bing", connection: "direct"};
   const started = (await call("POST /api/z/session/activate", body)).response;
   assert.equal(started.ok, true); assert.equal(started.sessionSecret.length, 64);
+  assert.match(started.webAccess, /^z_[a-f0-9]{40}\.[a-f0-9]{64}$/);
   assert.equal((await call("POST /api/z/session/activate", body)).response.sessionId, started.sessionId);
   const credentials = {sessionId: started.sessionId, sessionSecret: started.sessionSecret, deviceProof: "computer-proof"};
   assert.equal((await call("POST /api/z/session/heartbeat", credentials)).response.ok, true);

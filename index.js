@@ -1034,7 +1034,7 @@ async function finishSession(sessionId, session, reason) {
   }
 }
 
-mountSnovaWeb(app, {route, rateLimit, ipPrefix});
+mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
