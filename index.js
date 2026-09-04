@@ -22,6 +22,7 @@ const {
 const projectZ = require("./lib/project-z");
 const mountProjectZ = require("./lib/project-z-routes");
 const devicePairing = require("./lib/device-pairing");
+const {mountSnovaWeb} = require("./lib/snova-web");
 
 function firebaseOptions() {
   const options = {
@@ -1032,6 +1033,8 @@ async function finishSession(sessionId, session, reason) {
     if (activeLock?.finishId === finishId) await lockReference.remove();
   }
 }
+
+mountSnovaWeb(app, {route, rateLimit, ipPrefix});
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",

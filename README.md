@@ -2,10 +2,14 @@
 
 ## Project Z addition — September 3, 2026
 
-This upload also supports Project Z **0.1.3** without changing Share Browser's
+This upload also supports Project Z **0.1.4** without changing Share Browser's
 required launcher version (1.2.7). Deploy this API before publishing the new
 website/download. No new secrets, paid provider, Firebase index, or separate
 Vercel function is required. Keep the support assistant.
+
+Project Z 0.1.4 adds `/search` for Snova Search and `/reader` for the simplified
+Wikipedia reader. The reader is deliberately restricted to Wikipedia articles;
+it is not an unrestricted public proxy.
 
 - `GET /api/z/config` — versioned public configuration.
 - `POST /api/z/status` — verifies the paired account and current device proof.
@@ -14,7 +18,7 @@ Vercel function is required. Keep the support assistant.
 - `POST /api/z/session/end` — idempotent terminal operation.
 - `POST /api/tokens/create` accepts `product: "share" | "z"` (default Share).
 - `GET /api/public-config` includes `projectZ.tokenOptions` and connection limits.
-- Shared pairing endpoints accept `X-Project-Z-Version: 0.1.3` or the existing
+- Shared pairing endpoints accept `X-Project-Z-Version: 0.1.4` or the existing
   Share header. Pairing completion consumes the code and registers the device
   atomically, without awarding the setup bonus twice.
 
