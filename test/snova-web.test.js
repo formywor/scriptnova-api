@@ -8,6 +8,8 @@ const {
   wikipediaArticleUrl,
   safeReaderUrl,
   searchWikipedia,
+  searchWeb,
+  parseWebResults,
   searchResultsHtml,
   requireSnovaAccess,
   sanitizeWikipediaHtml,
@@ -46,6 +48,36 @@ test("Snova search uses the public Wikipedia search endpoint", async () => {
   assert.equal(requested.searchParams.get("srsearch"), "web browser");
   assert.equal(results[0].title, "Web browser");
   assert.match(wikipediaArticleUrl(results[0].title), /Web_Browser/i);
+});
+
+test("Snova search parses safe general web results", async () => {
+  const xml = `<?xml version="1.0"?><rss><channel>
+    <item><title><![CDATA[CrazyGames - Play Online Games]]></title><link>https://www.crazygames.com/</link><description>Modern browser games &amp; more</description></item>
+    <item><title>Unsafe</title><link>javascript:alert(1)</link><description><![CDATA[<b>bad</b>]]></description></item>
+  </channel></rss>`;
+  const parsed = parseWebResults(xml);
+  assert.equal(parsed.length, 1);
+  assert.equal(parsed[0].url, "https://www.crazygames.com/");
+  assert.equal(parsed[0].snippet, "Modern browser games & more");
+
+  let requested;
+  const results = await searchWeb("crazy games", async (url) => {
+    requested = new URL(url);
+    return {ok: true, text: async () => xml};
+  });
+  assert.equal(requested.hostname, "www.bing.com");
+  assert.equal(requested.searchParams.get("format"), "rss");
+  assert.equal(results[0].title, "CrazyGames - Play Online Games");
+  const html = searchResultsHtml("crazy games", [], "", results);
+  assert.match(html, /crazygames\.com/);
+  assert.match(html, /Modern button/);
+  assert.doesNotMatch(html, /javascript:alert/);
+});
+
+test("Snova adds official ScriptNovaa pages to relevant searches", () => {
+  const html = searchResultsHtml("scriptnovaa", [], "", []);
+  assert.match(html, /https:\/\/scriptnovaa\.com\/share-browser/);
+  assert.match(html, /Project Z by ScriptNovaa/);
 });
 
 test("Snova Reader removes executable and embedded page content", async () => {
