@@ -23,6 +23,7 @@ const projectZ = require("./lib/project-z");
 const mountProjectZ = require("./lib/project-z-routes");
 const devicePairing = require("./lib/device-pairing");
 const {mountSnovaWeb} = require("./lib/snova-web");
+const {mountWritingCheck} = require("./lib/writing-check");
 
 function firebaseOptions() {
   const options = {
@@ -52,7 +53,7 @@ const app = express();
 app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", true);
-app.use(express.json({limit: "32kb"}));
+app.use(express.json({limit: "64kb"}));
 app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -1035,6 +1036,7 @@ async function finishSession(sessionId, session, reason) {
 }
 
 mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
+mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",

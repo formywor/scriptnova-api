@@ -130,6 +130,13 @@ Those files are blocked by `.gitignore`.
 - `RECOVERY_PEPPER`
 - `ADMIN_SECRET`
 - `REDIRECT_TARGET_URL`
+- `GEMINI_API_KEY` (optional; enables Gemini on Writing Check)
+- `GEMINI_MODEL` (optional; defaults to `gemini-3.5-flash-lite`)
+
+The public `/api/writing/check` endpoint never returns the Gemini key and does
+not save submitted text. Gemini checks are limited separately per network and
+globally to protect the free quota. Keep the key only in Vercel environment
+variables—never in GitHub, the website JavaScript, or the HTA files.
 
 The setup script configures these values:
 
