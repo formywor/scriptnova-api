@@ -132,11 +132,19 @@ Those files are blocked by `.gitignore`.
 - `REDIRECT_TARGET_URL`
 - `GEMINI_API_KEY` (optional; enables Gemini on Writing Check)
 - `GEMINI_MODEL` (optional; defaults to `gemini-3.5-flash-lite`)
+- `SAPLING_API_KEY` (optional; adds Sapling's dedicated AI detector)
+- `GPTZERO_API_KEY` (optional; adds GPTZero's dedicated AI detector)
+- `COPYLEAKS_EMAIL` and `COPYLEAKS_API_KEY` (optional; add Copyleaks)
+- `HF_TOKEN` (optional; adds a Hugging Face text-classification detector)
+- `HF_DETECTOR_MODEL` (optional detector model override)
+- `HF_AI_LABEL` (only needed when a model uses generic labels such as `LABEL_1`)
 
-The public `/api/writing/check` endpoint never returns the Gemini key and does
-not save submitted text. Gemini checks are limited separately per network and
-globally to protect the free quota. Keep the key only in Vercel environment
+The public `/api/writing/check` endpoint never returns provider keys and does
+not save submitted text. Online checks are limited separately per network and
+globally to protect provider quotas. Keep every key only in Vercel environment
 variables—never in GitHub, the website JavaScript, or the HTA files.
+The optional `/api/writing/improve` route uses Gemini to improve clarity,
+specificity, and sentence variety. It is not described as an AI-detector bypass.
 
 The setup script configures these values:
 
