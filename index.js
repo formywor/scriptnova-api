@@ -24,6 +24,7 @@ const mountProjectZ = require("./lib/project-z-routes");
 const devicePairing = require("./lib/device-pairing");
 const {mountSnovaWeb} = require("./lib/snova-web");
 const {mountWritingCheck} = require("./lib/writing-check");
+const {mountCommunity} = require("./lib/community");
 
 function firebaseOptions() {
   const options = {
@@ -79,7 +80,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Headers",
         "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version, X-Project-Z-Version");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
   }
   if (req.method === "OPTIONS") {
     return origin && ALLOWED_ORIGINS.has(origin) ? res.sendStatus(204) : res.sendStatus(403);
@@ -1037,6 +1038,9 @@ async function finishSession(sessionId, session, reason) {
 
 mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
+mountCommunity(app, {
+  route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail,
+});
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",

@@ -4,6 +4,9 @@
     ".write": false,
     "launcherDiagnostics": {
       ".indexOn": ["accountId"]
+    },
+    "communityPublicMessages": {
+      ".indexOn": ["createdAt"]
     }
   }
 }
