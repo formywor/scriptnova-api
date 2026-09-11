@@ -6,7 +6,7 @@
       ".indexOn": ["accountId"]
     },
     "communityPublicMessages": {
-      ".indexOn": ["createdAt"]
+      ".indexOn": "createdAt"
     }
   }
 }
