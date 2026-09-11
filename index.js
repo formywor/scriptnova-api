@@ -25,6 +25,7 @@ const devicePairing = require("./lib/device-pairing");
 const {mountSnovaWeb} = require("./lib/snova-web");
 const {mountWritingCheck} = require("./lib/writing-check");
 const {mountCommunity} = require("./lib/community");
+const {mountAccountSecurity, safeClient} = require("./lib/account-security");
 
 function firebaseOptions() {
   const options = {
@@ -80,7 +81,7 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Headers",
         "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version, X-Project-Z-Version");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   }
   if (req.method === "OPTIONS") {
     return origin && ALLOWED_ORIGINS.has(origin) ? res.sendStatus(204) : res.sendStatus(403);
@@ -882,11 +883,32 @@ async function rateLimit(key, action, maximum, windowSeconds) {
 }
 async function newLogin(accountId, clientDescription, networkPrefix = "unknown") {
   const raw = crypto.randomBytes(32).toString("base64url");
-  await root.child(`loginSessions/${hmac(raw)}`).set({
+  const loginId = hmac(raw);
+  const existing = await read("loginSessions") || {};
+  const accountSessions = Object.values(existing).filter((session) => session.accountId === accountId);
+  const familiarNetwork = accountSessions.some((session) =>
+    session.accountId === accountId && session.networkPrefix === networkPrefix);
+  const now = Date.now();
+  await root.child(`loginSessions/${loginId}`).set({
     accountId, clientDescription: String(clientDescription || "").slice(0, 250),
     networkPrefix: String(networkPrefix || "unknown").slice(0, 80),
-    revoked: false, createdAt: Date.now(), lastUsedAt: Date.now(),
+    revoked: false, createdAt: now, lastUsedAt: now,
   });
+  const activityId = id(`accountActivity/${accountId}`);
+  const updates = {
+    [`accountActivity/${accountId}/${activityId}`]: {
+      type: "SIGNED_IN", detail: {client: safeClient(clientDescription)}, createdAt: now,
+    },
+  };
+  if (!familiarNetwork && accountSessions.length) {
+    const alertId = id(`securityAlerts/${accountId}`);
+    updates[`securityAlerts/${accountId}/${alertId}`] = {
+      type: "UNUSUAL_LOGIN", title: "New or unusual sign-in",
+      message: `A sign-in from ${safeClient(clientDescription)} used a network we have not seen for this account.`,
+      createdAt: now, readAt: null,
+    };
+  }
+  await root.update(updates);
   return raw;
 }
 async function resolveExpiredSuspension(accountId, account) {
@@ -1041,12 +1063,26 @@ mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 mountCommunity(app, {
   route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail,
 });
+mountAccountSecurity(app, {
+  route, root, read, id, rateLimit, requireAccount, verifies, credential, code, fail, hmac,
+});
 
 app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
   pairingProtocol: "etag-transactions-v5",
+}));
+app.get("/api/status", route(async (req, res) => {
+  const startedAt = Date.now();
+  await root.child("systemStatusProbe").get();
+  res.json({ok: true, checkedAt: Date.now(), services: [
+    {name: "Website", status: "OPERATIONAL"},
+    {name: "Account API", status: "OPERATIONAL"},
+    {name: "Realtime Database", status: "OPERATIONAL", responseMilliseconds: Date.now() - startedAt},
+    {name: "Share Browser sessions", status: "OPERATIONAL"},
+    {name: "Community chat", status: "OPERATIONAL"},
+  ]});
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
@@ -1155,6 +1191,10 @@ app.post("/api/demo/status", route(async (req, res) => {
 
 app.post("/api/signup", route(async (req, res) => {
   await rateLimit(ipPrefix(req), "SIGNUP", 6, 3600);
+  if (String(req.body.website || "").trim() ||
+      Date.now() - Number(req.body.signupStartedAt || 0) < 2000) {
+    fail("Account creation could not be verified. Reload the page and try again.", 400, "AUTOMATION_CHECK_FAILED");
+  }
   const username = validateUsername(req.body.username);
   const pin = validatePin(req.body.pin);
   const referralUsername = normalizeUsername(req.body.referralUsername);
@@ -1211,8 +1251,14 @@ app.post("/api/login", route(async (req, res) => {
   }
   await loginLimit.remove();
   await accountLoginLimit.remove();
+  const previousLogins = Object.values(await read("loginSessions") || {})
+      .filter((session) => session.accountId === usernameRecord.accountId);
+  const currentNetwork = ipPrefix(req);
+  const unusualLogin = previousLogins.length > 0 &&
+    !previousLogins.some((session) => session.networkPrefix === currentNetwork);
   res.json({ok: true,
-    loginToken: await newLogin(usernameRecord.accountId, req.body.clientDescription, ipPrefix(req)),
+    loginToken: await newLogin(usernameRecord.accountId, req.body.clientDescription, currentNetwork),
+    securityWarning: unusualLogin ? "New or unusual sign-in detected. Review signed-in devices in My Account." : null,
     account: publicAccount(account),
     gate: account.accountStatus !== "ACTIVE" ?
       {type: "RESTRICTION", ...publicRestriction(account)} :

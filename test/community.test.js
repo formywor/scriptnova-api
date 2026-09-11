@@ -8,6 +8,9 @@ const {
   conversationKey,
   activeTyping,
   typingLabel,
+  normalizedMessage,
+  assessMessage,
+  EDIT_WINDOW_MS,
   PUBLIC_RETENTION_MS,
 } = require("../lib/community");
 
@@ -48,4 +51,17 @@ test("typing labels become compact for four or more people", () => {
 
 test("public retention is exactly forty-eight hours", () => {
   assert.equal(PUBLIC_RETENTION_MS, 48 * 60 * 60 * 1000);
+  assert.equal(EDIT_WINDOW_MS, 2 * 60 * 1000);
+});
+
+test("chat safety rejects dangerous links and obvious repeated spam", () => {
+  assert.equal(assessMessage("hello there").ok, true);
+  assert.equal(assessMessage("javascript:alert(1)").ok, false);
+  assert.equal(assessMessage("visit https://127.0.0.1/private").ok, false);
+  assert.equal(assessMessage("abcabcabcabcabc").ok, false);
+});
+
+test("message comparison ignores ordinary casing and link details", () => {
+  assert.equal(normalizedMessage("Hello https://example.com/a"),
+      normalizedMessage("hello https://example.org/b"));
 });

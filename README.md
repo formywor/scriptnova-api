@@ -1,5 +1,11 @@
 # ScriptNovaa API
 
+## Account security and community safety — September 11, 2026
+
+The production API includes account-session review and revocation, PIN-confirmed sensitive actions, unusual-login alerts, recent activity, preset profile identities, community presence, reports, blocks, mutes, two-minute edits, message deletion, two-day public retention, chat warnings, notifications, and audited administrator moderation. Direct Realtime Database access remains locked; these operations run only through authenticated API routes.
+
+Never add a plaintext PIN, recovery code, login token, API secret, or service-account file to GitHub.
+
 ## Project Z addition — September 3, 2026
 
 This upload also supports Project Z **0.1.5** without changing Share Browser's
