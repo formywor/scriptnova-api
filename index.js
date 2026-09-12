@@ -233,6 +233,9 @@ function verifies(value, stored, pepper) {
   const expected = Buffer.from(stored.hash, "hex");
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
+function verifiesOrDummy(value, stored, pepper) {
+  return verifies(value, stored || {salt: "0".repeat(32), hash: "0".repeat(128)}, pepper);
+}
 function code(prefix, bytes = 18) {
   const text = crypto.randomBytes(bytes).toString("base64url").toUpperCase();
   return `${prefix}-${text.match(/.{1,4}/g).join("-")}`;
@@ -242,8 +245,23 @@ function bearer(req) {
   return String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i)?.[1] || "";
 }
 function ipPrefix(req) {
-  const ip = String(req.headers["x-forwarded-for"] || req.ip || "unknown").split(",")[0].trim();
+  const forwarded = String(req.headers["x-vercel-forwarded-for"] || req.headers["cf-connecting-ip"] ||
+    req.headers["x-forwarded-for"] || req.ip || "unknown");
+  const parts = forwarded.split(",").map((value) => value.trim()).filter(Boolean);
+  const ip = parts[parts.length - 1] || "unknown";
   return ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip.split(".").slice(0, 3).join(".");
+}
+function requireWebsiteRequest(req) {
+  const origin = String(req.headers.origin || "");
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    fail("This action must be started from the official ScriptNovaa website.", 403, "WEBSITE_REQUEST_REQUIRED");
+  }
+}
+function signupProofHash(nonce, solution) {
+  return crypto.createHash("sha256").update(`${String(nonce)}:${String(solution)}`).digest("hex");
+}
+function requestFingerprint(req) {
+  return hmac(`${ipPrefix(req)}|${String(req.headers["user-agent"] || "").slice(0, 300)}`);
 }
 function recoveryConfirmationRequired(account) {
   // Existing accounts are grandfathered. Only records explicitly marked as
@@ -1245,8 +1263,23 @@ app.post("/api/demo/status", route(async (req, res) => {
   });
 }));
 
+app.post("/api/signup/challenge", route(async (req, res) => {
+  requireWebsiteRequest(req);
+  await rateLimit(ipPrefix(req), "SIGNUP_CHALLENGE", 10, 3600);
+  const challengeId = crypto.randomBytes(18).toString("base64url");
+  const nonce = crypto.randomBytes(24).toString("base64url");
+  const now = Date.now(); const challengeBucket = Math.floor(now / 600000);
+  await root.child(`signupChallenges/${challengeBucket - 2}`).remove().catch(() => {});
+  await root.child(`signupChallenges/${challengeBucket}/${challengeId}`).set({nonce, fingerprint: requestFingerprint(req),
+    difficulty: 3, createdAt: now, expiresAt: now + 10 * 60000});
+  res.status(201).json({ok: true, challengeId, challengeBucket, nonce, difficulty: 3,
+    expiresAt: new Date(now + 10 * 60000).toISOString()});
+}));
+
 app.post("/api/signup", route(async (req, res) => {
-  await rateLimit(ipPrefix(req), "SIGNUP", 6, 3600);
+  requireWebsiteRequest(req);
+  await rateLimit(ipPrefix(req), "SIGNUP", 3, 3600);
+  await rateLimit(ipPrefix(req), "SIGNUP_DAY", 10, 24 * 60 * 60);
   if (String(req.body.website || "").trim() ||
       Date.now() - Number(req.body.signupStartedAt || 0) < 2000) {
     fail("Account creation could not be verified. Reload the page and try again.", 400, "AUTOMATION_CHECK_FAILED");
@@ -1254,8 +1287,23 @@ app.post("/api/signup", route(async (req, res) => {
   const username = validateUsername(req.body.username);
   const pin = validatePin(req.body.pin);
   const referralUsername = normalizeUsername(req.body.referralUsername);
+  const challengeId = String(req.body.challengeId || "");
+  const challengeBucket = Number(req.body.challengeBucket);
+  const challengeSolution = String(req.body.challengeSolution || "");
+  if (!/^[A-Za-z0-9_-]{20,40}$/.test(challengeId) || !Number.isSafeInteger(challengeBucket) ||
+      Math.abs(Math.floor(Date.now() / 600000) - challengeBucket) > 1 || !/^\d{1,12}$/.test(challengeSolution)) {
+    fail("Account creation verification expired. Reload the page and try again.", 400, "SIGNUP_CHALLENGE_REQUIRED");
+  }
   const accountId = id("accounts"); const recoveryCode = code("RCVY", 12);
   await atomic((data) => {
+    const challenges = ensure(data, "signupChallenges"); const bucket = challenges[challengeBucket] || {};
+    const challenge = bucket[challengeId];
+    if (!challenge || Number(challenge.expiresAt || 0) < Date.now() || challenge.fingerprint !== requestFingerprint(req) ||
+        !signupProofHash(challenge.nonce, challengeSolution).startsWith("0".repeat(Number(challenge.difficulty || 3)))) {
+      fail("Account creation verification expired. Reload the page and try again.", 400, "SIGNUP_CHALLENGE_INVALID");
+    }
+    delete bucket[challengeId];
+    if (!Object.keys(bucket).length) delete challenges[challengeBucket];
     const usernames = ensure(data, "usernames");
     const accounts = ensure(data, "accounts");
     if (usernames[username]) fail("That username is already taken.");
@@ -1296,13 +1344,15 @@ app.post("/api/signup", route(async (req, res) => {
 }));
 
 app.post("/api/login", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const username = normalizeUsername(req.body.username);
-  const loginLimit = await rateLimit(`${ipPrefix(req)}:${username}`, "LOGIN", 12, 900);
-  const accountLoginLimit = await rateLimit(username || "missing", "LOGIN_ACCOUNT", 20, 3600);
-  await rateLimit(ipPrefix(req), "LOGIN_NETWORK", 120, 3600);
+  const loginLimit = await rateLimit(`${ipPrefix(req)}:${username}`, "LOGIN", 8, 900);
+  const accountLoginLimit = await rateLimit(username || "missing", "LOGIN_ACCOUNT", 12, 3600);
+  await rateLimit(ipPrefix(req), "LOGIN_NETWORK", 80, 3600);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
-  if (!account || !verifies(req.body.pin, account.pinCredential, "PIN_PEPPER")) {
+  const pinVerified = verifiesOrDummy(req.body.pin, account?.pinCredential, "PIN_PEPPER");
+  if (!account || !pinVerified) {
     fail("Incorrect username or PIN.", 401);
   }
   await loginLimit.remove();
@@ -1322,12 +1372,15 @@ app.post("/api/login", route(async (req, res) => {
 }));
 
 app.post("/api/recover", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const username = normalizeUsername(req.body.username);
-  await rateLimit(`${ipPrefix(req)}:${username}`, "RECOVER", 6, 3600);
-  await rateLimit(username || "missing", "RECOVER_ACCOUNT", 8, 24 * 60 * 60);
+  await rateLimit(`${ipPrefix(req)}:${username}`, "RECOVER", 4, 3600);
+  await rateLimit(username || "missing", "RECOVER_ACCOUNT", 6, 24 * 60 * 60);
+  await rateLimit(ipPrefix(req), "RECOVER_NETWORK", 20, 24 * 60 * 60);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
-  if (!account || !verifies(req.body.recoveryCode, account.recoveryCredential, "RECOVERY_PEPPER")) {
+  const recoveryVerified = verifiesOrDummy(req.body.recoveryCode, account?.recoveryCredential, "RECOVERY_PEPPER");
+  if (!account || !recoveryVerified) {
     fail("Recovery failed.", 401);
   }
   const pin = validatePin(req.body.newPin); const replacement = code("RCVY", 12);
@@ -1438,7 +1491,9 @@ app.post("/api/device/register", route(async (req, res) => {
 }));
 
 app.post("/api/device/pairing/start", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const account = await requireAccount(req);
+  await rateLimit(account.id, "PAIRING_START", 5, 3600);
   const context = await pairingContext(account.id, account.data);
   if (context.activePairing?.pairingCode &&
       context.activePairing.status === "OPEN" &&
@@ -1627,11 +1682,13 @@ app.get("/api/support/tickets", route(async (req, res) => {
 }));
 
 app.post("/api/support/tickets", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const account = await requireAccount(req, {
     allowRestricted: true,
     allowRecoveryPending: true,
   });
-  await rateLimit(account.id, "SUPPORT_TICKET", 12, 24 * 60 * 60);
+  await rateLimit(account.id, "SUPPORT_TICKET_HOUR", 2, 3600);
+  await rateLimit(account.id, "SUPPORT_TICKET_DAY", 5, 24 * 60 * 60);
   const category = String(req.body.category || "").trim().toUpperCase();
   const subject = String(req.body.subject || "").trim().replace(/\s+/g, " ");
   const rawTicketMessage = String(req.body.message || "").trim();
@@ -1645,6 +1702,16 @@ app.post("/api/support/tickets", route(async (req, res) => {
   const ticketMessage = redactSupportSecrets(rawTicketMessage);
 
   const existing = await accountSupportTickets(account.id);
+  const openTickets = existing.filter(([, ticket]) => ["PENDING", "APPROVED", "ANSWERED"].includes(ticket.status));
+  if (openTickets.length >= 3) fail("You already have three open tickets. Wait for a response before opening another.", 409);
+  const newestTicket = existing[0]?.[1];
+  if (newestTicket && Date.now() - Number(newestTicket.createdAt || 0) < 5 * 60000) {
+    fail("Wait five minutes before opening another ticket.", 429, "TICKET_COOLDOWN");
+  }
+  const duplicate = existing.find(([, ticket]) => Number(ticket.createdAt || 0) > Date.now() - 24 * 60 * 60 * 1000 &&
+    String(ticket.subject || "").toLowerCase() === subject.toLowerCase() &&
+    String(ticket.message || "").toLowerCase() === ticketMessage.toLowerCase());
+  if (duplicate) fail("An identical ticket was already submitted in the last 24 hours.", 409);
   if (category === "CONNECTION_CODE_REPLACEMENT") {
     const activeRequest = existing.find(([, ticket]) =>
       ticket.category === category &&
@@ -1907,7 +1974,9 @@ app.get("/api/tokens", route(async (req, res) => {
 }));
 
 app.post("/api/tokens/create", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const account = await requireAccount(req);
+  await rateLimit(account.id, "TOKEN_CREATE", 20, 3600);
   const option = requestedTokenOption(req.body);
   if (!option) fail("Invalid token duration.");
   const product = projectZ.productChoice(req.body.product);
@@ -2132,8 +2201,22 @@ app.post("/api/session/end", route(async (req, res) => {
 mountProjectZ(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
   requireVersion: requireProjectZVersion});
 
+async function requireRewardEligibleAccount(account) {
+  if (String(account.data.fraudStatus || "CLEAR").toUpperCase() !== "CLEAR") {
+    fail("Sponsored rewards are unavailable while this account is under review.", 403, "REWARD_REVIEW");
+  }
+  const device = account.data.registeredDeviceId ? await read(`devices/${account.data.registeredDeviceId}`) : null;
+  if (!device || device.accountId !== account.id || device.status !== "ACTIVE") {
+    fail("Connect an approved computer before earning sponsored points.", 403, "REWARD_DEVICE_REQUIRED");
+  }
+}
+
 app.post("/api/redirect/start", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const account = await requireAccount(req);
+  await requireRewardEligibleAccount(account);
+  await rateLimit(account.id, "REDIRECT_START", 50, 14 * 60 * 60);
+  await rateLimit(ipPrefix(req), "REDIRECT_START_NETWORK", 120, 3600);
   const attempts = Object.values(await read("redirectAttempts") || {});
   const cutoff = Date.now() - 14 * 3600000;
   const count = attempts.filter((attempt) =>
@@ -2149,6 +2232,7 @@ app.post("/api/redirect/start", route(async (req, res) => {
   await root.child(`redirectAttempts/${attemptId}`).set({
     accountId: account.id, campaignId: String(req.body.campaignId || "default").slice(0, 80),
     claimHash: hmac(claimCode),
+    proofRequired: true,
     status: adBlockDetected ? "AD_BLOCKED" : "OPENED",
     rewardAmount: adBlockDetected ? 0 : 0.5,
     rewardEligible: !adBlockDetected,
@@ -2193,6 +2277,7 @@ app.get("/api/redirect/status", route(async (req, res) => {
           claimableAt: Number(attempt.claimableAt || 0),
           waitTier: attempt.waitTier || "NEW",
           zeroWaitChance: Number(attempt.zeroWaitChance || 0),
+          proofRequired: attempt.proofRequired === true,
         };
       })
       .sort((a, b) => b.createdAt - a.createdAt);
@@ -2216,7 +2301,10 @@ app.get("/api/redirect/status", route(async (req, res) => {
 }));
 
 app.post("/api/redirect/claim", route(async (req, res) => {
+  requireWebsiteRequest(req);
   const account = await requireAccount(req);
+  await requireRewardEligibleAccount(account);
+  await rateLimit(account.id, "REDIRECT_CLAIM", 60, 3600);
   const attemptId = String(req.body.attemptId || "");
   if (!attemptId) fail("Reward attempt is missing.");
   const claimId = crypto.randomBytes(12).toString("hex");
@@ -2231,6 +2319,12 @@ app.post("/api/redirect/claim", route(async (req, res) => {
     const attempt = await read(`redirectAttempts/${attemptId}`);
     if (!attempt || attempt.accountId !== account.id) {
       fail("This reward does not belong to the signed-in account.");
+    }
+    if (attempt.proofRequired === true && (!req.body.claimCode || hmac(req.body.claimCode) !== attempt.claimHash)) {
+      fail("Reward verification is missing or invalid. Open a new sponsored page from ScriptNovaa.", 403, "REWARD_PROOF_INVALID");
+    }
+    if (attempt.proofRequired === true && attempt.ipPrefix !== ipPrefix(req)) {
+      fail("The network changed during this reward. Open a new sponsored page and try again.", 403, "REWARD_NETWORK_CHANGED");
     }
     if (attempt.status === "AD_BLOCKED" || attempt.adBlockDetected === true) {
       fail("Redirect didn't count because an ad blocker was detected.", 409);

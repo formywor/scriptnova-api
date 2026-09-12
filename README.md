@@ -1,5 +1,9 @@
 # ScriptNovaa API
 
+## Abuse hardening — September 12, 2026
+
+Signup uses a short-lived, single-use proof-of-work challenge tied to the official website request and Vercel-protected network identity. Login, recovery, pairing, token creation, support tickets, and sponsored rewards now have tighter layered limits. New reward claims require their secret claim proof, the original network, an active approved computer, and a clear fraud status. Existing pre-update reward attempts remain claimable for compatibility. A Direct Link cannot prove ad completion; true advertiser verification still requires a supported server-to-server provider callback.
+
 ## Profiles, Beta, and announcements — September 12, 2026
 
 This release adds viewer-safe community profile details and Beta profile status/colors, accepts Beta feedback tickets, and pairs with the website fix for the administrator announcement form. No new Firebase index or environment variable is required.
