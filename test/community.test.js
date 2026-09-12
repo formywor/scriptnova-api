@@ -9,7 +9,11 @@ const {
   activeTyping,
   typingLabel,
   normalizedMessage,
+  moderationText,
   assessMessage,
+  nextWarningState,
+  warningStateWithHistory,
+  CHAT_BAN_MS,
   EDIT_WINDOW_MS,
   PUBLIC_RETENTION_MS,
 } = require("../lib/community");
@@ -61,7 +65,52 @@ test("chat safety rejects dangerous links and obvious repeated spam", () => {
   assert.equal(assessMessage("abcabcabcabcabc").ok, false);
 });
 
+test("chat safety catches separated and common substituted abusive spelling", () => {
+  assert.equal(assessMessage("f.u.c.k").ok, false);
+  assert.equal(assessMessage("sh1t").ok, false);
+  assert.equal(assessMessage("I disagree with you").ok, true);
+  assert.equal(moderationText("H3LL0"), "hello");
+});
+
+test("chat safety rejects direct targeted threats", () => {
+  assert.equal(assessMessage("I will hurt you").ok, false);
+  assert.equal(assessMessage("This exercise might hurt your legs").ok, true);
+});
+
 test("message comparison ignores ordinary casing and link details", () => {
   assert.equal(normalizedMessage("Hello https://example.com/a"),
       normalizedMessage("hello https://example.org/b"));
+});
+
+test("the second active chat warning creates a two-day pause", () => {
+  const now = 2_000_000_000_000;
+  const first = nextWarningState({}, now);
+  assert.equal(first.chatWarningCount, 1);
+  assert.equal(first.chatBannedUntil, 0);
+  const second = nextWarningState(first, now + 1000);
+  assert.equal(second.chatWarningCount, 2);
+  assert.equal(second.chatBannedUntil, now + 1000 + CHAT_BAN_MS);
+});
+
+test("expired warning windows restart at warning one", () => {
+  const now = 2_000_000_000_000;
+  const state = nextWarningState({chatWarningCount: 1, chatWarningWindowStartedAt: now - 31 * 86400000}, now);
+  assert.equal(state.chatWarningCount, 1);
+  assert.equal(state.chatWarningWindowStartedAt, now);
+  assert.equal(state.chatBannedUntil, 0);
+});
+
+test("recent legacy warning notifications make the next violation the second warning", () => {
+  const now = 2_000_000_000_000;
+  const state = warningStateWithHistory({}, [{type: "CHAT_WARNING", createdAt: now - 1000}], now);
+  assert.equal(state.chatWarningCount, 2);
+  assert.equal(state.chatBannedUntil, now + CHAT_BAN_MS);
+});
+
+test("a completed chat pause starts a fresh two-warning cycle", () => {
+  const now = 2_000_000_000_000;
+  const state = warningStateWithHistory({chatWarningCount: 2, chatBannedUntil: now - 1},
+      [{type: "CHAT_WARNING", createdAt: now - 1000}], now);
+  assert.equal(state.chatWarningCount, 1);
+  assert.equal(state.chatBannedUntil, 0);
 });

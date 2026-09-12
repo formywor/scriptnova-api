@@ -1061,7 +1061,7 @@ async function finishSession(sessionId, session, reason) {
 mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 mountCommunity(app, {
-  route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail,
+  route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail, etagTransaction,
 });
 mountAccountSecurity(app, {
   route, root, read, id, rateLimit, requireAccount, verifies, credential, code, fail, hmac,
@@ -1075,14 +1075,65 @@ app.get("/api/health", (req, res) => res.json({
 }));
 app.get("/api/status", route(async (req, res) => {
   const startedAt = Date.now();
-  await root.child("systemStatusProbe").get();
-  res.json({ok: true, checkedAt: Date.now(), services: [
-    {name: "Website", status: "OPERATIONAL"},
-    {name: "Account API", status: "OPERATIONAL"},
-    {name: "Realtime Database", status: "OPERATIONAL", responseMilliseconds: Date.now() - startedAt},
-    {name: "Share Browser sessions", status: "OPERATIONAL"},
-    {name: "Community chat", status: "OPERATIONAL"},
-  ]});
+  const measure = async (path) => {
+    const began = Date.now();
+    try {
+      await root.child(path).limitToFirst(1).get();
+      return {status: "OPERATIONAL", responseMilliseconds: Date.now() - began};
+    } catch (error) {
+      return {status: "DEGRADED", responseMilliseconds: Date.now() - began};
+    }
+  };
+  const [database, chat, shareBrowser, projectZ, notifications] = await Promise.all([
+    measure("systemStatusProbe"), measure("communityConfig"), measure("launcherConfiguration"),
+    measure("projectZConfiguration"), measure("notificationSettings"),
+  ]);
+  const checkedAt = Date.now();
+  const apiMilliseconds = checkedAt - startedAt;
+  const services = [
+    {id: "website", name: "Website delivery", status: "OPERATIONAL", detail: "This status page loaded successfully."},
+    {id: "api", name: "Account API", status: "OPERATIONAL", responseMilliseconds: apiMilliseconds},
+    {id: "database", name: "Realtime Database", ...database},
+    {id: "share", name: "Share Browser / HTA sessions", ...shareBrowser},
+    {id: "projectZ", name: "Project Z sessions", ...projectZ},
+    {id: "chat", name: "Community chat", ...chat},
+    {id: "notifications", name: "Notifications and chat safety", ...notifications},
+  ];
+  const sample = {checkedAt, healthy: services.every((service) => service.status === "OPERATIONAL"),
+    responseMilliseconds: {api: apiMilliseconds, database: database.responseMilliseconds,
+      chat: chat.responseMilliseconds, share: shareBrowser.responseMilliseconds,
+      projectZ: projectZ.responseMilliseconds, notifications: notifications.responseMilliseconds}};
+  try {
+    const lock = await root.child("systemStatusMaintenance/statusSample").transaction((value) => {
+      if (Number(value?.checkedAt || 0) > checkedAt - 5 * 60 * 1000) return;
+      return {checkedAt};
+    }, undefined, false);
+    if (lock.committed) {
+      await root.child(`systemStatusSamples/${id("systemStatusSamples")}`).set(sample);
+      const trim = await root.child("systemStatusSamples").orderByKey().limitToLast(289).get();
+      const keys = Object.keys(trim.val() || {}).sort();
+      if (keys.length > 288) await root.child(`systemStatusSamples/${keys[0]}`).remove();
+    }
+  } catch (error) {
+    console.warn("Status history could not be recorded", error.message);
+  }
+  let history = [];
+  try {
+    const snapshot = await root.child("systemStatusSamples").orderByKey().limitToLast(72).get();
+    history = Object.values(snapshot.val() || {}).sort((a, b) => Number(a.checkedAt) - Number(b.checkedAt));
+  } catch (error) {}
+  if (!history.some((item) => Number(item.checkedAt) === checkedAt)) history.push(sample);
+  const recent = history.slice(-72);
+  const average = (key) => Math.round(recent.reduce((sum, item) =>
+    sum + Number(item.responseMilliseconds?.[key] || 0), 0) / Math.max(1, recent.length));
+  const healthyCount = recent.filter((item) => item.healthy !== false).length;
+  res.json({ok: true, checkedAt, services, metrics: {
+    observedAvailabilityPercent: Number((healthyCount / Math.max(1, recent.length) * 100).toFixed(2)),
+    observedDownRatePercent: Number(((recent.length - healthyCount) / Math.max(1, recent.length) * 100).toFixed(2)),
+    sampleCount: recent.length, averageResponseMilliseconds: {
+      api: average("api"), database: average("database"), chat: average("chat"),
+      share: average("share"), projectZ: average("projectZ"), notifications: average("notifications"),
+    }}, history: recent});
 }));
 app.get("/", (req, res) => res.json({
   ok: true,
