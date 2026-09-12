@@ -1,5 +1,9 @@
 # ScriptNovaa API
 
+## Profiles, Beta, and announcements — September 12, 2026
+
+This release adds viewer-safe community profile details and Beta profile status/colors, accepts Beta feedback tickets, and pairs with the website fix for the administrator announcement form. No new Firebase index or environment variable is required.
+
 ## Account security and community safety — September 11, 2026
 
 The production API includes account-session review and revocation, PIN-confirmed sensitive actions, unusual-login alerts, recent activity, preset profile identities, community presence, reports, blocks, mutes, two-minute edits, message deletion, two-day public retention, chat warnings, notifications, and audited administrator moderation. Direct Realtime Database access remains locked; these operations run only through authenticated API routes.
