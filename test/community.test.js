@@ -14,6 +14,10 @@ const {
   nextWarningState,
   warningStateWithHistory,
   chatUnbanEligibility,
+  cleanAvatarDataUrl,
+  safeAvatarDataUrl,
+  betaAccess,
+  translateWithGemini,
   CHAT_UNBAN_FEE,
   CHAT_BAN_MS,
   EDIT_WINDOW_MS,
@@ -138,4 +142,24 @@ test("paid chat restoration checks the point balance and active pause", () => {
       /need 8 points/);
   assert.match(chatUnbanEligibility({chatBannedUntil: now - 1, pointBalance: 100}, now).reason,
       /not currently paused/);
+});
+
+test("Beta access includes invited users, approved developers, and administrators", () => {
+  assert.equal(betaAccess({betaProgramStatus: "ACTIVE"}), true);
+  assert.equal(betaAccess({developerProgramStatus: "APPROVED"}), true);
+  assert.equal(betaAccess({}, {active: true}), true);
+  assert.equal(betaAccess({}, null), false);
+});
+
+test("custom profile pictures accept small safe image data only", () => {
+  const valid = "data:image/png;base64," + Buffer.from("small image").toString("base64");
+  assert.equal(cleanAvatarDataUrl(valid), valid);
+  assert.throws(() => cleanAvatarDataUrl("data:image/svg+xml;base64,PHN2Zz4="), /PNG, JPEG, or WebP/);
+  assert.equal(safeAvatarDataUrl("javascript:alert(1)"), "");
+});
+
+test("chat translation returns constrained translated strings", async () => {
+  const fetcher = async () => ({ok: true, json: async () => ({candidates: [{content: {parts: [{text: '["Hola"]'}]}}]})});
+  assert.deepEqual(await translateWithGemini(["Hello"], "es", fetcher, "test-key"), ["Hola"]);
+  assert.equal(await translateWithGemini(["Hello"], "es", fetcher, ""), null);
 });

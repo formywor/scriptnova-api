@@ -2336,6 +2336,8 @@ app.get("/api/admin/accounts/:accountId", route(async (req, res) => {
     chatBannedUntil: Number(account.chatBannedUntil || 0) || null,
     chatBanReason: String(account.chatBanReason || account.lastChatWarningReason || ""),
     chatBanSource: String(account.chatBanSource || ""),
+    betaProgramStatus: String(account.betaProgramStatus || "NONE"),
+    developerProgramStatus: String(account.developerProgramStatus || (account.developer ? "APPROVED" : "NONE")),
     networkHistory,
     deviceHistory,
     ticketCount: Object.values(tickets || {}).filter((item) => item.accountId === accountId).length,
