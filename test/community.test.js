@@ -13,6 +13,8 @@ const {
   assessMessage,
   nextWarningState,
   warningStateWithHistory,
+  chatUnbanEligibility,
+  CHAT_UNBAN_FEE,
   CHAT_BAN_MS,
   EDIT_WINDOW_MS,
   PUBLIC_RETENTION_MS,
@@ -113,4 +115,27 @@ test("a completed chat pause starts a fresh two-warning cycle", () => {
       [{type: "CHAT_WARNING", createdAt: now - 1000}], now);
   assert.equal(state.chatWarningCount, 1);
   assert.equal(state.chatBannedUntil, 0);
+});
+
+test("automatic chat bans can be cleared when the account has the fee", () => {
+  const now = 2_000_000_000_000;
+  assert.deepEqual(chatUnbanEligibility({chatBannedUntil: now + 1000,
+    chatBanSource: "AUTOMATIC", pointBalance: CHAT_UNBAN_FEE}, now),
+  {allowed: true, fee: CHAT_UNBAN_FEE});
+});
+
+test("administrator chat bans require an appeal", () => {
+  const now = 2_000_000_000_000;
+  const result = chatUnbanEligibility({chatBannedUntil: now + 1000,
+    chatBanSource: "ADMIN", pointBalance: 100}, now);
+  assert.equal(result.allowed, false);
+  assert.match(result.reason, /appealed through Support/);
+});
+
+test("paid chat restoration checks the point balance and active pause", () => {
+  const now = 2_000_000_000_000;
+  assert.match(chatUnbanEligibility({chatBannedUntil: now + 1000, pointBalance: 7}, now).reason,
+      /need 8 points/);
+  assert.match(chatUnbanEligibility({chatBannedUntil: now - 1, pointBalance: 100}, now).reason,
+      /not currently paused/);
 });

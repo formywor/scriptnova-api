@@ -170,6 +170,7 @@ const SUPPORT_CATEGORIES = new Set([
   "ACCOUNT_ACCESS",
   "POINTS_OR_REWARDS",
   "REFERRAL_PROBLEM",
+  "CHAT_APPEAL",
   "DEVELOPER_PROGRAM",
   "OTHER",
 ]);
@@ -282,6 +283,9 @@ function publicSupportTicket(ticketId, ticket) {
     createdAt: Number(ticket.createdAt || 0),
     updatedAt: Number(ticket.updatedAt || ticket.createdAt || 0),
     replacementConsumedAt: Number(ticket.replacementConsumedAt || 0) || null,
+    chatBannedUntil: Number(ticket.chatBannedUntil || 0) || null,
+    chatBanReason: String(ticket.chatBanReason || ""),
+    chatBanSource: String(ticket.chatBanSource || ""),
   };
 }
 function publicAppeal(appealId, appeal) {
@@ -1061,7 +1065,7 @@ async function finishSession(sessionId, session, reason) {
 mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 mountCommunity(app, {
-  route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail, etagTransaction,
+  route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail, etagTransaction, atomic,
 });
 mountAccountSecurity(app, {
   route, root, read, id, rateLimit, requireAccount, verifies, credential, code, fail, hmac,
@@ -1649,6 +1653,11 @@ app.post("/api/support/tickets", route(async (req, res) => {
       fail("You already have an active connection-code request.", 409);
     }
   }
+  if (category === "CHAT_APPEAL") {
+    if (Number(account.data.chatBannedUntil || 0) <= Date.now()) fail("Your chat access is not currently paused.", 409);
+    const activeAppeal = existing.find(([, ticket]) => ticket.category === category && ticket.status === "PENDING");
+    if (activeAppeal) fail("You already have a pending chat appeal.", 409);
+  }
 
   const ticketId = id("supportTickets");
   const createdAt = Date.now();
@@ -1662,6 +1671,9 @@ app.post("/api/support/tickets", route(async (req, res) => {
     createdAt,
     updatedAt: createdAt,
     submittedIpPrefix: ipPrefix(req),
+    ...(category === "CHAT_APPEAL" ? {chatBannedUntil: Number(account.data.chatBannedUntil || 0),
+      chatBanReason: String(account.data.chatBanReason || account.data.lastChatWarningReason || ""),
+      chatBanSource: String(account.data.chatBanSource || "AUTOMATIC")} : {}),
   };
   await root.child(`supportTickets/${ticketId}`).set(ticket);
   res.status(201).json({
@@ -2320,6 +2332,10 @@ app.get("/api/admin/accounts/:accountId", route(async (req, res) => {
     createdNetworkPrefix: String(account.createdNetworkPrefix || "unknown"),
     statusReason: String(account.statusReason || ""),
     statusEndsAt: Number(account.statusEndsAt || 0) || null,
+    chatWarningCount: Number(account.chatWarningCount || 0),
+    chatBannedUntil: Number(account.chatBannedUntil || 0) || null,
+    chatBanReason: String(account.chatBanReason || account.lastChatWarningReason || ""),
+    chatBanSource: String(account.chatBanSource || ""),
     networkHistory,
     deviceHistory,
     ticketCount: Object.values(tickets || {}).filter((item) => item.accountId === accountId).length,
@@ -2446,8 +2462,8 @@ app.post("/api/admin/support/tickets/:ticketId/respond", route(async (req, res) 
   const adminResponse = String(req.body.response || "").trim();
   const status = String(req.body.status || "PENDING").toUpperCase();
   const allowedStatuses = ticket.category === "CONNECTION_CODE_REPLACEMENT" ?
-    new Set(["PENDING", "APPROVED", "DECLINED"]) :
-    new Set(["PENDING", "ANSWERED", "CLOSED"]);
+    new Set(["PENDING", "APPROVED", "DECLINED"]) : ticket.category === "CHAT_APPEAL" ?
+      new Set(["PENDING", "APPROVED", "DENIED"]) : new Set(["PENDING", "ANSWERED", "CLOSED"]);
   if (!allowedStatuses.has(status)) fail("Choose a valid ticket status.");
   if (adminResponse.length < 2 || adminResponse.length > 2000) {
     fail("Response must contain between 2 and 2,000 characters.");
@@ -2462,6 +2478,17 @@ app.post("/api/admin/support/tickets/:ticketId/respond", route(async (req, res) 
     respondedAt: now,
     updatedAt: now,
   });
+  if (ticket.category === "CHAT_APPEAL" && status === "APPROVED") {
+    const restored = await etagTransaction(`accounts/${ticket.accountId}`, (account) => {
+      if (!account) fail("Account not found.", 404);
+      Object.assign(account, {chatWarningCount: 0, chatWarningWindowStartedAt: 0, chatBannedUntil: 0,
+        chatBanReason: "", chatBanSource: "", chatBannedBy: "", updatedAt: now}); return account;
+    });
+    if (!restored.committed) fail("The appeal was saved, but chat access could not be restored. Try again.", 409);
+    const notificationId = id(`notifications/${ticket.accountId}`);
+    await root.child(`notifications/${ticket.accountId}/${notificationId}`).set({type: "CHAT_APPEAL_APPROVED",
+      title: "Chat appeal approved", message: adminResponse, createdAt: now, readAt: null});
+  }
   await adminAudit(administrator, "SUPPORT_TICKET_RESPONDED", ticket.accountId,
       {ticketId, status});
   res.json({ok: true, status});
