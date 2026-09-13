@@ -16,8 +16,12 @@ const {
   chatUnbanEligibility,
   cleanAvatarDataUrl,
   safeAvatarDataUrl,
+  cleanProfileSongUrl,
   betaAccess,
   pointRecognition,
+  notificationCategory,
+  notificationPreferences,
+  notificationAllowed,
   translateWithGemini,
   CHAT_UNBAN_FEE,
   CHAT_BAN_MS,
@@ -167,6 +171,28 @@ test("custom profile pictures accept small safe image data only", () => {
   assert.equal(cleanAvatarDataUrl(valid), valid);
   assert.throws(() => cleanAvatarDataUrl("data:image/svg+xml;base64,PHN2Zz4="), /PNG, JPEG, or WebP/);
   assert.equal(safeAvatarDataUrl("javascript:alert(1)"), "");
+});
+
+test("Beta profile songs require a public direct HTTPS MP3 link", () => {
+  assert.equal(cleanProfileSongUrl("https://cdn.example.com/music/theme.mp3"),
+      "https://cdn.example.com/music/theme.mp3");
+  assert.equal(cleanProfileSongUrl(""), "");
+  assert.throws(() => cleanProfileSongUrl("http://example.com/song.mp3"), /public HTTPS/);
+  assert.throws(() => cleanProfileSongUrl("https://localhost/song.mp3"), /public HTTPS/);
+  assert.throws(() => cleanProfileSongUrl("https://example.com/player"), /direct .mp3/);
+});
+
+test("notification levels and custom categories filter the notification center", () => {
+  assert.equal(notificationCategory("LOGIN_LOCKED"), "security");
+  assert.equal(notificationCategory("CHAT_WARNING"), "chatSafety");
+  assert.equal(notificationCategory("PRIVATE_MESSAGE"), "privateMessages");
+  assert.equal(notificationAllowed({type: "PRIVATE_MESSAGE"}, {mode: "IMPORTANT", categories: {}}), false);
+  assert.equal(notificationAllowed({type: "CHAT_WARNING"}, {mode: "IMPORTANT", categories: {}}), true);
+  assert.equal(notificationAllowed({type: "CHAT_WARNING"}, {mode: "NONE", categories: {chatSafety: true}}), false);
+  const prefs = notificationPreferences({notificationMode: "CUSTOM", notificationCategories: {privateMessages: false}});
+  assert.equal(prefs.categories.privateMessages, false);
+  assert.equal(notificationAllowed({type: "PRIVATE_MESSAGE"}, prefs), false);
+  assert.equal(notificationAllowed({type: "ANNOUNCEMENT"}, prefs), true);
 });
 
 test("chat translation returns constrained translated strings", async () => {
