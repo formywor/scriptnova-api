@@ -17,6 +17,7 @@ const {
   cleanAvatarDataUrl,
   safeAvatarDataUrl,
   betaAccess,
+  pointRecognition,
   translateWithGemini,
   CHAT_UNBAN_FEE,
   CHAT_BAN_MS,
@@ -149,6 +150,15 @@ test("Beta access includes invited users, approved developers, and administrator
   assert.equal(betaAccess({developerProgramStatus: "APPROVED"}), true);
   assert.equal(betaAccess({}, {active: true}), true);
   assert.equal(betaAccess({}, null), false);
+});
+
+test("point recognition is derived from the real balance", () => {
+  assert.deepEqual(pointRecognition(99), {points: 99, tier: "standard", label: "MEMBER", badges: []});
+  assert.deepEqual(pointRecognition(100).badges, ["CENTURY"]);
+  assert.deepEqual(pointRecognition(500).badges, ["CENTURY", "NOVA500"]);
+  assert.equal(pointRecognition(1000).tier, "legendary");
+  assert.equal(pointRecognition(5000).tier, "supernova");
+  assert.equal(pointRecognition(-50).points, 0);
 });
 
 test("custom profile pictures accept small safe image data only", () => {
