@@ -21,10 +21,12 @@ test("username policy normalizes and blocks impersonation", () => {
   assert.throws(() => validateUsername("verified_news"));
   assert.throws(() => validateUsername("suuuupport_team"));
 });
-test("PIN policy accepts 4–8 digits and rejects weak PINs", () => {
-  assert.equal(validatePin("4826"), "4826");
-  assert.throws(() => validatePin("1234"));
-  assert.throws(() => validatePin("123456789"));
+test("PIN policy accepts 7–14 digits and rejects weak PINs", () => {
+  assert.equal(validatePin("4829167"), "4829167");
+  assert.equal(validatePin("48291673510482"), "48291673510482");
+  assert.throws(() => validatePin("482916"));
+  assert.throws(() => validatePin("1234567"));
+  assert.throws(() => validatePin("482916735104826"));
 });
 test("redirect waits reward account age without removing fraud review", () => {
   assert.equal(redirectWaitPlan(0, 19).zeroWait, true);

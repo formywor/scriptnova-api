@@ -45,7 +45,7 @@ function firebaseOptions() {
 if (!getApps().length) initializeApp(firebaseOptions());
 const database = getDatabase();
 const root = database.ref();
-const CURRENT_LAUNCHER_VERSION = "1.2.7";
+const CURRENT_LAUNCHER_VERSION = "1.2.8";
 const LAUNCHER_DOWNLOAD_URL = "https://scriptnovaa.com/downloads/ShareBrowser.hta";
 const DEVICE_SETUP_BONUS = 2;
 const ONLINE_DEMO_MINUTES = 10;
@@ -286,6 +286,8 @@ function publicAccount(a) {
     deviceSetupBonusAwarded: Boolean(a.deviceSetupBonusAwardedAt),
     deviceSetupNoticePending: Boolean(a.deviceSetupNoticePending),
     recoveryConfirmationRequired: recoveryConfirmationRequired(a),
+    pinUpgradeRequired: a.pinUpgradeRequired === true ||
+      !Number.isInteger(Number(a.pinLength)) || Number(a.pinLength) < 7,
     accountStatus: a.accountStatus || "ACTIVE",
     restriction: publicRestriction(a),
     fraudStatus: a.fraudStatus || "CLEAR", activeSessionId: a.activeSessionId || null};
@@ -453,6 +455,7 @@ function route(handler) {
         response.currentVersion = CURRENT_LAUNCHER_VERSION;
         response.updateUrl = LAUNCHER_DOWNLOAD_URL;
       }
+      if (error.retryAfter) res.setHeader("Retry-After", String(error.retryAfter));
       res.status(statusCode).json(response);
     }
   };
@@ -904,6 +907,59 @@ async function rateLimit(key, action, maximum, windowSeconds) {
   });
   return root.child(`rateLimits/${keyHash}`);
 }
+async function loginGuard(accountId) {
+  if (!accountId) return null;
+  return read(`loginGuards/${accountId}`);
+}
+async function recordFailedLogin(accountId) {
+  const now = Date.now();
+  const result = await root.child(`loginGuards/${accountId}`).transaction((value) => {
+    const current = value || {};
+    const windowExpired = now - Number(current.windowStartedAt || 0) >= 60 * 60 * 1000;
+    const failedCount = windowExpired ? 1 : Number(current.failedCount || 0) + 1;
+    const lockedUntil = failedCount >= 5 ? now + 15 * 60 * 1000 : 0;
+    return {
+      failedCount,
+      windowStartedAt: windowExpired ? now : Number(current.windowStartedAt || now),
+      lastFailedAt: now,
+      lockedUntil,
+    };
+  });
+  const guard = result.snapshot.val();
+  if (Number(guard.lockedUntil || 0) > now && Number(guard.failedCount || 0) === 5) {
+    const alertId = id(`securityAlerts/${accountId}`);
+    const notificationId = id(`notifications/${accountId}`);
+    const alert = {
+      type: "LOGIN_LOCKED", title: "Sign-in temporarily locked",
+      message: "Too many incorrect PIN attempts were detected. Sign-in was locked for 15 minutes.",
+      createdAt: now, readAt: null,
+    };
+    await root.update({
+      [`securityAlerts/${accountId}/${alertId}`]: alert,
+      [`notifications/${accountId}/${notificationId}`]: alert,
+    });
+  }
+  return guard;
+}
+function rejectLoginGuard(guard) {
+  const now = Date.now();
+  const lockedUntil = Number(guard?.lockedUntil || 0);
+  const failedCount = Number(guard?.failedCount || 0);
+  if (lockedUntil > now) {
+    const error = new Error("Too many incorrect attempts. Try again after the 15-minute security lock ends.");
+    error.statusCode = 429;
+    error.apiCode = "LOGIN_LOCKED";
+    error.retryAfter = Math.max(1, Math.ceil((lockedUntil - now) / 1000));
+    throw error;
+  }
+  if (failedCount >= 3) {
+    const error = new Error("Too many incorrect attempts. Wait briefly before trying again.");
+    error.statusCode = 429;
+    error.apiCode = "LOGIN_SLOWED";
+    error.retryAfter = failedCount === 3 ? 5 : 15;
+    throw error;
+  }
+}
 async function newLogin(accountId, clientDescription, networkPrefix = "unknown") {
   const raw = crypto.randomBytes(32).toString("base64url");
   const loginId = hmac(raw);
@@ -916,6 +972,7 @@ async function newLogin(accountId, clientDescription, networkPrefix = "unknown")
     accountId, clientDescription: String(clientDescription || "").slice(0, 250),
     networkPrefix: String(networkPrefix || "unknown").slice(0, 80),
     revoked: false, createdAt: now, lastUsedAt: now,
+    expiresAt: now + 30 * 24 * 60 * 60 * 1000,
   });
   const activityId = id(`accountActivity/${accountId}`);
   const updates = {
@@ -963,7 +1020,14 @@ async function requireAccount(req, options = {}) {
   const raw = bearer(req); if (!raw) fail("Authentication required.", 401);
   const loginId = hmac(raw);
   const login = await read(`loginSessions/${loginId}`);
-  if (!login || login.revoked) fail("Authentication required.", 401);
+  if (!login || login.revoked ||
+      (Number(login.expiresAt || 0) > 0 && Number(login.expiresAt) <= Date.now())) {
+    if (login && !login.revoked) {
+      root.child(`loginSessions/${loginId}`).update({revoked: true,
+        revokedAt: Date.now(), revokeReason: "EXPIRED"}).catch(console.error);
+    }
+    fail("Authentication required.", 401);
+  }
   let account = await read(`accounts/${login.accountId}`);
   if (!account) fail("Authentication required.", 401);
   account = await resolveExpiredSuspension(login.accountId, account);
@@ -1088,6 +1152,7 @@ mountCommunity(app, {
 });
 mountAccountSecurity(app, {
   route, root, read, id, rateLimit, requireAccount, verifies, credential, code, fail, hmac,
+  validatePin,
 });
 
 app.get("/api/health", (req, res) => res.json({
@@ -1318,6 +1383,7 @@ app.post("/api/signup", route(async (req, res) => {
     usernames[username] = {accountId, createdAt: Date.now()};
     accounts[accountId] = {
       username, pinCredential: credential(pin, "PIN_PEPPER"),
+      pinLength: pin.length, pinUpgradeRequired: false,
       recoveryCredential: credential(recoveryCode, "RECOVERY_PEPPER"),
       recoveryPromptRequired: true,
       recoveryAcknowledgedAt: null,
@@ -1351,9 +1417,26 @@ app.post("/api/login", route(async (req, res) => {
   await rateLimit(ipPrefix(req), "LOGIN_NETWORK", 80, 3600);
   const usernameRecord = await read(`usernames/${username}`);
   const account = usernameRecord ? await read(`accounts/${usernameRecord.accountId}`) : null;
+  const guard = await loginGuard(usernameRecord?.accountId);
+  if (guard && Number(guard.lockedUntil || 0) > Date.now()) {
+    verifiesOrDummy(req.body.pin, account?.pinCredential, "PIN_PEPPER");
+    rejectLoginGuard(guard);
+  }
   const pinVerified = verifiesOrDummy(req.body.pin, account?.pinCredential, "PIN_PEPPER");
   if (!account || !pinVerified) {
+    if (account) rejectLoginGuard(await recordFailedLogin(usernameRecord.accountId));
     fail("Incorrect username or PIN.", 401);
+  }
+  await root.child(`loginGuards/${usernameRecord.accountId}`).remove();
+  const submittedPinLength = String(req.body.pin || "").length;
+  if (Number(account.pinLength || 0) !== submittedPinLength || submittedPinLength < 7) {
+    account.pinLength = submittedPinLength;
+    account.pinUpgradeRequired = submittedPinLength < 7;
+    await root.child(`accounts/${usernameRecord.accountId}`).update({
+      pinLength: submittedPinLength,
+      pinUpgradeRequired: submittedPinLength < 7,
+      updatedAt: Date.now(),
+    });
   }
   await loginLimit.remove();
   await accountLoginLimit.remove();
@@ -1388,6 +1471,8 @@ app.post("/api/recover", route(async (req, res) => {
     const fresh = data.accounts?.[usernameRecord.accountId];
     if (!fresh) fail("Recovery failed.", 401);
     fresh.pinCredential = credential(pin, "PIN_PEPPER");
+    fresh.pinLength = pin.length;
+    fresh.pinUpgradeRequired = false;
     fresh.recoveryCredential = credential(replacement, "RECOVERY_PEPPER");
     fresh.recoveryPromptRequired = true;
     fresh.recoveryAcknowledgedAt = null;
