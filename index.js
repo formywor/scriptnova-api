@@ -179,7 +179,7 @@ const ACCOUNT_STATUSES = new Set(["ACTIVE", "SUSPENDED", "BANNED", "TERMINATED"]
 const APPEAL_STATUSES = new Set(["PENDING", "APPROVED", "DENIED"]);
 const ADMIN_ROLES = new Set(["ADMIN", "SUPPORT"]);
 const CHAT_MESSAGE_LIMIT = 800;
-const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11435374";
+const DEFAULT_REDIRECT_URL = "https://omg10.com/4/11795557";
 const LIMITED_FREE_TOKEN = Object.freeze({
   id: "free-4m-2026",
   minutes: 4,
@@ -2334,7 +2334,8 @@ app.post("/api/redirect/start", route(async (req, res) => {
     notice: adBlockDetected ?
       "Redirect didn't count because an ad blocker was detected." : null,
     redirectUrl: !process.env.REDIRECT_TARGET_URL ||
-      process.env.REDIRECT_TARGET_URL === "https://example.com/" ?
+      process.env.REDIRECT_TARGET_URL === "https://example.com/" ||
+      process.env.REDIRECT_TARGET_URL === "https://omg10.com/4/11435374" ?
       DEFAULT_REDIRECT_URL : process.env.REDIRECT_TARGET_URL});
 }));
 
