@@ -23,6 +23,10 @@ const {
   notificationPreferences,
   notificationAllowed,
   translateWithGemini,
+  encryptPrivateText,
+  decryptPrivateText,
+  scriptNovaEncode,
+  scriptNovaDecode,
   CHAT_UNBAN_FEE,
   CHAT_BAN_MS,
   EDIT_WINDOW_MS,
@@ -199,4 +203,19 @@ test("chat translation returns constrained translated strings", async () => {
   const fetcher = async () => ({ok: true, json: async () => ({candidates: [{content: {parts: [{text: '["Hola"]'}]}}]})});
   assert.deepEqual(await translateWithGemini(["Hello"], "es", fetcher, "test-key"), ["Hola"]);
   assert.equal(await translateWithGemini(["Hello"], "es", fetcher, ""), null);
+});
+
+test("private messages use authenticated encryption and reject the wrong key", () => {
+  const encrypted = encryptPrivateText("private hello", "a".repeat(32));
+  assert.equal(encrypted.encryptedVersion, 1);
+  assert.equal(encrypted.text, undefined);
+  assert.equal(decryptPrivateText(encrypted, "a".repeat(32)), "private hello");
+  assert.equal(decryptPrivateText(encrypted, "b".repeat(32)), "[This encrypted message could not be opened.]");
+});
+
+test("ScriptNova Language is reversible and separate from encryption", () => {
+  const coded = scriptNovaEncode("Hello, Nova ✨");
+  assert.notEqual(coded, "Hello, Nova ✨");
+  assert.equal(scriptNovaDecode(coded), "Hello, Nova ✨");
+  assert.throws(() => scriptNovaDecode("ordinary words"), /not valid/);
 });

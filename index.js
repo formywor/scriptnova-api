@@ -1149,6 +1149,7 @@ mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 mountCommunity(app, {
   route, root, read, id, rateLimit, requireAccount, requireAdmin, adminAudit, fail, etagTransaction, atomic,
+  verifies, credential,
 });
 mountAccountSecurity(app, {
   route, root, read, id, rateLimit, requireAccount, verifies, credential, code, fail, hmac,
