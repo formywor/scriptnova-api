@@ -451,6 +451,47 @@ async function pairingContext(accountId, account) {
     approvedEntry,
   };
 }
+function betaPairingUsage(account, now = Date.now()) {
+  return devicePairing.betaPairingUsage(account, now);
+}
+async function betaPairingAccess(accountId, account) {
+  const administrator = await read(`administrators/${accountId}`);
+  return Boolean(administrator?.active || account?.developerProgramStatus === "APPROVED" ||
+    account?.developer || account?.betaProgramStatus === "ACTIVE");
+}
+async function createPairingCode(accountId, account, context, metadata = {}) {
+  const pairingCode = crypto.randomBytes(5).toString("hex").toUpperCase();
+  const pairingHash = hmac(pairingCode);
+  const createdAt = Date.now();
+  const expiresAt = createdAt + 10 * 60000;
+  const updates = {
+    [`devicePairings/${pairingHash}`]: {
+      accountId, pairingCode, status: "OPEN", createdAt, expiresAt,
+      betaReplacement: metadata.betaReplacement === true,
+      administratorIssued: metadata.administratorIssued === true,
+      issuedByAccountId: metadata.issuedByAccountId || null,
+    },
+    [`activeDevicePairings/${accountId}`]: pairingHash,
+    [`accounts/${accountId}/pairingCodeIssuedAt`]: createdAt,
+    [`accounts/${accountId}/updatedAt`]: createdAt,
+  };
+  if (context?.migrationAvailable) {
+    updates[`accounts/${accountId}/persistentMigrationCodeIssuedAt`] = createdAt;
+  }
+  if (context?.activeHash && context.activeHash !== pairingHash) {
+    updates[`devicePairings/${context.activeHash}/status`] = "REPLACED";
+    updates[`devicePairings/${context.activeHash}/replacedAt`] = createdAt;
+  }
+  if (context?.approvedEntry) {
+    const [ticketId] = context.approvedEntry;
+    updates[`supportTickets/${ticketId}/status`] = "FULFILLED";
+    updates[`supportTickets/${ticketId}/replacementConsumedAt`] = createdAt;
+    updates[`supportTickets/${ticketId}/updatedAt`] = createdAt;
+    updates[`supportTickets/${ticketId}/generatedPairingHash`] = pairingHash;
+  }
+  await root.update(updates);
+  return {pairingCode, pairingHash, createdAt, expiresAt};
+}
 function route(handler) {
   return async (req, res) => {
     try { await handler(req, res); } catch (error) {
@@ -770,6 +811,14 @@ async function completeTargetedPairing(pairingHash, rawProof) {
         lastUsedAt: now,
       },
     };
+    if (pairing.betaReplacement === true) {
+      const quota = betaPairingUsage(account, now);
+      if (quota.available <= 0) {
+        fail("Your four Beta replacement codes are recharging. Try again after the next slot resets.", 429);
+      }
+      updates[`accounts/${accountId}/betaConnectionCodeUses`] = [...quota.usedAt, now];
+      updates[`devicePairings/${pairingHash}/betaQuotaConsumedAt`] = now;
+    }
 
     let riskStatus = "PASSED";
     if (!alreadyRegistered) {
@@ -1605,6 +1654,8 @@ app.post("/api/device/pairing/start", route(async (req, res) => {
   const account = await requireAccount(req);
   await rateLimit(account.id, "PAIRING_START", 5, 3600);
   const context = await pairingContext(account.id, account.data);
+  const betaEligible = await betaPairingAccess(account.id, account.data);
+  const betaQuota = betaPairingUsage(account.data);
   if (context.activePairing?.pairingCode &&
       context.activePairing.status === "OPEN" &&
       Number(context.activePairing.expiresAt || 0) > Date.now()) {
@@ -1613,50 +1664,35 @@ app.post("/api/device/pairing/start", route(async (req, res) => {
       pairingCode: context.activePairing.pairingCode,
       expiresAt: new Date(context.activePairing.expiresAt).toISOString(),
       restored: true,
+      betaQuota: betaEligible ? betaQuota : null,
     });
     return;
   }
+  let betaReplacement = false;
   if (context.hasIssued && !context.approvedEntry && !context.migrationAvailable) {
-    fail("Your connection code cannot be replaced automatically. Submit a connection-code request on the Support page.", 403);
+    if (!betaEligible) {
+      fail("Your connection code cannot be replaced automatically. Submit a connection-code request on the Support page.", 403);
+    }
+    if (betaQuota.available <= 0) {
+      const error = new Error("Your four Beta replacement codes are recharging. The next slot returns in four weeks from its use date.");
+      error.statusCode = 429;
+      error.retryAfter = betaQuota.nextRechargeAt ?
+        Math.max(1, Math.ceil((betaQuota.nextRechargeAt - Date.now()) / 1000)) : undefined;
+      throw error;
+    }
+    betaReplacement = true;
   }
-
-  const pairingCode = crypto.randomBytes(5).toString("hex").toUpperCase();
-  const pairingHash = hmac(pairingCode);
-  const expiresAt = Date.now() + 10 * 60000;
-  const createdAt = Date.now();
-  const updates = {
-    [`devicePairings/${pairingHash}`]: {
-      accountId: account.id,
-      pairingCode,
-      status: "OPEN",
-      createdAt,
-      expiresAt,
-    },
-    [`activeDevicePairings/${account.id}`]: pairingHash,
-    [`accounts/${account.id}/pairingCodeIssuedAt`]: createdAt,
-    [`accounts/${account.id}/updatedAt`]: createdAt,
-  };
-  if (context.migrationAvailable) {
-    updates[`accounts/${account.id}/persistentMigrationCodeIssuedAt`] = createdAt;
-  }
-  if (context.activeHash && context.activeHash !== pairingHash) {
-    updates[`devicePairings/${context.activeHash}/status`] = "REPLACED";
-    updates[`devicePairings/${context.activeHash}/replacedAt`] = createdAt;
-  }
-  if (context.approvedEntry) {
-    const [ticketId] = context.approvedEntry;
-    updates[`supportTickets/${ticketId}/status`] = "FULFILLED";
-    updates[`supportTickets/${ticketId}/replacementConsumedAt`] = createdAt;
-    updates[`supportTickets/${ticketId}/updatedAt`] = createdAt;
-    updates[`supportTickets/${ticketId}/generatedPairingHash`] = pairingHash;
-  }
-  await root.update(updates);
-  res.json({ok: true, pairingCode, expiresAt: new Date(expiresAt).toISOString()});
+  const created = await createPairingCode(account.id, account.data, context, {betaReplacement});
+  res.json({ok: true, pairingCode: created.pairingCode,
+    expiresAt: new Date(created.expiresAt).toISOString(),
+    betaQuota: betaEligible ? betaQuota : null});
 }));
 
 app.get("/api/device/pairing/current", route(async (req, res) => {
   const account = await requireAccount(req);
   const context = await pairingContext(account.id, account.data);
+  const betaEligible = await betaPairingAccess(account.id, account.data);
+  const betaQuota = betaPairingUsage(account.data);
   const pairingHash = context.activeHash;
   const pairing = context.activePairing;
   if (!pairing || !pairing.pairingCode || pairing.status !== "OPEN" ||
@@ -1673,12 +1709,15 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
       pairing: null,
       registeredComputer: Boolean(account.data.registeredDeviceId),
       canGenerate: !context.hasIssued || context.migrationAvailable ||
-        Boolean(context.approvedEntry),
+        Boolean(context.approvedEntry) || (betaEligible && betaQuota.available > 0),
       migrationAvailable: context.migrationAvailable,
       requiresSupportApproval: context.hasIssued &&
-        !context.migrationAvailable && !context.approvedEntry,
+        !context.migrationAvailable && !context.approvedEntry &&
+        !(betaEligible && betaQuota.available > 0),
       replacementRequest: context.replacementEntry ?
         publicSupportTicket(...context.replacementEntry) : null,
+      betaReplacement: betaEligible ? betaQuota : null,
+      betaReplacementAvailable: context.hasIssued && betaEligible && betaQuota.available > 0,
     });
     return;
   }
@@ -1694,6 +1733,8 @@ app.get("/api/device/pairing/current", route(async (req, res) => {
     requiresSupportApproval: false,
     replacementRequest: context.replacementEntry ?
       publicSupportTicket(...context.replacementEntry) : null,
+    betaReplacement: betaEligible ? betaQuota : null,
+    betaReplacementAvailable: false,
   });
 }));
 
@@ -2551,6 +2592,9 @@ app.get("/api/admin/accounts/:accountId", route(async (req, res) => {
     chatBanSource: String(account.chatBanSource || ""),
     betaProgramStatus: String(account.betaProgramStatus || "NONE"),
     developerProgramStatus: String(account.developerProgramStatus || (account.developer ? "APPROVED" : "NONE")),
+    registeredDeviceId: account.registeredDeviceId || null,
+    registeredComputer: Boolean(account.registeredDeviceId),
+    betaConnectionCodes: betaPairingUsage(account),
     networkHistory,
     deviceHistory,
     ticketCount: Object.values(tickets || {}).filter((item) => item.accountId === accountId).length,
@@ -2656,6 +2700,75 @@ app.post("/api/admin/accounts/:accountId/points", route(async (req, res) => {
   });
   await adminAudit(administrator, "ACCOUNT_POINTS_CHANGED", accountId, {amount, reason});
   res.json({ok: true, amount, pointBalance: Number(target.pointBalance || 0) + amount});
+}));
+
+app.post("/api/admin/accounts/:accountId/device/code", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const accountId = String(req.params.accountId || "");
+  const target = await read(`accounts/${accountId}`);
+  if (!target) fail("Account not found.", 404);
+  if ((target.accountStatus || "ACTIVE") !== "ACTIVE") {
+    fail("Restore the account before issuing a connection code.", 409);
+  }
+  const reason = cleanLine(req.body.reason, 300);
+  if (reason.length < 8) fail("Give a reason containing at least 8 characters.");
+  const context = await pairingContext(accountId, target);
+  const created = await createPairingCode(accountId, target, context, {
+    administratorIssued: true,
+    issuedByAccountId: administrator.id,
+  });
+  await adminAudit(administrator, "DEVICE_CONNECTION_CODE_ISSUED", accountId,
+      {reason, pairingHash: created.pairingHash});
+  res.status(201).json({ok: true, pairingCode: created.pairingCode,
+    expiresAt: new Date(created.expiresAt).toISOString()});
+}));
+
+app.post("/api/admin/accounts/:accountId/device/remove", route(async (req, res) => {
+  const administrator = await requireAdmin(req, "ADMIN");
+  const accountId = String(req.params.accountId || "");
+  const target = await read(`accounts/${accountId}`);
+  if (!target) fail("Account not found.", 404);
+  const reason = cleanLine(req.body.reason, 300);
+  if (reason.length < 8) fail("Give a reason containing at least 8 characters.");
+  const deviceId = target.registeredDeviceId;
+  if (!deviceId) fail("This account does not have a connected computer.", 409);
+  if (target.activeSessionId) {
+    const active = await read(`sessions/${target.activeSessionId}`);
+    if (active?.status === "ACTIVE") {
+      await finishSession(target.activeSessionId, active, "DEVICE_REMOVED_BY_ADMIN");
+    }
+  }
+  const [activePairingHash, loginSessions] = await Promise.all([
+    read(`activeDevicePairings/${accountId}`), read("loginSessions"),
+  ]);
+  const now = Date.now();
+  const updates = {
+    [`devices/${deviceId}/status`]: "REVOKED",
+    [`devices/${deviceId}/revokedAt`]: now,
+    [`devices/${deviceId}/revokedByAccountId`]: administrator.id,
+    [`devices/${deviceId}/revocationReason`]: reason,
+    [`accounts/${accountId}/registeredDeviceId`]: null,
+    [`accounts/${accountId}/activeSessionId`]: null,
+    [`accounts/${accountId}/persistentLauncherPairedAt`]: null,
+    [`accounts/${accountId}/persistentMigrationCodeIssuedAt`]: null,
+    [`accounts/${accountId}/updatedAt`]: now,
+    [`activeDevicePairings/${accountId}`]: null,
+  };
+  if (activePairingHash) {
+    updates[`devicePairings/${activePairingHash}/status`] = "REVOKED";
+    updates[`devicePairings/${activePairingHash}/revokedAt`] = now;
+  }
+  Object.entries(loginSessions || {}).forEach(([loginHash, session]) => {
+    if (session.accountId === accountId &&
+        String(session.clientDescription || "").includes("paired launcher")) {
+      updates[`loginSessions/${loginHash}/revoked`] = true;
+      updates[`loginSessions/${loginHash}/revokedAt`] = now;
+    }
+  });
+  await root.update(updates);
+  await adminAudit(administrator, "DEVICE_CONNECTION_REMOVED", accountId,
+      {reason, deviceId});
+  res.json({ok: true, removedDeviceId: deviceId});
 }));
 
 app.get("/api/admin/support/tickets", route(async (req, res) => {

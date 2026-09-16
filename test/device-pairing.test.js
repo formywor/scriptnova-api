@@ -1,7 +1,8 @@
 "use strict";
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const {complete, resolveHash} = require("../lib/device-pairing");
+const {complete, resolveHash, betaPairingUsage,
+  BETA_PAIRING_RECHARGE_MS} = require("../lib/device-pairing");
 const args = {pairingHash: "code", deviceHash: "proof", candidateDeviceId: "pc1", loginHash: "login1", now: 100, ledgerId: "tx1"};
 function fixture() { return {accounts: {alice: {accountStatus: "ACTIVE", fraudStatus: "CLEAR", pointBalance: 0}},
   devicePairings: {code: {accountId: "alice", status: "OPEN", expiresAt: 1000}}, activeDevicePairings: {alice: "code"}}; }
@@ -48,4 +49,39 @@ test("a missing pairing requests one fresh-root transaction retry", () => {
       () => complete({...fixture(), devicePairings: {}}, args),
       (error) => error.retryFreshRoot === true && /invalid or expired/.test(error.message),
   );
+});
+test("Beta replacement slots recharge independently after four weeks", () => {
+  const now = BETA_PAIRING_RECHARGE_MS * 10;
+  const expired = now - BETA_PAIRING_RECHARGE_MS;
+  const recent = now - 1000;
+  let quota = betaPairingUsage({betaConnectionCodeUses: [expired, recent]}, now);
+  assert.equal(quota.available, 3);
+  assert.deepEqual(quota.usedAt, [recent]);
+  assert.equal(quota.nextRechargeAt, recent + BETA_PAIRING_RECHARGE_MS);
+
+  const uses = [now - 4000, now - 3000, now - 2000, now - 1000];
+  quota = betaPairingUsage({betaConnectionCodeUses: uses}, now);
+  assert.equal(quota.available, 0);
+  assert.equal(quota.nextRechargeAt, uses[0] + BETA_PAIRING_RECHARGE_MS);
+  assert.equal(betaPairingUsage({betaConnectionCodeUses: uses},
+      uses[0] + BETA_PAIRING_RECHARGE_MS).available, 1);
+});
+test("a successful Beta replacement consumes one slot, not code generation", () => {
+  const d = fixture();
+  d.accounts.alice.registeredDeviceId = "old";
+  d.devices = {old: {accountId: "alice", status: "ACTIVE", deviceHash: "proof"}};
+  d.devicePairings.code.betaReplacement = true;
+  complete(d, args);
+  assert.deepEqual(d.accounts.alice.betaConnectionCodeUses, [args.now]);
+  assert.equal(d.devicePairings.code.betaQuotaConsumedAt, args.now);
+});
+test("an exhausted Beta quota cannot complete another replacement", () => {
+  const d = fixture();
+  d.accounts.alice.registeredDeviceId = "old";
+  d.accounts.alice.betaConnectionCodeUses = [97, 98, 99, 100];
+  d.devices = {old: {accountId: "alice", status: "ACTIVE", deviceHash: "proof"}};
+  d.devicePairings.code.betaReplacement = true;
+  assert.throws(() => complete(d, args), (error) =>
+    error.statusCode === 429 && /recharging/.test(error.message));
+  assert.equal(d.devicePairings.code.status, "OPEN");
 });
