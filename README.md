@@ -1,4 +1,4 @@
-wdcdwc# ScriptNovaa API
+# ScriptNovaa API
 
 ## Abuse hardening — September 12, 2026
 
