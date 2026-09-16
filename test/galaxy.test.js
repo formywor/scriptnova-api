@@ -78,8 +78,16 @@ test("finishing is idempotent and removes the displayed Galaxy token", () => {
 
 test("Galaxy configuration is explicit about supported first-release capabilities", () => {
   const config = galaxy.configuration();
-  assert.equal(config.version, "1.0.1");
+  assert.equal(config.version, "1.0.2");
   assert.deepEqual(config.experiences, ["search", "partner", "browser"]);
   assert.equal(config.partner.name, "ScriptNovaa");
   assert.match(config.partner.label, /Sponsored/i);
+});
+test("all managed launch attempts receive extension restrictions and the API identity", () => {
+  const launch = galaxy.launchConfiguration("https://www.google.com/");
+  assert.ok(launch.flags.includes("--disable-extensions"));
+  assert.ok(launch.flags.includes("--disable-component-extensions-with-background-pages"));
+  assert.match(launch.userAgent, /CrOS aarch64/);
+  assert.equal(launch.startUrl, "https://www.google.com/");
+  assert.ok(!launch.flags.includes("--incognito"));
 });
