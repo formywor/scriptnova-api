@@ -10,6 +10,7 @@ const {
   searchWikipedia,
   searchWeb,
   parseWebResults,
+  parseDuckDuckGoResults,
   searchResultsHtml,
   requireSnovaAccess,
   sanitizeWikipediaHtml,
@@ -74,6 +75,14 @@ test("Snova search parses safe general web results", async () => {
   assert.doesNotMatch(html, /javascript:alert/);
 });
 
+test("Snova can parse DuckDuckGo results without becoming a destination proxy", () => {
+  const html = `<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fscriptnovaa.com%2Fgalaxy-browser">Galaxy Browser</a>`;
+  const results = parseDuckDuckGoResults(html);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].url, "https://scriptnovaa.com/galaxy-browser");
+  assert.equal(results[0].title, "Galaxy Browser");
+});
+
 test("Snova adds official ScriptNovaa pages to relevant searches", () => {
   const html = searchResultsHtml("scriptnovaa", [], "", []);
   assert.match(html, /https:\/\/scriptnovaa\.com\/share-browser/);
@@ -110,4 +119,14 @@ test("Snova access works only while its Z session and heartbeat lease are active
   await assert.rejects(() => requireSnovaAccess(`${sessionId}.${"c".repeat(64)}`, {read, hmac}, 10000),
       /access has finished/);
   assert.doesNotMatch(sanitizeWikipediaHtml("<script>alert(1)</script><p>Safe</p>"), /script|alert/);
+});
+
+test("Snova access also accepts an active Galaxy session", async () => {
+  const sessionId = `galaxy_${"a".repeat(40)}`;
+  const secret = "b".repeat(64);
+  const hmac = (value) => `hash:${value}`;
+  const read = async () => ({product: "galaxy", status: "ACTIVE", accountId: "account-1",
+    expiresAt: 20000, leaseExpiresAt: 20000, webAccessHash: hmac(secret)});
+  const accepted = await requireSnovaAccess(`${sessionId}.${secret}`, {read, hmac}, 10000);
+  assert.equal(accepted.session.product, "galaxy");
 });

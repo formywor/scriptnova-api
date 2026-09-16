@@ -21,6 +21,8 @@ const {
 } = require("./lib/support-assistant");
 const projectZ = require("./lib/project-z");
 const mountProjectZ = require("./lib/project-z-routes");
+const galaxy = require("./lib/galaxy");
+const mountGalaxy = require("./lib/galaxy-routes");
 const devicePairing = require("./lib/device-pairing");
 const {mountSnovaWeb} = require("./lib/snova-web");
 const {mountWritingCheck} = require("./lib/writing-check");
@@ -80,7 +82,7 @@ app.use((req, res, next) => {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Headers",
-        "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version, X-Project-Z-Version");
+        "Content-Type, Authorization, X-Admin-Secret, X-Launcher-Version, X-Project-Z-Version, X-Galaxy-Version");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
   }
   if (req.method === "OPTIONS") {
@@ -196,6 +198,16 @@ function availableTokenOptions(product = "share") {
     points: option.points,
     label: `${option.hours} hour${option.hours === 1 ? "" : "s"} — ${option.points} points`,
   }));
+  if (product === "galaxy") {
+    return TOKEN_OPTIONS.flatMap((option) => [
+      {id: `standard-${option.hours}h`, hours: option.hours, minutes: option.hours * 60,
+        points: Math.ceil(option.points * 1.5), accessMode: "single",
+        label: `${option.hours} hour${option.hours === 1 ? "" : "s"} Galaxy — ${Math.ceil(option.points * 1.5)} points`},
+      {id: `multi-${option.hours}h`, hours: option.hours, minutes: option.hours * 60,
+        points: Math.ceil(option.points * 2.25), accessMode: "multi",
+        label: `${option.hours} hour${option.hours === 1 ? "" : "s"} Galaxy Multi-use — ${Math.ceil(option.points * 2.25)} points`},
+    ]);
+  }
   if (product === "share" && Date.now() < LIMITED_FREE_TOKEN.endsAt) {
     standard.unshift({...LIMITED_FREE_TOKEN, limited: true});
   }
@@ -485,8 +497,15 @@ function requireProjectZVersion(req) {
     fail(`Update Project Z at scriptnovaa.com/project-z. Required version: ${projectZ.VERSION}.`, 426, "Z_UPDATE_REQUIRED");
   }
 }
+function requireGalaxyVersion(req) {
+  if (req.headers["x-galaxy-version"] !== galaxy.VERSION) {
+    fail(`Update Galaxy Browser at scriptnovaa.com/galaxy-browser. Required version: ${galaxy.VERSION}.`,
+        426, "GALAXY_UPDATE_REQUIRED");
+  }
+}
 function requirePairingClientVersion(req) {
-  if (req.headers["x-project-z-version"]) requireProjectZVersion(req);
+  if (req.headers["x-galaxy-version"]) requireGalaxyVersion(req);
+  else if (req.headers["x-project-z-version"]) requireProjectZVersion(req);
   else requireCurrentLauncherVersion(req);
 }
 async function ensureDeviceSetupBonus(accountId, account) {
@@ -1160,6 +1179,7 @@ app.get("/api/health", (req, res) => res.json({
   ok: true, product: "Share Browser API", database: "Firebase Realtime Database",
   launcherVersion: CURRENT_LAUNCHER_VERSION,
   projectZVersion: projectZ.VERSION,
+  galaxyVersion: galaxy.VERSION,
   pairingProtocol: "etag-transactions-v5",
 }));
 app.get("/api/status", route(async (req, res) => {
@@ -1173,9 +1193,9 @@ app.get("/api/status", route(async (req, res) => {
       return {status: "DEGRADED", responseMilliseconds: Date.now() - began};
     }
   };
-  const [database, chat, shareBrowser, projectZ, notifications] = await Promise.all([
+  const [database, chat, shareBrowser, projectZ, galaxyStatus, notifications] = await Promise.all([
     measure("systemStatusProbe"), measure("communityConfig"), measure("launcherConfiguration"),
-    measure("projectZConfiguration"), measure("notificationSettings"),
+    measure("projectZConfiguration"), measure("galaxyConfiguration"), measure("notificationSettings"),
   ]);
   const checkedAt = Date.now();
   const apiMilliseconds = checkedAt - startedAt;
@@ -1185,13 +1205,15 @@ app.get("/api/status", route(async (req, res) => {
     {id: "database", name: "Realtime Database", ...database},
     {id: "share", name: "Share Browser / HTA sessions", ...shareBrowser},
     {id: "projectZ", name: "Project Z sessions", ...projectZ},
+    {id: "galaxy", name: "Galaxy Browser sessions", ...galaxyStatus},
     {id: "chat", name: "Community chat", ...chat},
     {id: "notifications", name: "Notifications and chat safety", ...notifications},
   ];
   const sample = {checkedAt, healthy: services.every((service) => service.status === "OPERATIONAL"),
     responseMilliseconds: {api: apiMilliseconds, database: database.responseMilliseconds,
       chat: chat.responseMilliseconds, share: shareBrowser.responseMilliseconds,
-      projectZ: projectZ.responseMilliseconds, notifications: notifications.responseMilliseconds}};
+      projectZ: projectZ.responseMilliseconds, galaxy: galaxyStatus.responseMilliseconds,
+      notifications: notifications.responseMilliseconds}};
   try {
     const lock = await root.child("systemStatusMaintenance/statusSample").transaction((value) => {
       if (Number(value?.checkedAt || 0) > checkedAt - 5 * 60 * 1000) return;
@@ -1221,7 +1243,8 @@ app.get("/api/status", route(async (req, res) => {
     observedDownRatePercent: Number(((recent.length - healthyCount) / Math.max(1, recent.length) * 100).toFixed(2)),
     sampleCount: recent.length, averageResponseMilliseconds: {
       api: average("api"), database: average("database"), chat: average("chat"),
-      share: average("share"), projectZ: average("projectZ"), notifications: average("notifications"),
+      share: average("share"), projectZ: average("projectZ"), galaxy: average("galaxy"),
+      notifications: average("notifications"),
     }}, history: recent});
 }));
 app.get("/", (req, res) => res.json({
@@ -1234,6 +1257,7 @@ app.get("/api/public-config", (req, res) => res.json({
   ok: true, pairingProtocol: "etag-transactions-v5",
   tokenOptions: availableTokenOptions(),
   projectZ: {...projectZ.configuration(), tokenOptions: availableTokenOptions("z")},
+  galaxy: {...galaxy.configuration(), tokenOptions: availableTokenOptions("galaxy")},
   economy: {...ECONOMY, maximumRedirectPoints: 22},
   redirectWaitChances: REDIRECT_WAIT_CHANCES,
   launcher: {
@@ -2066,7 +2090,8 @@ app.post("/api/tokens/create", route(async (req, res) => {
   const option = requestedTokenOption(req.body);
   if (!option) fail("Invalid token duration.");
   const product = projectZ.productChoice(req.body.product);
-  const rawToken = code(product === "z" ? "Z" : "SHARE"); const tokenHash = hmac(rawToken); const tokenId = id("tokens");
+  const rawToken = code(product === "z" ? "Z" : product === "galaxy" ? "GALAXY" : "SHARE");
+  const tokenHash = hmac(rawToken); const tokenId = id("tokens");
   const lockId = crypto.randomBytes(12).toString("hex");
   const lockReference = root.child(`tokenCreationLocks/${account.id}`);
   const lockedAt = Date.now();
@@ -2178,7 +2203,11 @@ app.post("/api/session/activate", route(async (req, res) => {
     }
 
     if (!token || token.ownerAccountId !== account.id) fail("Token cannot be used.");
-    if (projectZ.productOf(token) !== "share") fail("This is a Project Z token. Open it in Project Z.");
+    if (projectZ.productOf(token) !== "share") {
+      fail(projectZ.productOf(token) === "galaxy" ?
+        "This is a Galaxy token. Open it in Galaxy Browser." :
+        "This is a Project Z token. Open it in Project Z.");
+    }
     if (token.status === "ACTIVE") fail("This token already has an active session.", 409);
     if (token.status !== "UNUSED") fail("This token has already been used and cannot be reused.");
 
@@ -2286,6 +2315,8 @@ app.post("/api/session/end", route(async (req, res) => {
 
 mountProjectZ(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
   requireVersion: requireProjectZVersion});
+mountGalaxy(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
+  requireVersion: requireGalaxyVersion});
 
 async function requireRewardEligibleAccount(account) {
   if (String(account.data.fraudStatus || "CLEAR").toUpperCase() !== "CLEAR") {
