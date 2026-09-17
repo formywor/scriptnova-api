@@ -34,6 +34,18 @@ test("Galaxy validates its product, computer, experiences, and settings before c
   const wrong = fixture(); wrong.tokens.token1.product = "z";
   assert.throws(() => galaxy.activate(wrong, input()), /Galaxy token/);
 });
+test("second computer can start and heartbeat without replacing the first", () => {
+  const data = fixture(); data.accounts.alice.secondDeviceId = "pc2";
+  data.devices.pc2 = {accountId: "alice", status: "ACTIVE", deviceHash: "second"};
+  galaxy.activate(data, input({deviceHash: "second"}));
+  assert.equal(data.accounts.alice.registeredDeviceId, "pc1");
+  assert.equal(data.sessions.galaxy_session.deviceId, "pc2");
+  galaxy.authorize(data, {sessionId: "galaxy_session", accountId: "alice", deviceHash: "second", secretHash: "secret", now: 2000});
+  assert.equal(data.sessions.galaxy_session.status, "ACTIVE");
+  data.devices.pc2.status = "REVOKED";
+  galaxy.authorize(data, {sessionId: "galaxy_session", accountId: "alice", deviceHash: "second", secretHash: "secret", now: 3000});
+  assert.equal(data.sessions.galaxy_session.status, "FINISHED");
+});
 
 test("Galaxy activation and heartbeats never extend purchased time", () => {
   const data = fixture();
@@ -78,7 +90,7 @@ test("finishing is idempotent and removes the displayed Galaxy token", () => {
 
 test("Galaxy configuration is explicit about supported first-release capabilities", () => {
   const config = galaxy.configuration();
-  assert.equal(config.version, "1.0.3");
+  assert.equal(config.version, "1.0.4");
   assert.deepEqual(config.experiences, ["search", "partner", "browser"]);
   assert.equal(config.partner.name, "ScriptNovaa");
   assert.match(config.partner.label, /Sponsored/i);

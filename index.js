@@ -24,6 +24,7 @@ const mountProjectZ = require("./lib/project-z-routes");
 const galaxy = require("./lib/galaxy");
 const mountGalaxy = require("./lib/galaxy-routes");
 const devicePairing = require("./lib/device-pairing");
+const accountDevices = require("./lib/account-devices");
 const {mountSnovaWeb} = require("./lib/snova-web");
 const {mountWritingCheck} = require("./lib/writing-check");
 const {mountCommunity} = require("./lib/community");
@@ -761,6 +762,15 @@ async function completeTargetedPairing(pairingHash, rawProof) {
   const claimId = crypto.randomBytes(16).toString("hex");
   const pairingRef = root.child(`devicePairings/${pairingHash}`);
   const pairing = await claimPairingWithEtag(pairingHash, claimId, now);
+  const accountLock = root.child(`deviceConnectionLocks/${pairing.accountId}`);
+  const acquired = await accountLock.transaction(current => {
+    if (current && Number(current.at || 0) > Date.now() - 60000) return;
+    return {claimId, at: Date.now()};
+  }, undefined, false);
+  if (!acquired.committed) {
+    await releasePairingClaim(pairingRef, claimId, Date.now());
+    fail("Another computer connection is being processed. Try again shortly.", 409);
+  }
   try {
     const accountId = pairing.accountId;
     const [account, devices] = await Promise.all([
@@ -777,8 +787,10 @@ async function completeTargetedPairing(pairingHash, rawProof) {
 
     const deviceHash = hmac(rawProof);
     const candidateDeviceId = id("devices");
-    const deviceId = account.registeredDeviceId || candidateDeviceId;
-    const alreadyRegistered = Boolean(account.registeredDeviceId);
+    const existingId = accountDevices.find(account, devices, accountId, deviceHash);
+    if (!existingId && accountDevices.ids(account).length >= accountDevices.LIMIT) fail("This account already has two connected computers. Ask an administrator to remove one.", 403);
+    const deviceId = existingId || candidateDeviceId;
+    const alreadyRegistered = Boolean(existingId);
     const currentDevices = devices || {};
     if (alreadyRegistered) {
       const device = currentDevices[deviceId];
@@ -830,7 +842,7 @@ async function completeTargetedPairing(pairingHash, rawProof) {
         riskScore: reused ? 100 : 0,
         registeredAt: now,
       };
-      updates[`accounts/${accountId}/registeredDeviceId`] = deviceId;
+      updates[`accounts/${accountId}/${account.registeredDeviceId ? "secondDeviceId" : "registeredDeviceId"}`] = deviceId;
       if (reused) updates[`accounts/${accountId}/fraudStatus`] = "REVIEW";
 
       const awardSetup = !reused && account.fraudStatus === "CLEAR" &&
@@ -877,6 +889,8 @@ async function completeTargetedPairing(pairingHash, rawProof) {
   } catch (error) {
     await releasePairingClaim(pairingRef, claimId, Date.now());
     throw error;
+  } finally {
+    await accountLock.transaction(current => current?.claimId === claimId ? null : current);
   }
 }
 
@@ -1764,7 +1778,7 @@ app.post("/api/device/pairing/complete", route(async (req, res) => {
 app.post("/api/device/launcher/status", route(async (req, res) => {
   requirePairingClientVersion(req);
   const account = await requireAccount(req);
-  const deviceId = account.data.registeredDeviceId;
+  const deviceId = accountDevices.find(account.data, await read("devices"), account.id, hmac(req.body.deviceProof || ""));
   const device = deviceId ? await read(`devices/${deviceId}`) : null;
   if (!device || device.deviceHash !== hmac(req.body.deviceProof) ||
       !["ACTIVE", "REVIEW"].includes(device.status)) {
@@ -2192,10 +2206,10 @@ app.post("/api/session/activate", route(async (req, res) => {
     if (!freshAccount || freshAccount.accountStatus !== "ACTIVE") {
       fail("Account not found or restricted.", 401);
     }
+    const selectedDeviceId = accountDevices.find(freshAccount, await read("devices"), account.id, hmac(req.body.deviceProof));
     let [token, device] = await Promise.all([
       read(`tokens/${tokenId}`),
-      freshAccount.registeredDeviceId ?
-        read(`devices/${freshAccount.registeredDeviceId}`) : Promise.resolve(null),
+      selectedDeviceId ? read(`devices/${selectedDeviceId}`) : Promise.resolve(null),
     ]);
     if (!device || device.status !== "ACTIVE" ||
       device.deviceHash !== hmac(req.body.deviceProof)) {
@@ -2260,7 +2274,7 @@ app.post("/api/session/activate", route(async (req, res) => {
     Object.assign(updates, {
       [`tokens/${tokenId}/status`]: "ACTIVE",
       [`tokens/${tokenId}/sessionId`]: sessionId,
-      [`tokens/${tokenId}/deviceId`]: freshAccount.registeredDeviceId,
+      [`tokens/${tokenId}/deviceId`]: selectedDeviceId,
       [`tokens/${tokenId}/activatedAt`]: startedAt,
       [`tokens/${tokenId}/expiresAt`]: expiresAt,
       [`accounts/${account.id}/activeSessionId`]: sessionId,
@@ -2269,7 +2283,7 @@ app.post("/api/session/activate", route(async (req, res) => {
       [`accounts/${account.id}/updatedAt`]: startedAt,
     });
     updates[`sessions/${sessionId}`] = {
-      accountId: account.id, tokenId, deviceId: freshAccount.registeredDeviceId,
+      accountId: account.id, tokenId, deviceId: selectedDeviceId,
       browser, presetId, userAgentId: effectiveUserAgentId,
       status: "ACTIVE", sessionSecretHash: hmac(rawSecret),
       startedAt, expiresAt, lastHeartbeatAt: startedAt,
@@ -2357,6 +2371,8 @@ app.post("/api/session/end", route(async (req, res) => {
 mountProjectZ(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
   requireVersion: requireProjectZVersion});
 mountGalaxy(app, {route, requireAccount, root, read, atomic, hmac, rateLimit, fail,
+  requireVersion: requireGalaxyVersion});
+require('./lib/galaxy-link')(app, {route, requireAccount, root, read, hmac, rateLimit, fail,
   requireVersion: requireGalaxyVersion});
 
 async function requireRewardEligibleAccount(account) {
@@ -2593,6 +2609,7 @@ app.get("/api/admin/accounts/:accountId", route(async (req, res) => {
     betaProgramStatus: String(account.betaProgramStatus || "NONE"),
     developerProgramStatus: String(account.developerProgramStatus || (account.developer ? "APPROVED" : "NONE")),
     registeredDeviceId: account.registeredDeviceId || null,
+    connectedDeviceIds: accountDevices.ids(account),
     registeredComputer: Boolean(account.registeredDeviceId),
     betaConnectionCodes: betaPairingUsage(account),
     networkHistory,
@@ -2730,7 +2747,8 @@ app.post("/api/admin/accounts/:accountId/device/remove", route(async (req, res) 
   if (!target) fail("Account not found.", 404);
   const reason = cleanLine(req.body.reason, 300);
   if (reason.length < 8) fail("Give a reason containing at least 8 characters.");
-  const deviceId = target.registeredDeviceId;
+  const deviceId = String(req.body.deviceId || target.registeredDeviceId || "");
+  if (deviceId && !accountDevices.ids(target).includes(deviceId)) fail("Computer does not belong to this account.", 403);
   if (!deviceId) fail("This account does not have a connected computer.", 409);
   if (target.activeSessionId) {
     const active = await read(`sessions/${target.activeSessionId}`);
@@ -2747,7 +2765,8 @@ app.post("/api/admin/accounts/:accountId/device/remove", route(async (req, res) 
     [`devices/${deviceId}/revokedAt`]: now,
     [`devices/${deviceId}/revokedByAccountId`]: administrator.id,
     [`devices/${deviceId}/revocationReason`]: reason,
-    [`accounts/${accountId}/registeredDeviceId`]: null,
+    [`accounts/${accountId}/registeredDeviceId`]: accountDevices.ids(target).find(value => value !== deviceId) || null,
+    [`accounts/${accountId}/secondDeviceId`]: null,
     [`accounts/${accountId}/activeSessionId`]: null,
     [`accounts/${accountId}/persistentLauncherPairedAt`]: null,
     [`accounts/${accountId}/persistentMigrationCodeIssuedAt`]: null,
