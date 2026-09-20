@@ -7,6 +7,12 @@ test("DNS names reject unsafe, reserved and first-party custom domains", () => {
   assert.equal(mount.domain("Play.Example.com"), "play.example.com");
   for(const name of ["https://example.com", "a.scriptnovaa.com", "localhost", "127.0.0.1", "example.com/path"]) assert.throws(()=>mount.domain(name));
 });
+test("first-party auto approval is 90 percent with a stable account bucket; custom domains never auto approve",()=>{
+  let accepted=0;
+  for(let i=0;i<100;i++) {const hash=()=>Math.floor((i+0.5)/100*0x100000000).toString(16).padStart(8,'0');if(mount.automaticApproval('account','',hash))accepted++;assert.equal(mount.automaticApproval('account','play.example.com',hash),false);}
+  assert.equal(accepted,90);
+  assert.throws(()=>mount.slug('admin-team'));
+});
 function fixture() {
   const routes = {}, data = {accounts:{alice:{username:"alice", registeredDeviceId:"d",activeSessionId:"g"},bob:{username:"bob"}},devices:{d:{accountId:"alice",status:"ACTIVE"}},sessions:{g:{product:"galaxy",status:"ACTIVE",accountId:"alice",deviceId:"d",tokenId:"t",startedAt:Date.now()-1000,expiresAt:Date.now()+60000,leaseExpiresAt:Date.now()+30000}},tokens:{t:{status:"ACTIVE",sessionId:"g",ownerAccountId:"alice"}}};
   let user="alice",admin=false,result;
