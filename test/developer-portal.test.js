@@ -20,6 +20,25 @@ function fixture() {
   mount({get:(p,h)=>routes[p]=h,post:(p,h)=>routes[p]=h},{route:f=>f,requireAccount:async()=>({id:user,data:data.accounts[user]}),requireAdmin:async()=>{if(!admin)throw new Error("Admin required");return {id:user,data:data.accounts[user]};},read,atomic:async fn=>{const next=fn(structuredClone(data));for(const key of Object.keys(data))delete data[key];Object.assign(data,next);return data;},root:{child:p=>({set:async value=>{const keys=p.split("/"),last=keys.pop();let node=data;for(const key of keys)node=node[key]||=( {} );node[last]=value;}})},rateLimit:async()=>{},adminAudit:async()=>{},hmac:x=>crypto.createHmac("sha256","test-key").update(x).digest("hex")});
   return {data,setUser:value=>user=value,setAdmin:value=>admin=value,call:async(p,body={},headers={})=>{result=undefined;await routes[p]({body,headers},{json:x=>result=x});return result;}};
 }
+test("DNS verification explains missing ownership and routing separately", async () => {
+  const dns = require("node:dns/promises"), oldTxt = dns.resolveTxt, oldCname = dns.resolveCname;
+  const target = process.env.HOSTING_TARGET_DOMAIN;
+  process.env.HOSTING_TARGET_DOMAIN = "hosting.scriptnovaa.com";
+  try {
+    const f = fixture();
+    f.data.hostingSites = {alice:{customDomain:"play.example.com",verificationToken:"test"}};
+    dns.resolveTxt = async () => []; dns.resolveCname = async () => ["hosting.scriptnovaa.com"];
+    await assert.rejects(f.call("/api/developer/domain/verify"), e => /Ownership TXT/.test(e.message) && !/Routing CNAME/.test(e.message));
+    dns.resolveTxt = async () => [["scriptnovaa-verification=test"]]; dns.resolveCname = async () => [];
+    await assert.rejects(f.call("/api/developer/domain/verify"), e => /Routing CNAME/.test(e.message) && !/Ownership TXT/.test(e.message));
+    dns.resolveCname = async () => ["hosting.scriptnovaa.com."];
+    await f.call("/api/developer/domain/verify");
+    assert.ok(f.data.hostingSites.alice.domainVerifiedAt);
+  } finally {
+    dns.resolveTxt = oldTxt; dns.resolveCname = oldCname;
+    if (target === undefined) delete process.env.HOSTING_TARGET_DOMAIN; else process.env.HOSTING_TARGET_DOMAIN = target;
+  }
+});
 test("programs prevent duplicates and enforce administrator review; developer approval grants beta",async()=>{
   const f=fixture();await f.call("/api/developer/requests",{type:"DEVELOPER",message:"I want to build a safe static educational browser project."});
   await assert.rejects(f.call("/api/developer/requests",{type:"DEVELOPER",message:"A duplicate application that should not be accepted."}));
