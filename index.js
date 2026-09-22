@@ -1228,6 +1228,7 @@ async function finishSession(sessionId, session, reason) {
 }
 
 require("./lib/developer-portal")(app, {route, requireAccount, requireAdmin, root, read, atomic, rateLimit, adminAudit, hmac});
+require("./lib/website-sessions")(app, {route, requireAccount, read, atomic, rateLimit});
 mountSnovaWeb(app, {route, rateLimit, ipPrefix, read, hmac});
 mountWritingCheck(app, {route, rateLimit, ipPrefix, fail});
 mountCommunity(app, {
