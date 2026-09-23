@@ -54,6 +54,15 @@ test("hosting reservation checks approval and slug collisions",async()=>{
   await assert.rejects(f.call("/api/developer/site",{slug:"alice"}));
   await f.call("/api/developer/site",{slug:"bob-site",customDomain:"play.example.com"});assert.equal(f.data.hostingSites.bob.status,"PENDING");
 });
+test("explicit root domains show TXT only and subdomains have relative host fields",async()=>{
+  const f=fixture();f.data.accounts.alice.developerProgramStatus="APPROVED";
+  await f.call("/api/developer/site",{slug:"example",customDomain:"example.com",domainKind:"ROOT",dnsZone:"example.com"});
+  let portal=await f.call("/api/developer/portal");assert.equal(portal.site.dns.length,1);assert.equal(portal.site.dns[0].host,"_scriptnovaa");
+  f.setUser("bob");f.data.accounts.bob.developerProgramStatus="APPROVED";
+  await assert.rejects(f.call("/api/developer/site",{slug:"other",customDomain:"play.example.org",domainKind:"SUBDOMAIN",dnsZone:"wrong.org"}));
+  await f.call("/api/developer/site",{slug:"other",customDomain:"play.example.org",domainKind:"SUBDOMAIN",dnsZone:"example.org"});
+  portal=await f.call("/api/developer/portal");assert.equal(portal.site.dns[0].host,"_scriptnovaa.play");assert.equal(portal.site.dns[1].host,"play");
+});
 test("timed grants bind hostname and enforce revocation, device state and expiry",async()=>{
   const previous={...process.env};process.env.HOSTING_ENABLED="true";process.env.HOSTING_GATEWAY_SECRET="a-long-private-test-key-at-least-32-characters";process.env.HOSTING_TARGET_DOMAIN="hosting.scriptnovaa.com";
   try {

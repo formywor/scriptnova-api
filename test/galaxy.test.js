@@ -90,7 +90,7 @@ test("finishing is idempotent and removes the displayed Galaxy token", () => {
 
 test("Galaxy configuration is explicit about supported first-release capabilities", () => {
   const config = galaxy.configuration();
-  assert.equal(config.version, "1.0.4");
+  assert.equal(config.version, "1.0.5");
   assert.deepEqual(config.experiences, ["search", "partner", "browser"]);
   assert.equal(config.partner.name, "ScriptNovaa");
   assert.match(config.partner.label, /Sponsored/i);
