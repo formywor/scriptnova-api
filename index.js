@@ -58,7 +58,9 @@ const app = express();
 app.disable("x-powered-by");
 app.disable("etag");
 app.set("trust proxy", true);
-app.use(express.json({limit: "64kb"}));
+const normalJson = express.json({limit: "64kb"});
+const clipJson = express.json({limit: "1450kb"});
+app.use((req, res, next) => (req.path === "/api/property-security/clips" && req.method === "POST" ? clipJson : normalJson)(req, res, next));
 app.use((req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -3042,6 +3044,7 @@ app.post("/api/admin/referrals/reverse", route(async (req, res) => {
     revokedUnusedTokens: result.revoked});
 }));
 
+require("./lib/property-security").mountPropertySecurity(app, {root});
 app.use((req, res) => res.status(404).json({ok: false, error: "Endpoint not found."}));
 
 if (require.main === module) {
