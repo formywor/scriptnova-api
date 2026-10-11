@@ -36,3 +36,30 @@ test('uncached pairing still rejects missing, used and expired codes without cre
 
 
 test('cold device transactions deliver heartbeats and parent commands without false removal',async()=>{const f=fixture('iii_dev',true),g=await f.parent(),d=await f.pair(g);const report={id:'f'.repeat(32),kind:'test',detail:'Synthetic connection check'};await f.call('device/heartbeat',{version:'0.2.2',status:{screen:'test'},events:[report]},d.token);assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].events[0].id,report.id);await f.call('test/alert',{device:d.id},'parent-a',g);assert.equal((await f.call('device/heartbeat',{},d.token)).commands[0].type,'test_alert');await f.call('remote/start',{device:d.id},'parent-a',g);await f.call('remote/command',{device:d.id,command:{type:'click',x:.5,y:.5}},'parent-a',g);assert.equal((await f.call('device/heartbeat',{},d.token)).commands[0].type,'click');await f.call('remote/stop',{device:d.id},'parent-a',g);await f.call('remove',{device:d.id},'parent-a',g);await assert.rejects(f.call('device/heartbeat',{},d.token),e=>e.statusCode===401);});
+
+test('device policy persists, stays private, and reaches only its own heartbeat',async()=>{
+ const f=fixture(),g=await f.parent(),a=await f.pair(g),b=await f.pair(g);
+ await f.call('device/settings',{device:a.id,policy:{audioEnabled:false,customWords:['darn'],retentionDays:7}},'parent-a',g);
+ const state=await f.call('state',undefined,'parent-a',g);assert.equal(state.devices.find(d=>d.id===a.id).policy.audioEnabled,false);
+ assert.equal((await f.call('device/heartbeat',{},a.token)).policy.audioEnabled,false);assert.equal((await f.call('device/heartbeat',{},b.token)).policy.audioEnabled,true);
+ await assert.rejects(f.call('device/settings',{device:a.id,policy:{}},a.token),/Account/);
+ await assert.rejects(f.call('device/settings',{device:a.id,policy:{quietHours:{timezone:'invalid'}}},'parent-a',g),/time zone/);
+ await assert.rejects(f.call('device/settings',{device:a.id,policy:{customWords:['sh*']}},'parent-a',g),/whole words/);
+});
+test('uncertain reports remain unblocked until parent confirms; reason metadata is bounded',async()=>{
+ const f=fixture(),g=await f.parent(),d=await f.pair(g),id='1'.repeat(32);
+ const event={id,kind:'needs_review',category:'nudity',url:'https://example.org/a',methods:['visual','shell'],frames:4,monitor:2,confidence:.95};
+ assert.equal((await f.call('device/heartbeat',{events:[event]},d.token)).blocks.length,0);
+ let state=await f.call('state',undefined,'parent-a',g);assert.deepEqual(state.devices[0].events[0].methods,['visual']);
+ await f.call('decision',{device:d.id,event:id,approve:false},'parent-a',g);
+ state=await f.call('state',undefined,'parent-a',g);assert.equal(state.devices[0].blocks[0].domain,'example.org');
+});
+test('temporary video exception preserves unrelated blocks and expires without deleting rules',async()=>{
+ const f=fixture(),g=await f.parent(),d=await f.pair(g);const url='https://youtu.be/abcdefghijk';
+ await f.call('device/heartbeat',{events:[{id:'2'.repeat(32),kind:'profanity',url}]},d.token);
+ await f.call('exception',{device:d.id,url,minutes:15},'parent-a',g);
+ let r=await f.call('device/heartbeat',{events:[{id:'3'.repeat(32),kind:'profanity',url}]},d.token);assert.equal(r.blocks.length,1);assert.equal(r.exceptions.length,1);
+ await assert.rejects(f.call('exception',{device:d.id,url,minutes:99999},'parent-a',g),/24 hours/);
+ await f.call('exception/remove',{device:d.id,key:r.exceptions[0].key},'parent-a',g);
+ r=await f.call('device/heartbeat',{events:[{id:'4'.repeat(32),kind:'profanity',url}]},d.token);assert.equal(r.exceptions.length,0);assert.equal(r.blocks.length,2);
+});
