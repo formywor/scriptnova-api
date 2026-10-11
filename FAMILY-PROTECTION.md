@@ -9,3 +9,11 @@ Signed Windows release metadata is read from https://raw.githubusercontent.com/f
 Publish the extension to browser stores and set `FAMILY_CHROME_EXTENSION_ID` and/or `FAMILY_EDGE_EXTENSION_ID` to enable installer-assisted extension setup. Until then use the bundled unpacked extension.
 
 Validation: `node --check index.js` and `node --test test/*.test.js`. Deploy the latest complete commit after all family files are present. Verify `/api/family/extension` returns JSON and `/api/family/state` rejects unauthenticated requests. Test account pairing and the first Windows update with a parent present.
+
+## Private family console (0.2.1)
+
+Parent authorization checks the authenticated account username against `iii_dev` on every family parent route, including unlock. Other accounts cannot claim the console or use a stolen family grant. Existing username/PIN login remains unchanged for other products. The static login page is public, but family data and controls require the owner account and a PIN-confirmed, ten-minute grant.
+
+Full-screen remote viewing uses the existing visible, five-minute session. Commands allow normalized pointer movement, left/right click, one/two clicks, ASCII text, navigation keys, scrolling and Ctrl+A/C/V/X/Z/Y. Arbitrary keyboard combinations and shell commands are rejected. Child heartbeat version reporting lets the viewer warn on older agents.
+
+Validation for this release: 141 API tests and nine Windows policy/update tests passed. Browser controls were verified against a synthetic screen; real owner login and paired-child input require the owner to sign in.
