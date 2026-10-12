@@ -15,6 +15,41 @@ function fixture(privateUsername='',coldTransactions=true){
  async function pair(grant,name='parent-a'){const {code}=await call('pairing',{},name,grant);return call('device/pair',{code,name:'Test child'},'');}
  return{call,parent,pair,get data(){return data},get calls(){return calls},routes};
 }
+test('short pairing accepts typing variations and retains strong device credentials',async()=>{
+ const f=fixture(),g=await f.parent(),before=Date.now()/1000;
+ const {code,expires}=await f.call('pairing',{},'parent-a',g);
+ assert.match(code,/^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/);
+ assert(expires>=before+600&&expires<=Date.now()/1000+600);
+ const typed=' '+code.toLowerCase().replace('-',' - ')+' ';
+ const d=await f.call('device/pair',{code:typed,name:'Child PC'},'');
+ assert.match(d.id,/^[a-f0-9]{48}$/);assert.match(d.token,/^[a-f0-9]{48}$/);
+ await assert.rejects(f.call('device/pair',{code:code.replace('-','')},''),/expired/);
+});
+test('replacement short codes invalidate earlier codes; malformed input cannot pair',async()=>{
+ const f=fixture(),g=await f.parent();const first=await f.call('pairing',{},'parent-a',g);
+ const second=await f.call('pairing',{test:true},'parent-a',g);assert.notEqual(first.code,second.code);
+ await assert.rejects(f.call('device/pair',{code:first.code},''),/expired/);
+ for(const code of ['','ABCD-EFG','ABCD-EFGHI','0000-1111','ABCD/EFGH'])await assert.rejects(f.call('device/pair',{code},''),/rejected/);
+ assert.equal((await f.call('device/pair',{code:second.code},'')).test,true);
+});
+test('unexpired legacy pairing codes still work once',async()=>{
+ const f=fixture(),g=await f.parent();await f.call('pairing',{},'parent-a',g);
+ const code='ab'.repeat(24),hash=require('node:crypto').createHash('sha256').update(code).digest('hex');
+ const record=Object.values(f.data.familyProtection.pairings)[0];f.data.familyProtection.pairings[hash]={...record};
+ const d=await f.call('device/pair',{code},'');assert(d.token);
+ await assert.rejects(f.call('device/pair',{code},''),/expired/);
+});
+test('pairing collisions never overwrite another family and retry with a fresh code',async t=>{
+ const crypto=require('node:crypto'),f=fixture(),g=await f.parent(),other=await f.parent('parent-b');
+ const mocked=t.mock.method(crypto,'randomInt',()=>0);
+ const first=await f.call('pairing',{},'parent-a',g);assert.equal(first.code,'AAAA-AAAA');
+ await assert.rejects(f.call('pairing',{},'parent-b',other),e=>e.statusCode===503);
+ let draws=0;mocked.mock.mockImplementation(()=>draws++<8?0:1);
+ const second=await f.call('pairing',{},'parent-b',other);assert.equal(second.code,'BBBB-BBBB');
+ const a=await f.call('device/pair',{code:first.code},''),b=await f.call('device/pair',{code:second.code},'');
+ assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].id,a.id);
+ assert.equal((await f.call('state',undefined,'parent-b',other)).devices[0].id,b.id);
+});
 test('family routes are isolated and parent grant is bound to account session',async()=>{const f=fixture();assert([...f.routes.keys()].every(k=>k.includes('/api/family/')));await assert.rejects(f.call('state'),/Unlock/);const grant=await f.parent();await assert.rejects(f.call('state',undefined,'parent-b',grant),/Unlock/);const device=await f.pair(grant);await assert.rejects(f.call('state',undefined,device.token,grant),/Account/);assert.deepEqual(Object.keys(f.data),['familyProtection']);});
 test('pairing is one-time; reports deduplicate; nudity blocks host and profanity blocks video',async()=>{const f=fixture(),g=await f.parent();const {code}=await f.call('pairing',{},'parent-a',g);const d=await f.call('device/pair',{code,name:'PC'},'');await assert.rejects(f.call('device/pair',{code},''),/expired/);const events=[{id:'a'.repeat(32),kind:'nudity',url:'https://www.example.org/video'},{id:'b'.repeat(32),kind:'profanity',url:'https://youtu.be/abcdefghijk'}];const r=await f.call('device/heartbeat',{events},d.token);assert.equal(r.blocks[0].domain,'example.org');assert.equal(r.blocks[1].key,'youtube:abcdefghijk');await f.call('device/heartbeat',{events},d.token);assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].events.length,2);const gb=await f.parent('parent-b');await assert.rejects(f.call('unblock',{device:d.id,key:r.blocks[0].key},'parent-b',gb),/not found/);await f.call('remove',{device:d.id},'parent-a',g);await assert.rejects(f.call('device/heartbeat',{},d.token),/credential/);});
 test('review requires opt-in, never stores media, and clears only the reviewed incident',async()=>{process.env.GEMINI_API_KEY='test-key';const f=fixture(),g=await f.parent(),d=await f.pair(g);const e={id:'c'.repeat(32),kind:'profanity',url:'https://youtu.be/abcdefghijk'};await f.call('device/heartbeat',{events:[e]},d.token);let result=await f.call('device/review',{event:e.id,evidence:{mime:'audio/wav',data:'YWJj'}},d.token);assert.equal(result.status,'needs_parent');assert.equal(f.calls,0);
