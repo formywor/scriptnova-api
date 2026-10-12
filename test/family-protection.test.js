@@ -25,6 +25,28 @@ test('short pairing accepts typing variations and retains strong device credenti
  assert.match(d.id,/^[a-f0-9]{48}$/);assert.match(d.token,/^[a-f0-9]{48}$/);
  await assert.rejects(f.call('device/pair',{code:code.replace('-','')},''),/expired/);
 });
+test('browser controls and previews stay inside a current owned assistance session',async()=>{
+ const f=fixture(),g=await f.parent(),d=await f.pair(g),other=await f.parent('parent-b');
+ assert.deepEqual(command({type:'tabs'}),{type:'tabs'});assert.throws(()=>command({type:'close_tab',tab:-1}));
+ await assert.rejects(f.call('remote/command',{device:d.id,command:{type:'tabs'}},'parent-a',g),/expired/);
+ await f.call('remote/start',{device:d.id},'parent-a',g);
+ await assert.rejects(f.call('remote/command',{device:d.id,command:{type:'close_tab',tab:123,browser:'a'.repeat(32)}},'parent-b',other),/not found/);
+ await f.call('remote/command',{device:d.id,command:{type:'preview_tab',tab:123,browser:'a'.repeat(32)}},'parent-a',g);
+ const r=await f.call('device/heartbeat',{},d.token),session=r.commands[0].session;
+ await f.call('device/heartbeat',{browser:{id:'test',type:'preview_tab',session:'wrong',expires:Date.now()/1000+20,preview:{url:'https://example.org',text:'private'}}},d.token);
+ assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].browser,null);
+ await f.call('device/heartbeat',{browser:{id:'test',type:'preview_tab',session,expires:Date.now()/1000+20,preview:{url:'https://example.org',title:'Example',text:'x'.repeat(7000)}}},d.token);
+ assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].browser.preview.text.length,6000);
+ await f.call('remote/stop',{device:d.id},'parent-a',g);
+ assert.equal((await f.call('state',undefined,'parent-a',g)).devices[0].browser,null);
+});
+test('early protection choices persist per device and reject non-boolean values',async()=>{
+ const f=fixture(),g=await f.parent(),a=await f.pair(g),b=await f.pair(g);
+ await f.call('device/settings',{device:a.id,policy:{earlyCaptionPause:true,blockExplicitTracks:true,slursEnabled:false}},'parent-a',g);
+ const first=await f.call('device/heartbeat',{},a.token),second=await f.call('device/heartbeat',{},b.token);
+ assert.equal(first.policy.earlyCaptionPause,true);assert.equal(first.policy.slursEnabled,false);assert.equal(second.policy.earlyCaptionPause,false);
+ await assert.rejects(f.call('device/settings',{device:a.id,policy:{earlyCaptionPause:'yes'}},'parent-a',g),/on or off/);
+});
 test('replacement short codes invalidate earlier codes; malformed input cannot pair',async()=>{
  const f=fixture(),g=await f.parent();const first=await f.call('pairing',{},'parent-a',g);
  const second=await f.call('pairing',{test:true},'parent-a',g);assert.notEqual(first.code,second.code);
