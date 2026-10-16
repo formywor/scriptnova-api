@@ -36,3 +36,11 @@ test('SDK and runtime errors are identified by stage without exposing raw error 
 test('token verifier preserves revocation checks and passes the actual token only to the SDK',async()=>{
  let actual;const verify=createTokenVerifier({loadAuth:async()=>({getAuth:()=>({verifyIdToken:async(...args)=>{actual=args;return{uid:'alice'};}})}),getApp:async()=>({})});assert.deepEqual(await verify('test.token'),{uid:'alice'});assert.deepEqual(actual,['test.token',true]);
 });
+test('missing rate-limit configuration has a safe explicit diagnostic after identity verification',async()=>{
+ const events=[];const app=createApp({getStore:async()=>{throw Error('must not reach store');},verifyToken:async()=>({uid:'alice'}),config:{origins:[],rateSecret:''},log:e=>events.push(e)});const response=await app(request());assert.equal(response.status,503);assert.deepEqual(events,[{event:'API_REQUEST_FAILED',stage:'configuration',reason:'RATE_LIMIT_SECRET_MISSING_OR_SHORT'}]);assert.deepEqual(await response.json(),{code:'UNAVAILABLE'});
+});
+test('database failures identify the phase without exposing server credentials',async()=>{
+ for(const [store,stage] of [[async()=>{throw Object.assign(Error('private URL'),{code:'DATABASE_URL_MISSING'});},'storage_initialization'],[async()=>({allow:async()=>{throw Error('private database contents');}}),'rate_limit_storage'],[async()=>({allow:async()=>true,account:async()=>{throw Error('private user contents');}}),'account_storage']]){
+  const events=[];const app=createApp({getStore:store,verifyToken:async()=>({uid:'alice'}),config:{origins:[],rateSecret:'x'.repeat(40)},log:e=>events.push(e)});assert.equal((await app(request())).status,503);assert.equal(events[0].stage,stage);assert.equal(JSON.stringify(events).includes('private'),false);
+ }
+});
