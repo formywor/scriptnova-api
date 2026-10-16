@@ -1,10 +1,16 @@
 {
   "name": "nebula-api",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "main": "index.js",
   "engines": { "node": "24.x" },
-  "scripts": { "start": "node scripts/dev.mjs", "check": "node --check index.js && node --check lib/app.mjs && node --check lib/firebase.mjs && node --test test/*.test.mjs" },
-  "dependencies": { "firebase-admin": "^14.2.0" }
+  "scripts": {
+    "start": "node scripts/dev.mjs",
+    "check": "node --check index.js && node --check lib/app.mjs && node --check lib/firebase.mjs && node --test test/*.test.mjs",
+    "check:sdk": "node --no-experimental-require-module scripts/check-firebase.mjs",
+    "postinstall": "node --no-experimental-require-module scripts/check-firebase.mjs"
+  },
+  "dependencies": { "firebase-admin": "14.5.0" },
+  "overrides": { "jwks-rsa": { "jose": "4.15.9" } }
 }
