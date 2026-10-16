@@ -1,6 +1,6 @@
 import {Readable} from 'node:stream';
 import {createApp} from './lib/app.mjs';
-import {getStore} from './lib/firebase.mjs';
+import {getStore,verifyToken} from './lib/firebase.mjs';
 
 export function createNodeHandler(app) {
   return async function handler(req,res) {
@@ -27,4 +27,4 @@ export function createNodeHandler(app) {
   };
 }
 
-export default createNodeHandler(createApp({getStore}));
+export default createNodeHandler(createApp({getStore,verifyToken}));
