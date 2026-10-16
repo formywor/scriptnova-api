@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {authenticate} from '../lib/accounts.mjs';
-import {adminOptionsFromEnv} from '../lib/firebase.mjs';
+import {adminOptionsFromEnv,createTokenVerifier} from '../lib/firebase.mjs';
 import {createApp} from '../lib/app.mjs';
 
 const request=()=>new Request('https://api.scriptnovaa.com/api/nebula/account',{headers:{Authorization:'Bearer valid.test.token'}});
@@ -23,4 +23,16 @@ test('admin setup accepts escaped and JSON-quoted PEMs without requiring a datab
  const pem='-----BEGIN PRIVATE KEY-----\nTEST-PLACEHOLDER\n-----END PRIVATE KEY-----';
  for(const value of [pem,pem.replace(/\n/g,'\\n'),JSON.stringify(pem),"'"+pem.replace(/\n/g,'\\n')+"'"]){const options=adminOptionsFromEnv({FIREBASE_PROJECT_ID:' project ',FIREBASE_CLIENT_EMAIL:' admin@example.com ',FIREBASE_PRIVATE_KEY:value});assert.equal(options.credentials.privateKey,pem);assert.equal(options.credentials.projectId,'project');assert.equal(options.databaseURL,undefined);}
  assert.throws(()=>adminOptionsFromEnv({}),e=>e.code==='app/invalid-credential');
+});
+test('SDK and runtime errors are identified by stage without exposing raw error messages',async()=>{
+ const cases=[
+  {loadAuth:async()=>{throw Object.assign(Error('credential-bearing module path'),{code:'ERR_MODULE_NOT_FOUND'});},expected:{reason:'AUTH_SDK_MODULE_MISSING',stage:'sdk_import'}},
+  {loadAuth:async()=>({getAuth:()=>({})}),getApp:async()=>{throw Object.assign(Error('private PEM'),{code:'app/invalid-credential'});},expected:{reason:'app/invalid-credential',stage:'admin_initialization'}},
+  {loadAuth:async()=>({getAuth:()=>({verifyIdToken:async()=>{throw Object.assign(Error('private service URL'),{code:'ETIMEDOUT'});}})}),getApp:async()=>({}),expected:{reason:'AUTH_NETWORK_TIMEOUT',stage:'token_verification'}},
+  {loadAuth:async()=>({}),getApp:async()=>({}),expected:{reason:'AUTH_VERIFIER_TYPE_ERROR',stage:'token_verification'}},
+ ];
+ for(const options of cases){const events=[];await assert.rejects(authenticate(request(),createTokenVerifier(options),(reason,details)=>events.push({reason,...details})),e=>e.status===503);assert.deepEqual(events,[options.expected]);assert.equal(JSON.stringify(events).includes('private'),false);}
+});
+test('token verifier preserves revocation checks and passes the actual token only to the SDK',async()=>{
+ let actual;const verify=createTokenVerifier({loadAuth:async()=>({getAuth:()=>({verifyIdToken:async(...args)=>{actual=args;return{uid:'alice'};}})}),getApp:async()=>({})});assert.deepEqual(await verify('test.token'),{uid:'alice'});assert.deepEqual(actual,['test.token',true]);
 });
