@@ -1,0 +1,13 @@
+**/.git
+**/.env
+**/.env.*
+**/node_modules
+**/.venv
+**/.deps
+**/__pycache__
+**/*.pyc
+**/*.snapshot.json
+model/data
+model/teachers.local.json
+test
+training-export*

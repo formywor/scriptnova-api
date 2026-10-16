@@ -1,0 +1,4 @@
+model/
+test/
+*.snapshot.json
+training-export*.jsonl

@@ -1,12 +1,16 @@
 {
   "name": "nebula-api",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "main": "index.js",
   "engines": { "node": "24.x" },
   "scripts": {
     "start": "node scripts/dev.mjs",
+    "model:data": "node scripts/model-data.mjs",
+    "model:review": "python model/cli.py review",
+    "model:train": "node scripts/model-data.mjs train",
+    "model:serve": "python model/serve.py",
     "check": "node --check index.js && node --check lib/app.mjs && node --check lib/firebase.mjs && node --test test/*.test.mjs",
     "check:sdk": "node --no-experimental-require-module scripts/check-firebase.mjs",
     "postinstall": "node --no-experimental-require-module scripts/check-firebase.mjs"

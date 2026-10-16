@@ -4,3 +4,16 @@ node_modules/
 .vercel/
 *-service-account.json
 training-export*.jsonl
+model/.venv/
+model/.deps/
+model/teachers.local.json
+model/.env
+model/data/
+model/checkpoints/
+model/__pycache__/
+model/tests/__pycache__/
+*.pt
+*.pth
+*.snapshot.json
+model-assets/*
+!model-assets/nebula-pilot.json

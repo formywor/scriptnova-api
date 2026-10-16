@@ -1,0 +1,18 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+WORKDIR /app
+
+COPY model/requirements.txt /app/requirements.txt
+RUN python -m pip install --no-cache-dir -r /app/requirements.txt
+
+COPY nebula-rules.json /app/nebula-rules.json
+COPY model/nebula.py model/rules.py model/serve.py /app/model/
+COPY model/checkpoints/nebula-pilot.pt /app/model/checkpoints/nebula-pilot.pt
+
+RUN useradd --uid 1000 --create-home nebula
+USER nebula
+EXPOSE 7860
+
+# Set NEBULA_MODEL_KEY as a host secret. Never embed it in this image.
+CMD ["python", "model/serve.py", "--checkpoint", "model/checkpoints/nebula-pilot.pt", "--host", "0.0.0.0", "--port", "7860"]

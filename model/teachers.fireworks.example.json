@@ -1,0 +1,10 @@
+[
+  {
+    "name": "fireworks-teacher",
+    "url": "https://api.fireworks.ai/inference/v1/chat/completions",
+    "model": "accounts/fireworks/models/gpt-oss-120b",
+    "keyEnv": "NEBULA_TEACHER_KEY",
+    "trainingAllowed": false,
+    "maxTokens": 1024
+  }
+]
