@@ -1,0 +1,10 @@
+{
+  "name": "nebula-api",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "engines": { "node": "24.x" },
+  "scripts": { "start": "node scripts/dev.mjs", "check": "node --check index.js && node --check lib/app.mjs && node --check lib/firebase.mjs && node --test test/*.test.mjs" },
+  "dependencies": { "firebase-admin": "^14.2.0" }
+}
