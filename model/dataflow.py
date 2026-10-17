@@ -22,7 +22,7 @@ def write_jsonl(path, rows):
 
 def redact(text):
     text = re.sub(r'\b[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}\b', '[email removed]', text)
-    text = re.sub(r'\b(?:sk-|AIza)[\w-]{15,}\b', '[credential removed]', text)
+    text = re.sub(r'\b(?:sk-|AIza|hf_|gsk_|AQ\.)[\w-]{15,}\b', '[credential removed]', text)
     text = re.sub(r'\bBearer\s+[\w.~/+=-]{12,}', '[credential removed]', text, flags=re.I)
     text = re.sub(r'(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w)', '[number removed]', text)
     return text

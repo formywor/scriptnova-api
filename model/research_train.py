@@ -43,6 +43,9 @@ def main(argv=None,on_progress=None):
     parser.add_argument('--lr',type=float,default=.00005)
     parser.add_argument('--max-seconds',type=float,default=3600)
     parser.add_argument('--benchmark',action='store_true')
+    parser.add_argument('--save-every',type=int,default=200)
+    parser.add_argument('--sampling-seed',type=int,default=42)
+    parser.add_argument('--best-checkpoint',action='store_true',help='Also preserve the lowest validation-loss checkpoint')
     parser.add_argument('--rendezvous',help='File rendezvous for the local CPU distributed test')
     args=parser.parse_args(argv)
     world=int(os.environ.get('WORLD_SIZE','1'));rank=int(os.environ.get('RANK','0'));local=int(os.environ.get('LOCAL_RANK','0'))
@@ -50,9 +53,10 @@ def main(argv=None,on_progress=None):
         from research_client import Client
         client=Client();job=os.environ['NEBULA_JOB_LEASE']
         on_progress=lambda step:client.call('heartbeat',{'lease':job})
-    if args.steps<1 or args.steps>10000 or args.batch<world or args.batch%world or not math.isfinite(args.lr) or args.lr<=0 or not math.isfinite(args.max_seconds) or not 0<args.max_seconds<=7200:
+    if args.steps<1 or args.steps>10000 or args.save_every<1 or args.batch<world or args.batch%world or not math.isfinite(args.lr) or args.lr<=0 or not math.isfinite(args.max_seconds) or not 0<args.max_seconds<=7200:
         parser.error('Use positive steps (up to 10000), LR, and a global batch divisible by worker count')
-    torch.set_num_threads(2);torch.manual_seed(42)
+    if not 0<=args.sampling_seed<2**31:parser.error('Sampling seed must fit a nonnegative 31-bit integer')
+    torch.set_num_threads(2);torch.manual_seed(args.sampling_seed)
     if args.device=='cuda':torch.cuda.set_device(local);device=torch.device('cuda',local)
     else:device=torch.device('cpu')
     if world>1:
@@ -76,14 +80,15 @@ def main(argv=None,on_progress=None):
         optimizer=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=.01)
         scaler=torch.amp.GradScaler('cuda',enabled=amp and dtype==torch.float16,init_scale=1024)
         signature={'format':'research-ddp-1','dataSha256':hashlib.sha256(args.data.read_bytes()).hexdigest(),
-                   'world':world,'batch':args.batch,'focus':args.focus,'lr':args.lr,'amp':str(dtype) if amp else 'none'}
+                   'world':world,'batch':args.batch,'focus':args.focus,'lr':args.lr,'amp':str(dtype) if amp else 'none','samplingSeed':args.sampling_seed}
         state=torch.load(args.resume,map_location='cpu',weights_only=True).get('trainingState',{})
         if state.get('signature')==signature:
             optimizer.load_state_dict(state['optimizer']);scaler.load_state_dict(state['scaler'])
         inherited=metadata.get('steps',0)
         wrapped=DistributedDataParallel(model,device_ids=[local] if amp else None,broadcast_buffers=False) if world>1 else model
-        completed=0;trained=0;started=time.monotonic();bad=0
+        completed=0;trained=0;started=time.monotonic();bad=0;best_value=float('inf')
         def checkpoint():
+            nonlocal best_value
             barrier()
             if rank==0 and not args.benchmark:
                 model.eval()
@@ -92,13 +97,18 @@ def main(argv=None,on_progress=None):
                 report={'steps':inherited+completed,'stepsThisRun':completed,'validationLoss':value,
                         'dataSha256':signature['dataSha256'],'objective':'assistant','experimental':True,
                         'qualityApproved':False,'trainingStateIncluded':True,'worldSize':world,'focus':args.focus}
-                save(model,args.output,report,training_state={'signature':signature,'optimizer':optimizer.state_dict(),'scaler':scaler.state_dict()})
+                training_state={'signature':signature,'optimizer':optimizer.state_dict(),'scaler':scaler.state_dict()}
+                save(model,args.output,report,training_state=training_state)
+                if args.best_checkpoint and value<best_value:
+                    best_value=value
+                    save(model,args.output.with_suffix('.best.pt'),report,training_state=training_state)
                 print(json.dumps({'checkpoint':str(args.output),**report}),flush=True)
             barrier()
+        if args.best_checkpoint and not args.benchmark:checkpoint()
         while completed<args.steps:
             step=inherited+completed
             pool=focused if focused and args.focus!='balanced' and step%4==0 else training
-            batch=global_batch(pool,args.batch,step)
+            batch=global_batch(pool,args.batch,step,args.sampling_seed)
             portion=args.batch//world;batch=batch[rank*portion:(rank+1)*portion]
             wrapped.train();optimizer.zero_grad(set_to_none=True)
             value,count=summed_loss(wrapped,batch,device,amp,dtype)
@@ -121,13 +131,14 @@ def main(argv=None,on_progress=None):
                 if on_progress:on_progress(completed)
                 print(json.dumps({'step':completed,'worldSize':world,'globalBatch':args.batch,
                                   'targetsPerSecond':round(trained/max(.001,time.monotonic()-started))}),flush=True)
-            if completed%200==0:checkpoint()
+            if completed%args.save_every==0:checkpoint()
             stop=torch.tensor(int(time.monotonic()-started>=args.max_seconds),device=device)
             if world>1:dist.all_reduce(stop,op=dist.ReduceOp.MAX)
             if stop.item():break
         checkpoint()
         if rank==0:
-            result={'completedSteps':completed,'worldSize':world,'targetsPerSecond':round(trained/max(.001,time.monotonic()-started))}
+            result={'completedSteps':completed,'worldSize':world,'targetsPerSecond':round(trained/max(.001,time.monotonic()-started)),
+                    'peakGpuMemoryBytes':torch.cuda.max_memory_allocated(device) if amp else 0}
             args.output.with_suffix('.performance.json').write_text(json.dumps(result),encoding='utf-8')
             print(json.dumps(result),flush=True)
     except KeyboardInterrupt:

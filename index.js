@@ -1,6 +1,7 @@
 import {Readable} from 'node:stream';
 import {createApp} from './lib/app.mjs';
-import {getStore,verifyToken} from './lib/firebase.mjs';
+import {getStore,verifyToken,getAdminDatabase} from './lib/firebase.mjs';
+import {readLearningTopics} from './lib/learning.mjs';
 import {createResearchHandler} from './lib/research.mjs';
 import {researchServices} from './lib/research-storage.mjs';
 
@@ -30,5 +31,5 @@ export function createNodeHandler(app) {
 }
 
 const publicApp=createApp({getStore,verifyToken});
-const researchApp=createResearchHandler({services:researchServices});
+const researchApp=createResearchHandler({services:researchServices,learning:async now=>readLearningTopics(await getAdminDatabase(),now)});
 export default createNodeHandler(request=>new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));

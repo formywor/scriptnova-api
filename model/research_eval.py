@@ -71,10 +71,10 @@ def focus_for(report):
 
 def select_focus(rows,focus):
     if focus=='balanced':return rows
-    if focus=='language':return [row for row in rows if row.get('source',{}).get('kind') in ['public','teacher']]
+    if focus=='language':return [row for row in rows if row.get('source',{}).get('kind') in ['public','teacher'] or row.get('source',{}).get('curriculum')=='v5-conversation']
     def match(row):
         answer=' '.join(m['content'] for m in row['messages'] if m['role']=='assistant').lower()
         if focus=='identity':return 'nebula' in answer
         if focus=='math':return bool(re.search(r'\d+\s*[+\-]\s*\d+\s*=',answer))
-        return len(row['messages'])>2 or 'your name is' in answer or 'bag is' in answer
+        return row.get('splitGroup','').startswith(('name-','copy-','color-')) or len(row['messages'])>2 or 'your name is' in answer or 'bag is' in answer
     return [row for row in rows if match(row)]

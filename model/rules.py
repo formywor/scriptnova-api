@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 
 def owner_instructions():
-    value = json.loads((Path(__file__).resolve().parent.parent / 'nebula-rules.json').read_text(encoding='utf-8'))
+    configured = os.environ.get('NEBULA_RULES_FILE')
+    path = Path(configured) if configured else Path(__file__).resolve().parent.parent / 'nebula-rules.json'
+    value = json.loads(path.read_text(encoding='utf-8'))
     lines = value.get('instructions')
     if not isinstance(lines, list) or not lines or any(not isinstance(line, str) or not line.strip() for line in lines): raise ValueError('Invalid owner rules')
     extra = os.environ.get('NEBULA_OWNER_INSTRUCTIONS', '')

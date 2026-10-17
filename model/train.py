@@ -53,7 +53,7 @@ def partition_rows(rows, seed):
     for row in rows:
         identifier=hashlib.sha256(json.dumps(row['messages'],sort_keys=True).encode()).hexdigest()
         # Owned curriculum variants of one scenario stay in the same partition.
-        group=row.get('splitGroup') if row.get('source',{}).get('kind')=='seed' else None
+        group=row.get('splitGroup') if row.get('source',{}).get('kind') in ['seed','public','teacher'] else None
         split_key='group:'+group if isinstance(group,str) and group else identifier
         score=int(hashlib.sha256((str(seed)+':'+split_key).encode()).hexdigest()[:8],16)
         (validation if score%10==0 else training).append(row)

@@ -15,6 +15,15 @@ from nebula import load
 from research_client import Client,ResearchError
 from research_eval import evaluate,focus_for
 from research_train import main as train_one
+from rules import owner_instructions
+
+def configure_rules(project):
+    # Code can live above the trainer/evaluator data folders in combined mode.
+    # Bind both this process and its GPU subprocesses to the verified restored rules.
+    path=(Path(project)/'nebula-rules.json').resolve()
+    if not path.is_file():raise ResearchError('RESTORED_OWNER_RULES_MISSING')
+    os.environ['NEBULA_RULES_FILE']=str(path)
+    owner_instructions()
 
 def prefer(base,next):
     keys=['identity','math','memory','extraction','health']
@@ -22,12 +31,28 @@ def prefer(base,next):
     return all(next[k]>=base[k]-.05 for k in keys) and next['health']>=base['health'] and next['loss']<=base['loss']*1.10 and (
         score(next)>=score(base)+.025 or score(next)>=score(base) and next['loss']<base['loss']*.995)
 
-def launch(project,resume,output,steps,gpus,focus,lease=None,benchmark=False,lr=.00005,max_seconds=3600):
+def training_plan(state):
+    rejected=max(0,min(3,int(state.get('rejectedRounds') or 0)))
+    focus='balanced'
+    report=(state.get('lastEvaluation') or {}).get('report') or {}
+    if rejected:
+        if report.get('health',1)<.8:focus='language'
+        else:
+            categories=sorted(['identity','math','memory','extraction'],key=lambda key:report.get(key,0))
+            focus=categories[(rejected-1)%len(categories)]
+            if focus=='extraction':focus='memory'
+    # Rejected checkpoints are never reused as the stable head. Change the
+    # optimization on retry instead of replaying the same deterministic run.
+    return {'focus':focus,'lr':.000025*(.5**rejected),'rejectedRounds':rejected}
+
+def launch(project,resume,output,steps,gpus,focus,lease=None,benchmark=False,lr=.00005,max_seconds=3600,
+           data=None,batch=16,best=False,save_every=200,sampling_seed=42):
     command=[sys.executable]
     if gpus>1:command+=['-m','torch.distributed.run','--standalone','--nproc_per_node',str(gpus)]
-    command+=[str(Path(__file__).with_name('research_train.py')),'--data',str(project/'model/data/v3-chat.jsonl'),
-              '--resume',str(resume),'--output',str(output),'--steps',str(steps),'--batch','16',
-              '--focus',focus,'--lr',str(lr),'--max-seconds',str(max_seconds)]
+    command+=[str(Path(__file__).with_name('research_train.py')),'--data',str(data or project/'model/data/v3-chat.jsonl'),
+              '--resume',str(resume),'--output',str(output),'--steps',str(steps),'--batch',str(batch),
+              '--focus',focus,'--lr',str(lr),'--max-seconds',str(max_seconds),'--save-every',str(save_every),'--sampling-seed',str(sampling_seed)]
+    if best:command+=['--best-checkpoint']
     if benchmark:command+=['--benchmark']
     env=dict(os.environ)
     if lease:env['NEBULA_JOB_LEASE']=lease
@@ -91,6 +116,7 @@ def main(argv=None):
         if not state.get('head'):
             print('Waiting for Kaggle to upload the starting model and data.',flush=True);time.sleep(30);continue
         backup=client.download(state['dataset'],project/'Nebula_V3_Data.pt');restore_data(backup,project)
+        configure_rules(project)
         if args.role=='trainer' and gpus is None:
             head=client.download(state['head'],project/'benchmark-source.pt')
             gpus=choose_gpus(project,head,args.gpus)
@@ -104,7 +130,9 @@ def main(argv=None):
         base=client.download(job['base'],project/'base.pt')
         if args.role=='trainer':
             output=project/f'round-{claimed["revision"]}.pt'
-            launch(project,base,output,2000,gpus,'balanced',lease,max_seconds=max(1,min(3600,deadline-time.monotonic())))
+            plan=training_plan(claimed)
+            print(json.dumps({'trainingPlan':plan,'base':job['base']}),flush=True)
+            launch(project,base,output,2000,gpus,plan['focus'],lease,lr=plan['lr'],max_seconds=max(1,min(3600,deadline-time.monotonic())))
             client.call('heartbeat',{'lease':lease})
             candidate=client.upload(output,parent=job['base'],lease=lease)
             client.call('submit',{'lease':lease,'id':candidate})

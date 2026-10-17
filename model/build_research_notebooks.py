@@ -7,7 +7,7 @@ root=Path(__file__).resolve().parent
 
 def build(role):
     names=['nebula.py','train.py','dataflow.py','teacher_http.py','rules.py','kaggle_migrate.py',
-           'research_train.py','research_client.py','research_eval.py','research_worker.py','research_cases.json']
+           'research_train.py','research_client.py','research_eval.py','research_worker.py','research_combined.py','research_cases.json']
     sources={'model/'+name:(root/name).read_text(encoding='utf-8') for name in names}
     cells=[]
     def add(kind,text):
@@ -15,7 +15,7 @@ def build(role):
         cell={'cell_type':kind,'id':f'nebula-{len(cells):02d}','metadata':{},'source':text.splitlines(True)}
         if kind=='code':cell.update(execution_count=None,outputs=[])
         cells.append(cell)
-    title='Kaggle trainer' if role=='trainer' else 'Colab evaluator and training experiments'
+    title={'trainer':'Kaggle trainer','evaluator':'Colab evaluator and training experiments','combined':'Kaggle training and evaluation (Colab optional)'}[role]
     add('markdown',f'''# Nebula: {title}
 
 This coordinates private, versioned checkpoints through your API. It never updates the public chat model.
@@ -24,7 +24,7 @@ This coordinates private, versioned checkpoints through your API. It never updat
 
 The controller accepts a new checkpoint only when the locked task checks and held-out loss pass conservative comparisons. These are limited diagnostics, not proof of broad intelligence. Three consecutive rejected rounds pause the campaign for review. Old unreferenced paths are pruned, retaining recent versions and rollback parents. Repository history still retains deleted files and may consume storage; monitor Hugging Face usage. The service limits file size and upload frequency.
 ''')
-    if role=='trainer':
+    if role in ['trainer','combined']:
         add('markdown','''## Kaggle setup
 
 1. Import this notebook and keep it private.
@@ -45,11 +45,16 @@ API_BASE='https://api.scriptnovaa.com/api/nebula/research'
 HOURS=6
 MAX_ROUNDS=12
 GPU_MODE='auto'  # 'auto' benchmarks 1 vs 2; '2' forces two when available.
-try:
-    token=UserSecretsClient().get_secret('NEBULA_TRAINER_TOKEN')
-    hf_token=UserSecretsClient().get_secret('NEBULA_HF_TOKEN')
-except Exception:
-    raise RuntimeError('Add and enable Kaggle secrets NEBULA_TRAINER_TOKEN and NEBULA_HF_TOKEN.') from None
+def read_secret(name):
+    try:
+        value=UserSecretsClient().get_secret(name)
+    except Exception:
+        raise RuntimeError(f'Kaggle cannot read {name}. Open Add-ons > Secrets, add that exact name, and enable notebook access. Check Internet is on.') from None
+    if not isinstance(value,str) or not value.strip():
+        raise RuntimeError(f'Kaggle secret {name} is empty.')
+    return value.strip()
+token=read_secret('NEBULA_TRAINER_TOKEN')
+hf_token=read_secret('NEBULA_HF_TOKEN')
 os.environ['NEBULA_WORKER_TOKEN']=token
 os.environ['NEBULA_RESEARCH_API']=API_BASE
 os.environ['NEBULA_HF_REPO']='iiidevv/nebula-research'
@@ -97,7 +102,7 @@ for name,content in sources.items():
     target.write_text(content,encoding='utf-8')
 sys.path.insert(0,str(project/'model'))
 for module in ['nebula','train','dataflow','teacher_http','rules','kaggle_migrate',
-               'research_train','research_client','research_eval','research_worker']:
+               'research_train','research_client','research_eval','research_worker','research_combined']:
     sys.modules.pop(module,None)
 from research_client import Client
 client=Client()
@@ -105,14 +110,30 @@ status=client.call('state')
 print({'coordinatorConnected':True,'initialized':bool(status.get('head')),
        'revision':status.get('revision',0),'publicAutoUpdate':False})
 ''')
-    options=f"['--role',{role!r},'--project',str(project),'--hours',str(HOURS),'--rounds',str(MAX_ROUNDS)]"
-    if role=='trainer':options+="+['--gpus',GPU_MODE]"
-    add('code','from research_worker import main\nmain('+options+')\n')
+    if role=='combined':
+        add('markdown','''## Run everything on Kaggle
+
+This mode alternates training and evaluation in the same runtime. Colab is optional and should remain stopped while using this mode. Add and enable all three Kaggle secrets: `NEBULA_TRAINER_TOKEN`, `NEBULA_EVALUATOR_TOKEN`, and `NEBULA_HF_TOKEN`. The role tokens must match Vercel. Separate phase folders preserve each worker's output. It resumes any pending evaluation before starting more training.
+''')
+        add('code','''os.environ['NEBULA_TRAINER_TOKEN']=token
+os.environ['NEBULA_EVALUATOR_TOKEN']=read_secret('NEBULA_EVALUATOR_TOKEN')
+from research_combined import main
+main(['--project',str(project),'--hours',str(HOURS),'--rounds',str(MAX_ROUNDS),'--gpus',GPU_MODE])
+''')
+    else:
+        options=f"['--role',{role!r},'--project',str(project),'--hours',str(HOURS),'--rounds',str(MAX_ROUNDS)]"
+        if role=='trainer':options+="+['--gpus',GPU_MODE]"
+        add('code','from research_worker import main\nmain('+options+')\n')
     add('markdown','''## After the run
 
 Keep the previous stable checkpoints and verify reports before any public deployment. On Kaggle, confirm the saved version's Output. The API selects research checkpoints only; the website's model endpoint and embedded live model are unchanged. Worker secrets must remain in the platform secret manager, never in saved cells or output.
 ''')
-    name='Nebula_Kaggle_Trainer.ipynb' if role=='trainer' else 'Nebula_Colab_Evaluator.ipynb'
+    if role=='combined':
+        for cell in cells:
+            if cell['cell_type']=='markdown':
+                text=''.join(cell['source']).replace('Start the Colab evaluator notebook too.', 'The evaluator runs here; Colab is not required.').replace("Kaggle pauses at each 2,000-step boundary for Colab's decision.", 'Kaggle evaluates after every 2,000 training steps before continuing.')
+                cell['source']=text.splitlines(True)
+    name={'trainer':'Nebula_Kaggle_Trainer.ipynb','evaluator':'Nebula_Colab_Evaluator.ipynb','combined':'Nebula_Kaggle_Complete.ipynb'}[role]
     target=root/name
     target.write_text(json.dumps({'nbformat':4,'nbformat_minor':5,
         'metadata':{'kernelspec':{'display_name':'Python 3','language':'python','name':'python3'}},'cells':cells},indent=1),encoding='utf-8')
@@ -120,4 +141,4 @@ Keep the previous stable checkpoints and verify reports before any public deploy
     return target
 
 if __name__=='__main__':
-    for role in ['trainer','evaluator']:build(role)
+    for role in ['trainer','evaluator','combined']:build(role)

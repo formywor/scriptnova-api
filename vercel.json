@@ -1,5 +1,5 @@
 {
   "version": 2,
-  "builds": [{"src":"index.js","use":"@vercel/node","config":{"maxDuration":120,"includeFiles":["nebula-rules.json","model-assets/nebula-pilot.json"]}}],
+  "builds": [{"src":"index.js","use":"@vercel/node","config":{"maxDuration":120,"includeFiles":["nebula-rules.json","model-assets/nebula-v4-experimental-1-01.part","model-assets/nebula-v4-experimental-1-02.part","model-assets/nebula-v4-experimental-1-03.part","model-assets/nebula-v4-experimental-1-04.part","model-assets/nebula-v4-experimental-1-05.part","model-assets/nebula-v4-experimental-1-06.part","model-assets/release.json"]}}],
   "routes": [{"src":"/(.*)","dest":"index.js"}]
 }
