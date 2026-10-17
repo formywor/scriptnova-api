@@ -1,0 +1,30 @@
+{
+  "format": "nebula-onnx-1",
+  "id": "nebula-v1-lite",
+  "config": {
+    "width": 256,
+    "heads": 8,
+    "layers": 10,
+    "context": 1024
+  },
+  "parameters": 8227328,
+  "trainingSteps": 35012,
+  "sourceSha256": "fb54811008d166a6c5bb0b3d5a6311af894d9aa6bcee1311b183ee0a54f8a0df",
+  "bytes": 9628657,
+  "sha256": "ba8e0adf8e0ca27ed54b29f550e90f28e0760524fa598d0c3b5134f9acb57e42",
+  "parts": [
+    {
+      "name": "nebula-v1-lite-01.part",
+      "bytes": 8388608,
+      "sha256": "d2048f061134f223494118fa472dd2cfe4bd166edbce0a777a22f6210c49f5fc"
+    },
+    {
+      "name": "nebula-v1-lite-02.part",
+      "bytes": 1240049,
+      "sha256": "212fb1bd9364940e1c8339afe8d35bc1a0b8c6e3324a487abefdf9c67b5cc2ec"
+    }
+  ],
+  "quantized": true,
+  "experimental": true,
+  "probeMaxLogitError": 0.08865690231323242
+}

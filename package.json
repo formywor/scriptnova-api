@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "main": "index.js",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "start": "node scripts/dev.mjs",
     "model:data": "node scripts/model-data.mjs",
@@ -16,6 +18,13 @@
     "check:model": "node scripts/check-model.mjs",
     "postinstall": "node scripts/check-model.mjs && node --no-experimental-require-module scripts/check-firebase.mjs"
   },
-  "dependencies": { "firebase-admin": "14.5.0" },
-  "overrides": { "jwks-rsa": { "jose": "4.15.9" } }
+  "dependencies": {
+    "firebase-admin": "14.5.0",
+    "onnxruntime-node": "1.30.0"
+  },
+  "overrides": {
+    "jwks-rsa": {
+      "jose": "4.15.9"
+    }
+  }
 }

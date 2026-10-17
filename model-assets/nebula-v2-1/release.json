@@ -1,0 +1,85 @@
+{
+  "format": "nebula-onnx-1",
+  "id": "nebula-v2-1",
+  "config": {
+    "width": 768,
+    "heads": 24,
+    "layers": 14,
+    "context": 1024
+  },
+  "parameters": 100219392,
+  "trainingSteps": 35012,
+  "sourceSha256": "90d9386332aff512b30b23d1c4aa2b1de689d611c1d3bb20cac400972b966eb2",
+  "bytes": 107264412,
+  "sha256": "b18b4dd4fb40e11d85b032e13f8f22c95aa47b029cbdd452a2c3caf9941677d9",
+  "parts": [
+    {
+      "name": "nebula-v2-1-01.part",
+      "bytes": 8388608,
+      "sha256": "0126592b65daef09ddf4101362ee37c5b4e8ed63744fbdb8f173f72b97bb04b8"
+    },
+    {
+      "name": "nebula-v2-1-02.part",
+      "bytes": 8388608,
+      "sha256": "fe0a09a2e7b09e89a079eba70d50f45aba10eb408bc571d3b6c4277cd099e1ff"
+    },
+    {
+      "name": "nebula-v2-1-03.part",
+      "bytes": 8388608,
+      "sha256": "b8569c528597c97ea072ec88068dacc756b18197115835e1a99cc79ddb513dab"
+    },
+    {
+      "name": "nebula-v2-1-04.part",
+      "bytes": 8388608,
+      "sha256": "174dcd93bda5d46890ce766a90197011644942f635ca7bf4d221e6b7a719fee5"
+    },
+    {
+      "name": "nebula-v2-1-05.part",
+      "bytes": 8388608,
+      "sha256": "6f36fe504f0b4e2ccfdf13e98049012e5e1ea46faa1a21a63ee6d7b176648582"
+    },
+    {
+      "name": "nebula-v2-1-06.part",
+      "bytes": 8388608,
+      "sha256": "705f35bda30beab71ffcd926ea185337521be61d9ea9230782c3dd1f81923d2c"
+    },
+    {
+      "name": "nebula-v2-1-07.part",
+      "bytes": 8388608,
+      "sha256": "946bdb7aa09e9ce2c2ed8bd683e2f18ee492f7d60f0d88176215f3faf6b4d1b6"
+    },
+    {
+      "name": "nebula-v2-1-08.part",
+      "bytes": 8388608,
+      "sha256": "a824deb0de9302542c0752bfc0e2705159f2437bcfb384070a66868f614ded50"
+    },
+    {
+      "name": "nebula-v2-1-09.part",
+      "bytes": 8388608,
+      "sha256": "a0ad6337e3bb87f7127a75a477460bb5aaff09f38b88da92d068c900a1e9ac78"
+    },
+    {
+      "name": "nebula-v2-1-10.part",
+      "bytes": 8388608,
+      "sha256": "c6c284deadeb01f811665f1982f4089f15c4e2e9adc1c060c2f9bf7898dc1859"
+    },
+    {
+      "name": "nebula-v2-1-11.part",
+      "bytes": 8388608,
+      "sha256": "356e62aecf463dda13e4d58eb475a933d25d168b7cb425efae19c86d614467df"
+    },
+    {
+      "name": "nebula-v2-1-12.part",
+      "bytes": 8388608,
+      "sha256": "3244b44eaf7b36d876c7d8017f660e72b8dd5e5ba93054a9515d0d3e4d453a05"
+    },
+    {
+      "name": "nebula-v2-1-13.part",
+      "bytes": 6601116,
+      "sha256": "b925f6ce0d1a3911e272152c9ff0b64b8d527eca98599ebb05c70ad517f7d497"
+    }
+  ],
+  "quantized": true,
+  "experimental": true,
+  "probeMaxLogitError": 0.09602880477905273
+}

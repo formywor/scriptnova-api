@@ -19,3 +19,10 @@ model-assets/*
 !model-assets/nebula-pilot.json
 !model-assets/release.json
 !model-assets/nebula-v4-experimental-1-*.part
+
+!model-assets/nebula-v1-lite/
+!model-assets/nebula-v1-lite/release.json
+!model-assets/nebula-v1-lite/*.part
+!model-assets/nebula-v2-1/
+!model-assets/nebula-v2-1/release.json
+!model-assets/nebula-v2-1/*.part

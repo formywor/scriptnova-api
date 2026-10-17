@@ -15,7 +15,17 @@
           "model-assets/nebula-v4-experimental-1-05.part",
           "model-assets/nebula-v4-experimental-1-06.part",
           "model-assets/release.json",
-          "model-assets/nebula-pilot.json"
+          "model-assets/nebula-pilot.json",
+          "model-assets/nebula-v1-lite/**",
+          "model-assets/nebula-v2-1/**",
+          "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/*.node",
+          "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/libonnxruntime.so.1"
+        ],
+        "excludeFiles": [
+          "node_modules/onnxruntime-node/bin/napi-v6/win32/**",
+          "node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+          "node_modules/onnxruntime-node/bin/napi-v6/linux/arm64/**",
+          "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/*providers*"
         ]
       }
     }

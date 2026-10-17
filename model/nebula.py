@@ -78,7 +78,11 @@ class Nebula(nn.Module):
         if length > self.config.context: raise ValueError("Context is too long")
         value = self.token(tokens) + self.position(torch.arange(length, device=tokens.device))
         causal = self._causal_mask[:length,:length]
-        for block in self.blocks: value = block(value, src_mask=causal)
+        for block in self.blocks:
+            if self.training and getattr(self,'_activation_checkpointing',False) and torch.is_grad_enabled():
+                from torch.utils.checkpoint import checkpoint
+                value=checkpoint(block,value,src_mask=causal,use_reentrant=False)
+            else:value=block(value,src_mask=causal)
         return self.output(self.norm(value))
 
     @torch.inference_mode()

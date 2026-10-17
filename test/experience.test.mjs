@@ -18,7 +18,7 @@ function fixture({review}={}){
  return {store,records,request,turn,advance(ms=301000){time+=ms;},get calls(){return calls;},get selected(){return selected;}};
 }
 test('model choices and response budgets are allowlisted and server credentials stay private',async()=>{
- const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,2);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
+ const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,4);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
  assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-classic');assert.equal(f.selected.config.responseLength,'expanded');
  assert.equal((await f.request('/chat','POST',{modelId:'private-provider-model',messages:[{role:'user',content:'Hi'}]},null)).status,400);
 });
