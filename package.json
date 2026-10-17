@@ -13,7 +13,8 @@
     "model:serve": "python model/serve.py",
     "check": "node --check index.js && node --check lib/app.mjs && node --check lib/firebase.mjs && node --test test/*.test.mjs",
     "check:sdk": "node --no-experimental-require-module scripts/check-firebase.mjs",
-    "postinstall": "node --no-experimental-require-module scripts/check-firebase.mjs"
+    "check:model": "node scripts/check-model.mjs",
+    "postinstall": "node scripts/check-model.mjs && node --no-experimental-require-module scripts/check-firebase.mjs"
   },
   "dependencies": { "firebase-admin": "14.5.0" },
   "overrides": { "jwks-rsa": { "jose": "4.15.9" } }
