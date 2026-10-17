@@ -1,0 +1,21 @@
+{
+  "version": "v4-experimental-1",
+  "asset": "nebula-v4-experimental-1.json",
+  "shards": [
+    "nebula-v4-experimental-1-01.part",
+    "nebula-v4-experimental-1-02.part",
+    "nebula-v4-experimental-1-03.part",
+    "nebula-v4-experimental-1-04.part",
+    "nebula-v4-experimental-1-05.part",
+    "nebula-v4-experimental-1-06.part"
+  ],
+  "bytes": 43886342,
+  "sha256": "45458cd7eaf3c0eed66e1ae87d9b1a5882200042a25bd9b57461e690e9f821cf",
+  "parameters": 8227328,
+  "experimental": true,
+  "sourceRevision": "916b0eaed037df63cdd0add74f10452ce394aaf1",
+  "sourcePath": "experiments/nebula-v4/checkpoints/0001-final.pt",
+  "diagnosticCorrect": 35,
+  "diagnosticCases": 70,
+  "automaticPromotion": false
+}

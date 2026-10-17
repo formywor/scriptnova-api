@@ -17,3 +17,5 @@ model/tests/__pycache__/
 *.snapshot.json
 model-assets/*
 !model-assets/nebula-pilot.json
+!model-assets/release.json
+!model-assets/nebula-v4-experimental-1-*.part
