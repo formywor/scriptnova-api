@@ -8,7 +8,7 @@ from unittest.mock import Mock,patch
 import torch
 from conversation_mix import mixed_lane,conversational
 from v6_data import additions,VERSION
-from v6_experiment import research_improves,initial
+from v6_experiment import research_improves,initial,main as experiment
 from v4_data import exercises,forbidden
 from dataflow import read_jsonl,write_jsonl
 from review_feed import refresh_reviews,validated_rows
@@ -32,7 +32,7 @@ class V6Tests(unittest.TestCase):
         self.assertTrue(any('What color is it?' in [m['content'] for m in r['messages']] for r in rows))
         self.assertTrue(any('Make it more casual.' in [m['content'] for m in r['messages']] for r in rows))
     def test_stale_review_feed_is_erased_on_network_error_or_optout(self):
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder:
             path=Path(folder)/'feed.jsonl';write_jsonl(path,[reviewed()]);client=Mock()
             client.call.side_effect=ResearchError('OFFLINE');self.assertEqual(refresh_reviews(client,path),0);self.assertEqual(read_jsonl(path),[])
             client.call.side_effect=None;client.call.return_value={'format':'nebula-reviewed-training-1','requiresFreshConsent':True,'rows':[reviewed()]}
@@ -55,7 +55,7 @@ class V6Tests(unittest.TestCase):
             with self.assertRaisesRegex(ResearchError,'V5_BEST_CHECKPOINT_REQUIRED'):initial(Mock(),Path('.'))
     def test_real_cpu_updates_use_both_pools_and_checked_reviews_without_resetting_steps(self):
         torch.set_num_threads(1)
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder:
             root=Path(folder);rows=[]
             for i in range(60):
                 for kind in ['v6-conversation','mixed']:
@@ -64,6 +64,27 @@ class V6Tests(unittest.TestCase):
             train(['--data',str(root/'data.jsonl'),'--resume',str(root/'start.pt'),'--output',str(root/'end.pt'),'--steps','15','--batch','2','--device','cpu','--conversation-mix','--review-data',str(root/'reviews.jsonl')])
             trained,meta=load(root/'end.pt');self.assertEqual(meta['steps'],32);self.assertEqual(meta['conversationUpdates'],12);self.assertEqual(meta['mixedUpdates'],3);self.assertEqual(meta['memoryUpdates'],2);self.assertEqual(meta['reviewUpdates'],1)
             self.assertTrue(any(not torch.equal(v,trained.state_dict()[k]) for k,v in model.state_dict().items()))
+    def test_round_uses_fresh_temporary_reviews_and_backs_up_separately(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as folder:
+            root=Path(folder);project=root/'project';project.mkdir();store=Mock()
+            state={'format':VERSION,'round':0,'rejected':0,'bestReport':report(),'sourceData':{},'data':{},'evaluationData':{},'checks':{},'best':{},'profile':{'gpus':2},'dataSummary':{}}
+            store.state.return_value=state
+            def download(value,destination):
+                destination=Path(destination);destination.parent.mkdir(parents=True,exist_ok=True);destination.write_bytes(b'old-best');return destination
+            store.download.side_effect=download
+            used=[]
+            def launch(project,resume,output,*args,**kw):
+                self.assertEqual(resume.read_bytes(),b'old-best');self.assertTrue(kw['conversation_mix']);self.assertTrue(kw['review_data'].is_file());self.assertNotIn(project,kw['review_data'].parents);used.append(kw['review_data'])
+                output.write_bytes(b'new');output.with_suffix('.best.pt').write_bytes(b'new')
+            def evaluate(checkpoint,data,checks,output):output.write_text('{}');return report(correct=53,conversation=1/6)
+            def compact(source,destination):destination.write_bytes(source.read_bytes());return destination
+            def refresh(client,path):write_jsonl(path,[reviewed()]);return 1
+            store.publish.side_effect=lambda value,files,project:{**value,**{key:{} for key in files}}
+            temporary=tempfile.TemporaryDirectory
+            with patch('v6_experiment.Store',return_value=store),patch('v6_experiment.torch.cuda.is_available',return_value=True),patch('v6_experiment.torch.cuda.empty_cache'),patch('v6_experiment.restore_data'),patch('v6_experiment.configure_rules'),patch('v6_experiment.Client'),patch('v6_experiment.refresh_reviews',side_effect=refresh),patch('v6_experiment.launch',side_effect=launch),patch('v6_experiment.evaluate',side_effect=evaluate),patch('v6_experiment.compact',side_effect=compact),patch('v6_experiment.tempfile.TemporaryDirectory',side_effect=lambda **kw:temporary(dir=root)):
+                experiment(['--project',str(project),'--rounds','1','--hours','.01'])
+            self.assertFalse(used[0].exists());value,files,_=store.publish.call_args.args;self.assertEqual(value['bestReport']['conversation'],1/6);self.assertIn('best',files);self.assertFalse(any('review-training' in name for _,name in files.values()))
+
     def test_notebook_embeds_current_code_and_no_secrets(self):
         from build_v6_notebook import build
         value=json.loads(build().read_text(encoding='utf-8'));text=json.dumps(value)
