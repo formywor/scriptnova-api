@@ -6,6 +6,8 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.parse import urlparse
 import os
+import time
+from teacher_http import request_json
 from rules import owner_instructions
 
 def read_jsonl(path):
@@ -47,7 +49,12 @@ def eligible(row, snapshot=None):
         if source.get('trainingAllowed') is not True: return False
     elif source.get('kind') != 'seed': return False
     messages = row.get('messages')
-    return isinstance(messages, list) and len(messages) == 2 and messages[0].get('role') == 'user' and messages[1].get('role') == 'assistant' and all(isinstance(m.get('content'), str) and 0 < len(m['content'].strip()) <= 16000 for m in messages)
+    # User exports remain a single consent-checked pair. Owned/teacher datasets may be dialogues.
+    maximum = 2 if source.get('kind') == 'user' else 12
+    return (isinstance(messages, list) and 2 <= len(messages) <= maximum and len(messages) % 2 == 0
+            and all(isinstance(m, dict) and m.get('role') == ('user' if i % 2 == 0 else 'assistant')
+                    and isinstance(m.get('content'), str) and 0 < len(m['content'].strip()) <= 16000
+                    for i, m in enumerate(messages)))
 
 def prepare(inputs, output, snapshot=None):
     rows, seen = [], set()
@@ -82,17 +89,19 @@ def generate_teacher(config, prompts, output, limit=10, transport=None):
         if identifier in completed: continue
         if calls >= limit: break
         payload = {'model': config['model'], 'messages': [{'role': 'system', 'content': 'Create a training example for Nebula using these owner instructions.\n' + owner_instructions() + '\n' + config.get('instructions', '')}, {'role': 'user', 'content': text}], 'max_tokens': min(int(config.get('maxTokens', 256)), 1024), 'temperature': 0.6}
-        request = Request(endpoint, json.dumps(payload).encode(), {'Content-Type': 'application/json', **({'Authorization': 'Bearer ' + key} if key else {})})
+        if config.get('temperature', 0.6) is None: payload.pop('temperature')
+        if config.get('reasoningEffort') in ['low','medium','high']: payload['reasoning_effort'] = config['reasoningEffort']
+        request = Request(endpoint, json.dumps(payload).encode(), {'Content-Type': 'application/json', 'User-Agent':'Nebula-Teacher/1.0', **({'Authorization': 'Bearer ' + key} if key else {})})
+        if calls and not transport:
+            delay = min(60, max(0, float(config.get('requestIntervalSeconds', 0))))
+            if delay: time.sleep(delay)
         if transport: data = transport(request)
         else:
             # Never follow a redirect carrying a credential to another host.
             from urllib.request import build_opener, HTTPRedirectHandler
             class NoRedirect(HTTPRedirectHandler):
                 def redirect_request(self, *args, **kwargs): return None
-            with build_opener(NoRedirect).open(request, timeout=60) as response:
-                raw = response.read(200001)
-                if len(raw) > 200000: raise ValueError('Teacher reply too large')
-                data = json.loads(raw)
+            data = request_json(build_opener(NoRedirect), request, provider=config.get('name','teacher'), max_retries=int(config.get('httpRetries',2)))
         answer = data['choices'][0]['message']['content']
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 16000: raise ValueError('Invalid teacher answer')
         rows.append({'promptId': identifier, 'reviewStatus': 'pending', 'messages': [{'role': 'user', 'content': text}, {'role': 'assistant', 'content': redact(answer)}], 'source': {'kind': 'teacher', 'provider': config.get('name', 'custom'), 'model': config['model'], 'trainingAllowed': True}})

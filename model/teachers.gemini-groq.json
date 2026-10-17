@@ -1,0 +1,26 @@
+[
+  {
+    "name": "gemini",
+    "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "model": "gemini-3.8-flash",
+    "keyEnv": "GEMINI_API_KEY",
+    "trainingAllowed": true,
+    "temperature": null
+  },
+  {
+    "name": "groq",
+    "url": "https://api.groq.com/openai/v1/chat/completions",
+    "model": "openai/gpt-oss-20b",
+    "keyEnv": "GROQ_API_KEY",
+    "trainingAllowed": true,
+    "reasoningEffort": "low"
+  },
+  {
+    "name": "gemini-secondary",
+    "url": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "model": "gemini-3.8-flash",
+    "keyEnv": "GEMINI_SECOND_API_KEY",
+    "trainingAllowed": true,
+    "temperature": null
+  }
+]

@@ -2,9 +2,15 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
+# The workspace CPU runtime is outside the publishable API directory.
+# Resolve relative to this file, independent of shell cwd/PYTHONPATH.
+runtime = Path(__file__).resolve().parents[4] / 'work/nebula-python-deps'
+if runtime.joinpath('torch').is_dir():
+    sys.path.insert(0, str(runtime))
 from dataflow import generate_teacher, prepare, read_jsonl, write_jsonl
 from train import train
 
@@ -20,7 +26,7 @@ def main():
         parser.error('Teacher call limit must be between 1 and 100')
     root = Path(__file__).resolve().parent
     output = root / 'data/gemini-pending.jsonl'
-    config = {'name': 'gemini', 'url': 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 'model': args.model, 'keyEnv': 'GEMINI_API_KEY', 'trainingAllowed': True, 'maxTokens': 256, 'instructions': 'Answer directly in plain English using at most 140 characters. No preamble or markdown. These are short examples for a tiny model.'}
+    config = {'name': 'gemini', 'url': 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', 'model': args.model, 'keyEnv': 'GEMINI_API_KEY', 'trainingAllowed': True, 'maxTokens': 256, 'requestIntervalSeconds': 15, 'instructions': 'Answer directly in plain English using at most 140 characters. No preamble or markdown. These are short examples for a tiny model.'}
     try:
         calls = generate_teacher(config, read_jsonl(root / 'curriculum.jsonl'), output, args.max_teacher_calls)
     except KeyboardInterrupt:
