@@ -18,7 +18,7 @@ test('a corrupt release shard fails closed before JSON decoding or inference',()
  const directory=mkdtempSync(join(tmpdir(),'nebula-release-')),manifest=join(directory,'release.json'),part=join(directory,'nebula-test-01.part');
  try{
   writeFileSync(part,'bad');writeFileSync(manifest,JSON.stringify({asset:'nebula-test.json',shards:['nebula-test-01.part'],bytes:3,sha256:'0'.repeat(64)}));
-  assert.throws(()=>loadReleaseArtifact(pathToFileURL(directory+'/')),/checksum/);
+  assert.throws(()=>loadReleaseArtifact(pathToFileURL(directory+'/')),error=>error.code==='MODEL_RELEASE_CHECKSUM_MISMATCH');
  }finally{unlinkSync(part);unlinkSync(manifest);rmdirSync(directory);}
 });
 
@@ -30,8 +30,17 @@ test('experimental release pins the strongest V4 weights and supports ten layers
  const actual=model.logits(reference.tokens);
  assert.ok(Math.max(...actual.map((v,i)=>Math.abs(v-reference.logits[i])))<.001);
  assert.equal(release.experimental,true);assert.equal(release.automaticPromotion,false);
- assert.throws(()=>model.reply([{role:'user',content:'Hi'}],{maxMilliseconds:-1}),/deadline/);
+ assert.throws(()=>model.reply([{role:'user',content:'Hi'}],{maxMilliseconds:-1}),error=>error.code==='MODEL_INFERENCE_TIMEOUT');
  assert.throws(()=>model.reply([{role:'user',content:'x'.repeat(1100)}]),error=>error.code==='MODEL_CONTEXT_LIMIT');
+});
+
+test('missing manifest and missing parts produce distinct sanitized deployment reasons',()=>{
+ const directory=mkdtempSync(join(tmpdir(),'nebula-missing-release-')),manifest=join(directory,'release.json');
+ try{
+  assert.throws(()=>loadReleaseArtifact(pathToFileURL(directory+'/')),error=>error.code==='MODEL_RELEASE_MISSING');
+  writeFileSync(manifest,JSON.stringify({asset:'nebula-test.json',shards:['nebula-test-01.part'],bytes:3,sha256:'0'.repeat(64)}));
+  assert.throws(()=>loadReleaseArtifact(pathToFileURL(directory+'/')),error=>error.code==='MODEL_SHARD_MISSING');
+ }finally{if(existsSync(manifest))unlinkSync(manifest);rmdirSync(directory);}
 });
 test('native Transformer agrees with independent PyTorch reference logits',{skip:!existsSync(asset)},()=>{
  const model=new NativeNebula(JSON.parse(readFileSync(asset,'utf8'))),reference=JSON.parse(readFileSync(new URL('./fixtures/native-reference.json',import.meta.url),'utf8'));assert.deepEqual(packPrompt(reference.messages,model.config.context),reference.tokens);const actual=model.logits(reference.tokens);assert.ok(Math.max(...actual.map((v,i)=>Math.abs(v-reference.logits[i])))<.0001);assert.ok(model.reply(reference.messages,{temperature:0}).length>0);

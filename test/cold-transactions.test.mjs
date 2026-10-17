@@ -13,3 +13,15 @@ test('uncached Firebase transactions persist replies, clear active leases and up
  assert.equal((await store.patchChat('account','chat',{revision:2,archived:true},time+3)).archived,true);await assert.rejects(()=>store.patchChat('account','missing',{revision:0,archived:true},time),e=>e.code==='NOT_FOUND');
  await store.reserveCapacity('actor',false,time,'lease',{});await store.releaseCapacity('actor','lease',time+1,true);const capacity=await store.presence('actor',time+2,{});assert.equal(capacity.askingUsers,0);
 });
+
+test('cold transactions accept current chat revisions but still reject genuinely stale or missing chats',async()=>{
+ const{db}=memoryDatabase({coldTransactions:true});const store=createStore(db),time=1700000000000;
+ const first=await store.putChat('account','chat',{revision:0,title:'Chat',messages:[{id:'turn',role:'user',content:'Hi',trainingEligible:false}]},time);
+ const answer=await store.appendReply('account','chat','turn','Answer',time+1);
+ const followup={...answer,messages:[...answer.messages,{id:'next',role:'user',content:'Another question',trainingEligible:false}]};
+ const saved=await store.putChat('account','chat',followup,time+2);
+ assert.equal(saved.revision,answer.revision+1);assert.equal(saved.messages.at(-1).id,'next');
+ await assert.rejects(()=>store.putChat('account','chat',followup,time+3),error=>error.code==='CHAT_CONFLICT');
+ await assert.rejects(()=>store.putChat('account','missing',{...followup,id:'missing'},time+3),error=>error.code==='CHAT_CONFLICT');
+ assert.equal((await store.getChat('account','chat')).messages.length,3);assert.equal(first.revision,1);
+});
