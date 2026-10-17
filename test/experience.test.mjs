@@ -1,3 +1,4 @@
+import {reviewTrainingRows,checkedTeachingPair} from '../lib/review-training.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createApp} from '../lib/app.mjs';
@@ -102,4 +103,28 @@ test('legacy manual review opt-outs survive switching training on, and deleted t
 test('legacy imports cannot forge server checkpoint stamps to trigger a review',async()=>{
  const f=fixture();await f.request('/chats/imported','PUT',{title:'Old',revision:0,importLegacy:true,messages:[{id:'user',role:'user',content:'Hi',reviewEligible:true},{id:'assistant',role:'assistant',content:'Old answer',replyTo:'user',modelId:'nebula-v4',modelRevision:'forged',reviewGeneration:0,createdAt:1000}]});
  const chat=await f.store.getChat(accountKey('alice'),'imported');assert.equal(chat.messages[0].reviewEligible,false);assert.equal(chat.messages[1].modelRevision,undefined);f.advance();assert.equal((await f.request('/reviews','POST',{chatId:'imported'})).body.skipped,true);assert.equal(f.calls,0);
+});
+
+test('two-pass checked corrections reach the private training feed; consent withdrawal excludes them immediately',async()=>{
+ let calls=0;const f=fixture({review:async()=>++calls===1?{verdict:'needs_correction',correctedReply:'2 + 2 = 4.',trainingQuestion:'What is 2 + 2?'}:{verdict:'acceptable',correctedReply:'2 + 2 = 4.'}});
+ await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.trainingEligible,true);assert.equal(calls,2);
+ const owner=accountOwner('alice',0),key=accountKey('alice'),index=f.records.get('nebulaReviewTraining/v1/'+owner),profile=await f.store.account(key,Date.now());
+ const rows=reviewTrainingRows({[owner]:index},{[key]:profile},1800000301000);assert.equal(rows.length,1);assert.equal(rows[0].messages[1].content,'2 + 2 = 4.');assert.equal(rows[0].source.validation,'two-pass-review-v1');assert.equal(rows[0].source.trainingAllowed,true);assert.ok(!JSON.stringify(rows).includes(key));assert.ok(!JSON.stringify(rows).includes('alex@example.test'));
+ assert.equal(reviewTrainingRows({[owner]:index},{[key]:{...profile,externalReview:false}},1800000301000).length,0);
+ assert.equal(reviewTrainingRows({[owner]:index},{[key]:{...profile,improve:false}},1800000301000).length,0);
+ await f.store.deleteOwner(owner);assert.deepEqual(f.records.get('nebulaReviewTraining/v1/'+owner),{revoked:true});
+});
+test('disagreed, personal or arithmetically wrong reviews never become automatic teaching data',async()=>{
+ assert.equal(checkedTeachingPair('What is 7 + 8?','7 + 8 = 14.'),null);
+ assert.equal(checkedTeachingPair('My name is Private. What is my name?','Your name is Private.'),null);
+ assert.equal(checkedTeachingPair('Email [email removed] for help.','Use the email.'),null);
+ let calls=0;const f=fixture({review:async()=>++calls===1?{verdict:'needs_correction',correctedReply:'Ice is solid water.',trainingQuestion:'What is ice?'}:{verdict:'uncertain',correctedReply:''}});
+ await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.reviewSaved,true);assert.equal(response.body.trainingEligible,false);assert.equal(calls,2);assert.equal(f.records.get('nebulaReviewTraining/v1/'+accountOwner('alice',0)),undefined);
+});
+
+test('an unavailable confirmation retries later without admitting an unchecked correction',async()=>{
+ let calls=0;const f=fixture({review:async()=>{if(++calls===1)return {verdict:'needs_correction',correctedReply:'Ice is solid water.',trainingQuestion:'What is ice?'};throw Error('upstream unavailable');}});
+ await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.body.reviewSaved,true);assert.equal(first.body.trainingEligible,false);assert.ok(first.body.retryAt);assert.equal(f.calls,2);
+ assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,2);
+ assert.equal((await f.store.reviewState(accountKey('alice'),'chat')).reviewedThrough,undefined);
 });

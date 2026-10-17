@@ -46,6 +46,8 @@ def main(argv=None,on_progress=None):
     parser.add_argument('--save-every',type=int,default=200)
     parser.add_argument('--sampling-seed',type=int,default=42)
     parser.add_argument('--best-checkpoint',action='store_true',help='Also preserve the lowest validation-loss checkpoint')
+    parser.add_argument('--conversation-mix',action='store_true',help='80% conversation updates; 20% mixed, including memory')
+    parser.add_argument('--review-data',type=Path,help='Fresh consent-checked review feed, training only')
     parser.add_argument('--rendezvous',help='File rendezvous for the local CPU distributed test')
     args=parser.parse_args(argv)
     world=int(os.environ.get('WORLD_SIZE','1'));rank=int(os.environ.get('RANK','0'));local=int(os.environ.get('LOCAL_RANK','0'))
@@ -71,22 +73,39 @@ def main(argv=None,on_progress=None):
         model._amp_enabled=amp;model._amp_dtype=dtype
         training_rows,validation_rows=partition_rows(research_rows(args.data),42)
         training,seen=unique_windows(examples(training_rows,model.config.context,True,'assistant'))
-        validation,_=unique_windows(examples(validation_rows,model.config.context,True,'assistant'),seen)
+        validation,all_seen=unique_windows(examples(validation_rows,model.config.context,True,'assistant'),seen)
         if not training or not validation:raise ValueError('Training and held-out validation data are required')
         focused,_=unique_windows(examples(select_focus(training_rows,args.focus),model.config.context,True,'assistant'))
+        chat_pool=[];mixed_pool=[];memory_pool=[];review_pool=[]
+        if args.conversation_mix:
+            from conversation_mix import conversational,mixed_lane
+            chat_rows=[r for r in training_rows if conversational(r)]
+            mixed_rows=[r for r in training_rows if not conversational(r)]
+            chat_pool,_=unique_windows(examples(chat_rows,model.config.context,True,'assistant'))
+            mixed_focus=select_focus(mixed_rows,args.focus) if args.focus not in ['balanced','language'] else []
+            mixed_pool,_=unique_windows(examples(mixed_focus or mixed_rows,model.config.context,True,'assistant'))
+            memory_pool,_=unique_windows(examples(select_focus(mixed_rows,'memory'),model.config.context,True,'assistant'))
+            if not chat_pool or not mixed_pool or not memory_pool:raise ValueError('80/20 training requires conversation, mixed and memory examples')
+            if args.review_data and args.review_data.is_file():
+                from review_feed import validated_rows
+                from dataflow import read_jsonl
+                rows=validated_rows(read_jsonl(args.review_data))
+                review_pool,_=unique_windows(examples(rows,model.config.context,True,'assistant'),all_seen)
+            for pool in [chat_pool,mixed_pool,memory_pool,review_pool]:pool.sort(key=lambda pair:len(pair[0]))
+            if rank==0:print(json.dumps({'conversationPercent':80,'mixedPercent':20,'memoryIncluded':True,'reviewedTrainingWindows':len(review_pool),'mixMeasuredIn':'optimizer updates'}),flush=True)
         training.sort(key=lambda pair:len(pair[0]));focused.sort(key=lambda pair:len(pair[0]))
         validation=random.Random(43).sample(validation,min(128,len(validation)))
         validation.sort(key=lambda pair:len(pair[0]))
         optimizer=torch.optim.AdamW(model.parameters(),lr=args.lr,weight_decay=.01)
         scaler=torch.amp.GradScaler('cuda',enabled=amp and dtype==torch.float16,init_scale=1024)
         signature={'format':'research-ddp-1','dataSha256':hashlib.sha256(args.data.read_bytes()).hexdigest(),
-                   'world':world,'batch':args.batch,'focus':args.focus,'lr':args.lr,'amp':str(dtype) if amp else 'none','samplingSeed':args.sampling_seed}
+                   'world':world,'batch':args.batch,'focus':args.focus,'lr':args.lr,'amp':str(dtype) if amp else 'none','samplingSeed':args.sampling_seed,'conversationMix':args.conversation_mix,'reviewSha256':hashlib.sha256(args.review_data.read_bytes()).hexdigest() if args.review_data and args.review_data.is_file() else None}
         state=torch.load(args.resume,map_location='cpu',weights_only=True).get('trainingState',{})
         if state.get('signature')==signature:
             optimizer.load_state_dict(state['optimizer']);scaler.load_state_dict(state['scaler'])
         inherited=metadata.get('steps',0)
         wrapped=DistributedDataParallel(model,device_ids=[local] if amp else None,broadcast_buffers=False) if world>1 else model
-        completed=0;trained=0;started=time.monotonic();bad=0;best_value=float('inf')
+        mix_counts={'conversationUpdates':0,'mixedUpdates':0,'memoryUpdates':0,'reviewUpdates':0};completed=0;trained=0;started=time.monotonic();bad=0;best_value=float('inf')
         def checkpoint():
             nonlocal best_value
             barrier()
@@ -96,7 +115,7 @@ def main(argv=None,on_progress=None):
                 if value is None or not math.isfinite(value):raise ValueError('Non-finite validation result')
                 report={'steps':inherited+completed,'stepsThisRun':completed,'validationLoss':value,
                         'dataSha256':signature['dataSha256'],'objective':'assistant','experimental':True,
-                        'qualityApproved':False,'trainingStateIncluded':True,'worldSize':world,'focus':args.focus}
+                        'qualityApproved':False,'trainingStateIncluded':True,'worldSize':world,'focus':args.focus,'conversationPercent':80 if args.conversation_mix else None,'reviewedTrainingWindows':len(review_pool),**mix_counts}
                 training_state={'signature':signature,'optimizer':optimizer.state_dict(),'scaler':scaler.state_dict()}
                 save(model,args.output,report,training_state=training_state)
                 if args.best_checkpoint and value<best_value:
@@ -108,6 +127,12 @@ def main(argv=None,on_progress=None):
         while completed<args.steps:
             step=inherited+completed
             pool=focused if focused and args.focus!='balanced' and step%4==0 else training
+            if args.conversation_mix:
+                lane=mixed_lane(completed)
+                pool=chat_pool if lane=='conversation' else memory_pool if lane=='memory' else mixed_pool
+                # At most one in ten conversation batches uses checked real-chat corrections.
+                chat_number=4*(completed//5)+completed%5
+                if lane=='conversation' and review_pool and chat_number%10==9:pool=review_pool
             batch=global_batch(pool,args.batch,step,args.sampling_seed)
             portion=args.batch//world;batch=batch[rank*portion:(rank+1)*portion]
             wrapped.train();optimizer.zero_grad(set_to_none=True)
@@ -127,6 +152,10 @@ def main(argv=None,on_progress=None):
                 if not scaler.is_enabled() or bad>16:raise ValueError('Non-finite gradients; round stopped')
                 scaler.update(new_scale=scaler.get_scale()/2);continue
             scaler.step(optimizer);scaler.update();completed+=1;trained+=int(counts)
+            if args.conversation_mix:
+                mix_counts['conversationUpdates' if lane=='conversation' else 'mixedUpdates']+=1
+                if lane=='memory':mix_counts['memoryUpdates']+=1
+                if pool is review_pool:mix_counts['reviewUpdates']+=1
             if rank==0 and completed%100==0:
                 if on_progress:on_progress(completed)
                 print(json.dumps({'step':completed,'worldSize':world,'globalBatch':args.batch,

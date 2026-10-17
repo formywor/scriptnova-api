@@ -46,12 +46,14 @@ def training_plan(state):
     return {'focus':focus,'lr':.000025*(.5**rejected),'rejectedRounds':rejected}
 
 def launch(project,resume,output,steps,gpus,focus,lease=None,benchmark=False,lr=.00005,max_seconds=3600,
-           data=None,batch=16,best=False,save_every=200,sampling_seed=42):
+           data=None,batch=16,best=False,save_every=200,sampling_seed=42,conversation_mix=False,review_data=None):
     command=[sys.executable]
     if gpus>1:command+=['-m','torch.distributed.run','--standalone','--nproc_per_node',str(gpus)]
     command+=[str(Path(__file__).with_name('research_train.py')),'--data',str(data or project/'model/data/v3-chat.jsonl'),
               '--resume',str(resume),'--output',str(output),'--steps',str(steps),'--batch',str(batch),
               '--focus',focus,'--lr',str(lr),'--max-seconds',str(max_seconds),'--save-every',str(save_every),'--sampling-seed',str(sampling_seed)]
+    if conversation_mix:command+=['--conversation-mix']
+    if review_data:command+=['--review-data',str(review_data)]
     if best:command+=['--best-checkpoint']
     if benchmark:command+=['--benchmark']
     env=dict(os.environ)

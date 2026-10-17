@@ -1,3 +1,4 @@
+import {readReviewTraining} from '../lib/review-training.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {learningTopics,topicFor,readLearningTopics} from '../lib/learning.mjs';
@@ -46,4 +47,18 @@ test('public release defaults to owned inference and sharing master switch still
  assert.equal(configFromEnv({NEBULA_TRAINING_ENABLED:'false'}).training,false);
  assert.equal(topicFor('Hello there'),'language');assert.equal(topicFor('Call me Alex'),'memory');
  for(const prefix of ['hf_','gsk_','AQ.','AIza','sk-'])assert.ok(!redact(prefix+'a'.repeat(40)).includes('a'.repeat(40)));
+});
+
+test('checked review training is trainer-only, browser-blocked and honors the service training switch',async()=>{
+ const env={NEBULA_RESEARCH_ENABLED:'true',NEBULA_TRAINER_TOKEN:'t'.repeat(40),NEBULA_EVALUATOR_TOKEN:'e'.repeat(40)};let calls=0;
+ const handler=createResearchHandler({env,reviewTraining:async()=>{calls++;return {format:'nebula-reviewed-training-1',rows:[]};}});
+ const request=(token,origin)=>new Request('https://api.test/api/nebula/research/review-training',{headers:{Authorization:'Bearer '+token,...(origin?{Origin:origin}:{})}});
+ assert.equal((await handler(request('bad'))).status,401);assert.equal((await handler(request(env.NEBULA_EVALUATOR_TOKEN))).status,403);assert.equal((await handler(request(env.NEBULA_TRAINER_TOKEN,'https://scriptnovaa.com'))).status,403);
+ assert.equal((await handler(request(env.NEBULA_TRAINER_TOKEN))).status,200);assert.equal(calls,1);env.NEBULA_TRAINING_ENABLED='false';assert.deepEqual((await (await handler(request(env.NEBULA_TRAINER_TOKEN))).json()).rows,[]);assert.equal(calls,1);
+});
+
+test('a source tombstone excludes review training even if index deletion was interrupted',async()=>{
+ const accesses=[];const owners={owner:{samples:{turn:{accountKey:key,generation:2,createdAt:now,qualityChecked:true,messages:[{role:'user',content:'What is ice?'},{role:'assistant',content:'Ice is solid water.'}]}}}};
+ const db={ref:path=>{accesses.push(path);const ref={orderByKey:()=>ref,limitToFirst:n=>{assert.ok(n<=32);return ref;},get:async()=>({val:()=>path==='nebulaReviewTraining/v1'?structuredClone(owners):path.endsWith('/revoked')?true:{improve:true,externalReview:true,trainingGeneration:2}})};return ref;}};
+ assert.deepEqual((await readReviewTraining(db,now)).rows,[]);assert.ok(accesses.includes('nebulaTraining/v1/owner/revoked'));
 });
