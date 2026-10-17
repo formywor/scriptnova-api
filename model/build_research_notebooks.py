@@ -20,9 +20,9 @@ def build(role):
 
 This coordinates private, versioned checkpoints through your API. It never updates the public chat model.
 
-**Configure the API first:** deploy the updated API, configure `NEBULA_CHECKPOINT_BUCKET` as a private Cloud Storage bucket that the existing Firebase service account can read/write, set two different random worker tokens (`NEBULA_TRAINER_TOKEN` and `NEBULA_EVALUATOR_TOKEN`, at least 32 characters each), then set `NEBULA_RESEARCH_ENABLED=true`. Firebase Cloud Storage requires the Blaze billing plan; this notebook does not create a bucket, enable billing, or promise free storage. Storage transfers and operations can cost money. Leave the research feature disabled if that setup is not approved.
+**Configure the API first:** deploy the updated API, set `NEBULA_HF_REPO=iiidevv/nebula-research` and `NEBULA_HF_TOKEN` to a fine-grained read/write token limited to that private model repository. Set two different random worker tokens (`NEBULA_TRAINER_TOKEN` and `NEBULA_EVALUATOR_TOKEN`, at least 32 characters each), then enable `NEBULA_RESEARCH_ENABLED=true`. No Firebase Storage bucket or Blaze upgrade is needed for this path. Hugging Face free-tier limits apply. Both notebooks need their role secret plus `NEBULA_HF_TOKEN` in their platform secret manager. Never paste tokens into cells.
 
-The controller accepts a new checkpoint only when the locked task checks and held-out loss pass conservative comparisons. These are limited diagnostics, not proof of broad intelligence. Three consecutive rejected rounds pause the campaign for review. Old unreferenced versions are pruned, retaining recent versions and rollback parents. The service limits file size and upload frequency.
+The controller accepts a new checkpoint only when the locked task checks and held-out loss pass conservative comparisons. These are limited diagnostics, not proof of broad intelligence. Three consecutive rejected rounds pause the campaign for review. Old unreferenced paths are pruned, retaining recent versions and rollback parents. Repository history still retains deleted files and may consume storage; monitor Hugging Face usage. The service limits file size and upload frequency.
 ''')
     if role=='trainer':
         add('markdown','''## Kaggle setup
@@ -36,6 +36,8 @@ The controller accepts a new checkpoint only when the locked task checks and hel
 The initial shared model is your best V3 checkpoint (31,012 steps); your later 33,012-step model remains in the private input Dataset. The worker benchmarks one versus two GPUs on the same global batch and selects two only when it is faster. Kaggle pauses at each 2,000-step boundary for Colab's decision.
 ''')
         add('code','''import os,sys,json
+import subprocess
+subprocess.run([sys.executable,'-m','pip','install','--quiet','huggingface_hub>=0.34,<2'],check=True)
 from pathlib import Path
 import torch
 from kaggle_secrets import UserSecretsClient
@@ -45,10 +47,13 @@ MAX_ROUNDS=12
 GPU_MODE='auto'  # 'auto' benchmarks 1 vs 2; '2' forces two when available.
 try:
     token=UserSecretsClient().get_secret('NEBULA_TRAINER_TOKEN')
+    hf_token=UserSecretsClient().get_secret('NEBULA_HF_TOKEN')
 except Exception:
-    raise RuntimeError('Add and enable the Kaggle secret NEBULA_TRAINER_TOKEN.') from None
+    raise RuntimeError('Add and enable Kaggle secrets NEBULA_TRAINER_TOKEN and NEBULA_HF_TOKEN.') from None
 os.environ['NEBULA_WORKER_TOKEN']=token
 os.environ['NEBULA_RESEARCH_API']=API_BASE
+os.environ['NEBULA_HF_REPO']='iiidevv/nebula-research'
+os.environ['NEBULA_HF_TOKEN']=hf_token
 project=Path('/kaggle/working/nebula-research/api')
 project.mkdir(parents=True,exist_ok=True)
 if not torch.cuda.is_available(): raise RuntimeError('Enable the GPU accelerator before running.')
@@ -62,9 +67,11 @@ if not torch.cuda.is_available(): raise RuntimeError('Enable the GPU accelerator
 
 Colab alternates evaluation with one bounded 200-step experiment on an approved training subset. It never trains on the locked benchmark questions or reserved names. A candidate must beat the current head without dropping the tracked task categories before the API can select it. An old or expired job cannot replace a newer head.
 
-Colab may disconnect or end its runtime. Uploaded checkpoints remain in the configured persistent bucket. Work since the last successful upload can still be lost. Restart the worker to claim a new job when an old lease expires.
+Colab may disconnect or end its runtime. Uploaded checkpoints remain in the private Hugging Face repository. Work since the last successful upload can still be lost. Restart the worker to claim a new job when an old lease expires.
 ''')
         add('code','''import os,sys,json
+import subprocess
+subprocess.run([sys.executable,'-m','pip','install','--quiet','huggingface_hub>=0.34,<2'],check=True)
 from pathlib import Path
 import torch
 from google.colab import userdata
@@ -73,10 +80,13 @@ HOURS=6
 MAX_ROUNDS=12
 try:
     token=userdata.get('NEBULA_EVALUATOR_TOKEN')
+    hf_token=userdata.get('NEBULA_HF_TOKEN')
 except Exception:
-    raise RuntimeError('Add and enable the Colab secret NEBULA_EVALUATOR_TOKEN.') from None
+    raise RuntimeError('Add and enable Colab secrets NEBULA_EVALUATOR_TOKEN and NEBULA_HF_TOKEN.') from None
 os.environ['NEBULA_WORKER_TOKEN']=token
 os.environ['NEBULA_RESEARCH_API']=API_BASE
+os.environ['NEBULA_HF_REPO']='iiidevv/nebula-research'
+os.environ['NEBULA_HF_TOKEN']=hf_token
 project=Path('/content/nebula-research/api')
 project.mkdir(parents=True,exist_ok=True)
 if not torch.cuda.is_available(): raise RuntimeError('Select a GPU runtime before running.')
