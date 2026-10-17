@@ -14,7 +14,7 @@ export function selectContributions(training,accounts){
       const source=sample.source,profile=accounts?.[source?.accountKey];
       if(!source||source.kind!=='user'||!profile||profile.improve!==true||(profile.trainingGeneration||0)!==source.generation||sample.consentVersion!==1)continue;
       if(!Array.isArray(sample.messages)||!sample.messages.length)continue;
-      rows.push({id:createHash('sha256').update(owner+':'+chatId+':'+turnId).digest('hex'),reviewStatus:'pending',messages:sample.messages,source:{...source,owner,chatId,turnId}});
+      rows.push({id:createHash('sha256').update(owner+':'+chatId+':'+turnId).digest('hex'),reviewStatus:'pending',messages:sample.review?.verdict==='needs_correction'&&sample.review.correctedReply?[sample.messages[0],{role:'assistant',content:sample.review.correctedReply}]:sample.messages,...(sample.review?{teacherReview:{provider:'gemini',verdict:sample.review.verdict}}:{}),source:{...source,owner,chatId,turnId}});
     }
   }
   return rows;
