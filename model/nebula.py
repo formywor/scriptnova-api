@@ -16,6 +16,17 @@ class Config:
     layers: int = 2
     context: int = 512
 
+def config_for_preset(preset):
+    presets = {
+        'smoke': Config(width=64,heads=2,layers=1,context=256),
+        'cpu': Config(),
+        'cpu-medium': Config(width=192,heads=6,layers=4,context=1024),
+        'cpu-large': Config(width=256,heads=8,layers=6,context=1024),
+        'gpu': Config(width=384,heads=8,layers=6,context=2048),
+    }
+    if preset not in presets: raise ValueError('Unknown model preset')
+    return presets[preset]
+
 def encode(messages, answer_prefix=False):
     tokens, learn = [BOS], [False]
     for message in messages:
@@ -53,6 +64,7 @@ class Nebula(nn.Module):
         self.norm = nn.LayerNorm(config.width)
         self.output = nn.Linear(config.width, VOCAB, bias=False)
         self.output.weight = self.token.weight
+        self.register_buffer('_causal_mask',torch.ones(config.context,config.context,dtype=torch.bool).triu(1),persistent=False)
         self.apply(self._initialize)
 
     @staticmethod
@@ -65,7 +77,7 @@ class Nebula(nn.Module):
         length = tokens.shape[1]
         if length > self.config.context: raise ValueError("Context is too long")
         value = self.token(tokens) + self.position(torch.arange(length, device=tokens.device))
-        causal = torch.ones(length, length, device=tokens.device, dtype=torch.bool).triu(1)
+        causal = self._causal_mask[:length,:length]
         for block in self.blocks: value = block(value, src_mask=causal)
         return self.output(self.norm(value))
 
@@ -86,14 +98,20 @@ class Nebula(nn.Module):
             result.append(value); tokens = torch.cat([tokens, next_token], dim=1)
         return bytes(result).decode('utf-8', errors='replace').strip()
 
-def save(model, path, metadata):
+def save(model, path, metadata, training_state=None):
+    if any(not torch.isfinite(parameter).all() for parameter in model.parameters()):
+        raise ValueError('Checkpoint contains non-finite weights; existing saved weights were not replaced')
     path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
-    torch.save({'format': 1, 'config': asdict(model.config), 'state': model.state_dict(), 'metadata': metadata}, temporary)
+    payload={'format': 1, 'config': asdict(model.config), 'state': model.state_dict(), 'metadata': metadata}
+    if training_state is not None: payload['trainingState']=training_state
+    torch.save(payload, temporary)
     temporary.replace(path)
 
 def load(path):
     data = torch.load(path, map_location='cpu', weights_only=True)
     if data.get('format') != 1: raise ValueError('Unsupported model checkpoint')
     model = Nebula(Config(**data['config'])); model.load_state_dict(data['state']); model.eval()
+    if any(not torch.isfinite(parameter).all() for parameter in model.parameters()):
+        raise ValueError('Checkpoint contains non-finite weights; resume from a healthy best checkpoint')
     return model, data.get('metadata', {})

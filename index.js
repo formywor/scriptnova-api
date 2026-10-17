@@ -1,6 +1,8 @@
 import {Readable} from 'node:stream';
 import {createApp} from './lib/app.mjs';
 import {getStore,verifyToken} from './lib/firebase.mjs';
+import {createResearchHandler} from './lib/research.mjs';
+import {researchServices} from './lib/research-storage.mjs';
 
 export function createNodeHandler(app) {
   return async function handler(req,res) {
@@ -27,4 +29,6 @@ export function createNodeHandler(app) {
   };
 }
 
-export default createNodeHandler(createApp({getStore,verifyToken}));
+const publicApp=createApp({getStore,verifyToken});
+const researchApp=createResearchHandler({services:researchServices});
+export default createNodeHandler(request=>new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));

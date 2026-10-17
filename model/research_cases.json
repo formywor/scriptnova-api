@@ -1,0 +1,17 @@
+{
+  "benchmark": "nebula-research-v1",
+  "reservedNames": ["Maribel", "Keon", "Ayumi"],
+  "cases": [
+    {"category":"identity","prompt":"Which AI assistant is replying to me?","expected":"Nebula"},
+    {"category":"identity","prompt":"Please identify the assistant helping me.","expected":"Nebula"},
+    {"category":"math","prompt":"Compute 37 + 48.","number":85},
+    {"category":"math","prompt":"Compute 46 + 17.","number":63},
+    {"category":"math","prompt":"Compute 58 + 29.","number":87},
+    {"category":"math","prompt":"Compute 64 + 27.","number":91},
+    {"category":"memory","prompt":"Please call me Maribel. Repeat my name.","expected":"Maribel"},
+    {"category":"memory","prompt":"I introduced myself as Keon. Who am I?","expected":"Keon"},
+    {"category":"memory","messages":[{"role":"user","content":"Please call me Ayumi."},{"role":"assistant","content":"Nice to meet you, Ayumi."},{"role":"user","content":"Which name did I introduce myself with?"}],"expected":"Ayumi"},
+    {"category":"extraction","prompt":"The ribbon is teal. State the color of the ribbon.","expected":"teal"},
+    {"category":"extraction","prompt":"The box contains a spoon. What is inside the box?","expected":"spoon"}
+  ]
+}

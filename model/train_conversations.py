@@ -16,6 +16,10 @@ from nebula import encode
 from rules import with_owner_rules
 from train import train
 
+def configured_teachers(configs, environment):
+    """Skip an optional teacher only when its key is absent; required keys remain required."""
+    return [config for config in configs if not config.get('optional',False) or environment.get(config.get('keyEnv','NEBULA_TEACHER_KEY'),'').strip()]
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--collect', action='store_true', help='Call teacher APIs before training')
@@ -40,6 +44,10 @@ def main():
     pending = folder/'conversations-teacher-pending.jsonl'
     if args.collect:
         configs = json.loads((Path(args.teachers) if args.teachers else root/'teachers.gemini-groq.json').read_text(encoding='utf-8'))
+        optional_missing=sum(1 for config in configs if config.get('optional',False) and not os.environ.get(config.get('keyEnv','NEBULA_TEACHER_KEY'),'').strip())
+        configs=configured_teachers(configs,os.environ)
+        if optional_missing: print(json.dumps({'optionalTeachersSkipped':optional_missing,'reason':'key_not_set'}),flush=True)
+        if not configs: parser.error('No teachers have configured keys')
         for config in configs:
             override = os.environ.get('GEMINI_SECOND_TEACHER_MODEL' if config.get('name') == 'gemini-secondary' else 'GEMINI_TEACHER_MODEL' if config.get('name') == 'gemini' else 'GROQ_TEACHER_MODEL' if config.get('name') == 'groq' else '')
             if override: config['model'] = override

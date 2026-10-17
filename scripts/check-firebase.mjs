@@ -4,6 +4,7 @@ const checks=[
   ['app',()=>import('firebase-admin/app'),['initializeApp','cert','getApps']],
   ['auth',()=>import('firebase-admin/auth'),['getAuth']],
   ['database',()=>import('firebase-admin/database'),['getDatabase']],
+  ['storage',()=>import('firebase-admin/storage'),['getStorage']],
 ];
 let failed=false;
 for(const [name,load,exports] of checks){

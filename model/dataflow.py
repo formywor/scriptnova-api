@@ -47,6 +47,10 @@ def eligible(row, snapshot=None):
         if not messages or not row.get('messages') or row['messages'][0] != messages[0]: return False
     elif source.get('kind') == 'teacher':
         if source.get('trainingAllowed') is not True: return False
+    elif source.get('kind') == 'public':
+        allowed = (source.get('dataset') == 'HuggingFaceTB/everyday-conversations-llama3.1-2k' and source.get('subset') == 'default') or (source.get('dataset') == 'HuggingFaceTB/smoltalk' and source.get('subset') == 'smol-magpie-ultra')
+        story = source.get('dataset') == 'roneneldan/TinyStories' and source.get('subset') == 'default' and source.get('license') == 'cdla-sharing-1.0'
+        if not ((allowed and source.get('license') == 'apache-2.0') or story) or not source.get('recordId'): return False
     elif source.get('kind') != 'seed': return False
     messages = row.get('messages')
     # User exports remain a single consent-checked pair. Owned/teacher datasets may be dialogues.
