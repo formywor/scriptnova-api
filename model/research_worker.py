@@ -46,13 +46,17 @@ def training_plan(state):
     return {'focus':focus,'lr':.000025*(.5**rejected),'rejectedRounds':rejected}
 
 def launch(project,resume,output,steps,gpus,focus,lease=None,benchmark=False,lr=.00005,max_seconds=3600,
-           data=None,batch=16,best=False,save_every=200,sampling_seed=42,conversation_mix=False,review_data=None,quality_anchor=None,teacher_data=None,large_model=False,microbatch=1):
+           data=None,batch=16,best=False,save_every=200,sampling_seed=42,conversation_mix=False,review_data=None,quality_anchor=None,teacher_data=None,large_model=False,microbatch=1,curriculum_v9=False,validation_data=None,curriculum_v10=False,expanded_public=False):
     command=[sys.executable]
     if gpus>1:command+=['-m','torch.distributed.run','--standalone','--nproc_per_node',str(gpus)]
-    command+=[str(Path(__file__).with_name('v8_train.py' if large_model else 'v7_train.py' if quality_anchor else 'research_train.py')),'--data',str(data or project/'model/data/v3-chat.jsonl'),
+    command+=[str(Path(__file__).with_name('v10_train.py' if curriculum_v10 else 'v9_train.py' if curriculum_v9 else 'v8_train.py' if large_model else 'v7_train.py' if quality_anchor else 'research_train.py')),'--data',str(data or project/'model/data/v3-chat.jsonl'),
               '--resume',str(resume),'--output',str(output),'--steps',str(steps),'--batch',str(batch),
               '--focus',focus,'--lr',str(lr),'--max-seconds',str(max_seconds),'--save-every',str(save_every),'--sampling-seed',str(sampling_seed)]
-    if large_model:command+=['--microbatch',str(microbatch)]
+    if expanded_public:
+        if not curriculum_v10:raise ValueError('Expanded public data requires the verified conversation trainer')
+        command+=['--expanded-public']
+    if validation_data:command+=['--validation-data',str(validation_data)]
+    if large_model or curriculum_v9 or curriculum_v10:command+=['--microbatch',str(microbatch)]
     if quality_anchor:command+=['--quality-anchor',str(quality_anchor)]
     if teacher_data:command+=['--teacher-data',str(teacher_data)]
     if conversation_mix:command+=['--conversation-mix']

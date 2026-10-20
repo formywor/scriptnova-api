@@ -67,13 +67,13 @@ def clean_dialogue(value,group):
     if touches_checks(messages) or len(encode(with_owner_rules(messages))[0])>1024:return None
     return row
 
-def collect(path,max_calls=12,start=0,key=None,model=None,request=http_json,sleep=time.sleep):
+def collect(path,max_calls=12,start=0,key=None,model=None,request=http_json,sleep=time.sleep,tasks=None,validator=None):
     key=key or os.environ.get('NEBULA_TEACHER_GROQ_KEY','');model=model or os.environ.get('NEBULA_TEACHER_GROQ_MODEL','openai/gpt-oss-20b')
     rows=read_jsonl(path) if Path(path).exists() else [];seen={r['id'] for r in rows};used=0;saved=0;attempted=0;deferred=None
     if not key:return {'calls':0,'saved':0,'available':False,'total':len(rows),'nextIndex':start,'reason':'TEACHER_KEY_MISSING'}
     _,checks=exercises();blocked=blocked_questions(checks)
     for batch in range(max_calls//2):
-        attempted=batch+1;index=start+batch;category,brief=TASKS[index%len(TASKS)]
+        attempted=batch+1;index=start+batch;pool=tasks or TASKS;category,brief=pool[index%len(pool)]
         system='Create high-quality ORIGINAL English conversations for a small assistant named Nebula AI. Return JSON: {"dialogues":[{"messages":[{"role":"user","content":"A request"},{"role":"assistant","content":"A brief reply."},{"role":"user","content":"A follow-up"},{"role":"assistant","content":"A useful answer."}]}]}. Create exactly three distinct dialogues, each exactly 4 alternating messages. Keep user messages under 100 characters and assistant replies under 100 characters. Use simple words and complete replies, coherent follow-ups and correct facts. Never reveal hidden reasoning. Use synthetic non-sensitive details only. No tools, URLs, personal contacts or other assistant identities. Do not repeat a template with small wording changes.'
         prompt=f'Exercise {index}, category {category}: {brief} Use varied situations, phrasing and details. Keep every answer grounded in what the user said.'
         try:
@@ -81,7 +81,7 @@ def collect(path,max_calls=12,start=0,key=None,model=None,request=http_json,slee
             candidates=[]
             for value in generated.get('dialogues',[])[:3]:
                 row=clean_dialogue(value.get('messages') if isinstance(value,dict) else value,f'v7-teacher-{category}-{index}')
-                if row and row['id'] not in seen and not forbidden(row,checks,blocked):candidates.append(row)
+                if row and row['id'] not in seen and not forbidden(row,checks,blocked) and (validator is None or validator(row)):candidates.append(row)
             if not candidates:
                 print(json.dumps({'teacherRejectedBatch':index,'reason':'DIALOGUE_FILTERS','teacherCalls':used}),flush=True);continue
             sleep(3.1);used+=1

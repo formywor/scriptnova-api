@@ -1,6 +1,7 @@
 """Deterministic 80/20 update scheduling shared by all GPU ranks."""
 def conversational(row):
     source=row.get('source',{});curriculum=source.get('curriculum','')
+    if curriculum=='v13-language':return False
     return curriculum in ['v5-conversation','v6-conversation','v6-reviewed'] or (source.get('kind')=='public' and source.get('dataset')!='roneneldan/TinyStories') or (source.get('kind')=='teacher' and source.get('trainingAllowed') is True)
 
 def mixed_lane(step):

@@ -48,9 +48,10 @@ def eligible(row, snapshot=None):
     elif source.get('kind') == 'teacher':
         if source.get('trainingAllowed') is not True: return False
     elif source.get('kind') == 'public':
-        allowed = (source.get('dataset') == 'HuggingFaceTB/everyday-conversations-llama3.1-2k' and source.get('subset') == 'default') or (source.get('dataset') == 'HuggingFaceTB/smoltalk' and source.get('subset') == 'smol-magpie-ultra')
+        allowed = (source.get('dataset') == 'HuggingFaceTB/everyday-conversations-llama3.1-2k' and source.get('subset') == 'default') or (source.get('dataset') == 'HuggingFaceTB/smoltalk' and source.get('subset') == 'smol-magpie-ultra') or (source.get('dataset') == 'HuggingFaceTB/smol-smoltalk' and source.get('subset') == 'default')
         story = source.get('dataset') == 'roneneldan/TinyStories' and source.get('subset') == 'default' and source.get('license') == 'cdla-sharing-1.0'
-        if not ((allowed and source.get('license') == 'apache-2.0') or story) or not source.get('recordId'): return False
+        educational = source.get('curriculum') == 'v13-language' and source.get('originalSplit') == 'train' and source.get('license') == 'odc-by' and ((source.get('dataset') == 'HuggingFaceTB/smollm-corpus' and source.get('subset') == 'cosmopedia-v2') or (source.get('dataset') == 'HuggingFaceFW/fineweb-edu' and source.get('subset') == 'sample-10BT'))
+        if not ((allowed and source.get('license') == 'apache-2.0') or story or educational) or not source.get('recordId'): return False
     elif source.get('kind') != 'seed': return False
     messages = row.get('messages')
     # User exports remain a single consent-checked pair. Owned/teacher datasets may be dialogues.
