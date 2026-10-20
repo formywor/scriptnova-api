@@ -19,7 +19,7 @@ function fixture({review}={}){
 }
 test('model choices and response budgets are allowlisted and server credentials stay private',async()=>{
  const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,4);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
- assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-classic');assert.equal(f.selected.config.responseLength,'expanded');
+ assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-classic');assert.equal(f.selected.config.responseLength,'standard');
  assert.equal((await f.request('/chat','POST',{modelId:'private-provider-model',messages:[{role:'user',content:'Hi'}]},null)).status,400);
 });
 test('personalization synchronizes with the account and is excluded when disabled',async()=>{
@@ -127,4 +127,16 @@ test('an unavailable confirmation retries later without admitting an unchecked c
  await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.body.reviewSaved,true);assert.equal(first.body.trainingEligible,false);assert.ok(first.body.retryAt);assert.equal(f.calls,2);
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,2);
  assert.equal((await f.store.reviewState(accountKey('alice'),'chat')).reviewedThrough,undefined);
+});
+
+test('workspace preferences sync independently without turning memory on or restricting answers',async()=>{
+ const f=fixture(),patch={accentColor:'green',readingFont:'serif',workspaceView:'wide',showStarters:false,enterToSend:false,autoFollow:false,explanationStyle:'examples',answerStyle:'concise'};
+ const saved=await f.request('/account','PATCH',patch);assert.equal(saved.status,200);
+ for(const [key,value] of Object.entries(patch))assert.equal(saved.body.account[key],value);
+ assert.equal(saved.body.account.memoryEnabled,false);
+ const fresh=await f.request('/account');assert.equal(fresh.body.account.workspaceView,'wide');
+ await f.turn();const instructions=f.selected.messages.filter(m=>m.role==='system').map(m=>m.content).join(' ');
+ assert.ok(instructions.includes('Use examples when helpful.'));assert.ok(!instructions.includes('Preferred answer style: concise'));assert.ok(!instructions.includes('Prefer short answers'));
+ for(const invalid of [{workspaceView:'arbitrary-css'},{accentColor:'url(secret)'},{showStarters:'false'},{explanationStyle:'brief'}])assert.equal((await f.request('/account','PATCH',invalid)).status,400);
+ await f.request('/account','PATCH',{memoryEnabled:true});await f.request('/account','PATCH',{accentColor:'blue'});assert.equal((await f.request('/account')).body.account.memoryEnabled,true);
 });

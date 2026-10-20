@@ -13,9 +13,9 @@ test('four actual owned checkpoints have distinct selectable identities and acco
  assert.equal(lite.parameters,8227328);assert.equal(large.parameters,100219392);assert.notEqual(lite.sourceSha256,large.sourceSha256);
  assert.throws(()=>loadGraphRelease('../release'),e=>e.code==='MODEL_ARTIFACT_INVALID');
 });
-test('Quick is a preference with the same output ceiling as Standard and Expanded',()=>{
+test('legacy length settings add no instructions and share the same output ceiling',()=>{
  assert.equal(RESPONSE_LENGTHS.quick,RESPONSE_LENGTHS.standard);assert.equal(RESPONSE_LENGTHS.quick,RESPONSE_LENGTHS.expanded);assert.ok(RESPONSE_LENGTHS.quick>192);
- assert.match(responseLengthPrompt('quick'),/Prefer short/);assert.match(responseLengthPrompt('expanded'),/detailed/);
+ assert.equal(responseLengthPrompt('quick'),'');assert.equal(responseLengthPrompt('expanded'),'');
 });
 test('reviews accept only current fingerprints for each published family and exclude Classic',()=>{
  const config={modelMode:'embedded'},stamp=reviewRevision(config,'nebula-v2-1'),time=1000000;
