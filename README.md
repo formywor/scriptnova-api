@@ -198,3 +198,106 @@ A bounded live screen used 80 calls with the separate Groq training key, reviewi
 The notebook embeds the selected records and their completed screening decisions. On first run it rechecks overlap against the actual saved V11 data and verifies the source-best checkpoint with the same grading protocol. Completed public reviews are reused without new provider calls; any uncached candidate would require both passes. At least 200 genuinely new reviewed examples must survive, or initialization stops. Accepted public data, licenses and screening metadata are included in the private V12 backup. No account conversations are sent through this public-data screening path.
 
 The verified research runner keeps the 80/20 conversation/mixed schedule, protected skill gates, early-candidate checks, pending-review backups and three-rejection pause. Logs retain the V11 evaluation event names because V12 reuses that runner. Public publishing remains disabled. This is a small, measured data experiment; compare actual replies and verified metrics before considering a release.
+
+## Nebula Ultra cloud workspace and Schedule
+
+This update adds a dismissible introduction, dim theme, plain reading font,
+rounded/square/minimal message shapes, and three settings glyphs. Preferences
+sync through the existing account API and AI changes retain Undo. The introduction
+uses the Nebula Ultra brand and a generic external-AI processing disclosure.
+
+The cloud workspace is an account-owned collection of connected tools and saved
+scheduled task results. It is **not** an unrestricted cloud desktop/browser.
+There is no extension, arbitrary code execution, password collection, or generic
+website login. Supported tools are web search, current weather, Google OAuth,
+and one-time scheduled weather emails. Unknown/ambiguous locations require a
+more specific city, region and country; no silent first-result selection.
+
+### Configuration and activation
+
+| Variable | Value/source |
+| --- | --- |
+| `NEBULA_SEARCH_API_KEY` | Your Brave Search API key; optional, only search requires it |
+| `NEBULA_GOOGLE_CLIENT_ID` | OAuth web client ID in your Google Cloud project |
+| `NEBULA_GOOGLE_CLIENT_SECRET` | That web client's secret |
+| `NEBULA_CONNECTION_ENCRYPTION_KEY` | Base64 encoding of 32 random bytes; retain for existing connections |
+| `QSTASH_TOKEN` | Upstash QStash API token for delayed callbacks |
+| `NEBULA_SCHEDULE_WORKER_SECRET` | Separate random secret, at least 32 characters |
+| `NEBULA_SCHEDULE_ENABLED` | `true` after configuring Google and QStash |
+| `NEBULA_PUBLIC_API_URL` | `https://api.scriptnovaa.com` |
+| `NEBULA_PUBLIC_SITE_URL` | `https://scriptnovaa.com` |
+| `NEBULA_QSTASH_URL` | Optional; defaults to `https://qstash.upstash.io`; use your QStash region endpoint if different |
+
+Generate the encryption value with Node's `randomBytes(32).toString('base64')`.
+Generate the worker secret independently. Never commit either value. Rotating the
+encryption key requires users to reconnect Google; old ciphertext cannot be
+recovered with a new key. Existing Ultra/Firebase/rate-limit variables still apply.
+
+In the Google Cloud console, enable **Gmail API**, configure the OAuth consent
+screen, and add **this exact authorized redirect URI** to a Web application client:
+
+`https://api.scriptnovaa.com/api/nebula/cloud/google/callback`
+
+The consent flow requests `openid`, `email`, and
+`https://www.googleapis.com/auth/gmail.send` with offline access. It does not request
+inbox-reading permissions. Add permitted test users while the Google app is in
+testing; production public access may require Google's verification. This is a
+separate connection from Firebase website sign-in and can use a separate client.
+Users choose Connect Gmail in Cloud workspace, authorize on Google's own page,
+and return to Nebula. Tokens are AES-256-GCM encrypted in server-only Realtime
+Database paths. The database rules deny direct client reads/writes.
+
+QStash receives only a task ID and opaque account key plus a protected worker
+callback, not Google refresh tokens or chat history. Tasks are saved before queue
+publication; publication failures are marked failed. Delivery uses a fixed
+`/api/nebula/cloud/dispatch` endpoint with a forwarded bearer secret and a
+server-stored lease. This avoids reliance on page timers or Vercel Hobby cron.
+Queue availability, plan limits and delayed delivery still apply; do not promise
+an exact-second execution time. No QStash account or paid plan was provisioned by
+this code change.
+
+### Scheduling behavior and reliability
+
+- The first supported scheduled action is a **weather email** within 1 minute to
+  7 days. The user reviews recipient, sender, location, absolute date/time and
+  time zone and confirms **Schedule this email**. The task fetches weather when
+  it runs; it does not email an old chat answer.
+- The AI can only propose a task; proposing never schedules or sends. Actual
+  creation requires the authenticated UI/API confirmation. No tool can directly
+  call Gmail from the chat loop.
+- Create requests use an idempotency key. Duplicate callbacks and cancelled tasks
+  cannot send again. Accounts cannot inspect or cancel another account's tasks.
+- The connected sender is bound when the task is created. Disconnecting or
+  changing that connection prevents pending tasks from using another sender.
+- The job persists a `sending` boundary before Gmail is contacted. If delivery
+  becomes uncertain, status is **needs attention**. Do not automatically resend:
+  Gmail sending has no general exactly-once transaction with our database. Check
+  Gmail Sent before creating a replacement task.
+- Jobs over an hour late fail rather than silently mailing an outdated task.
+  Stale worker leases surface as needs attention when the workspace is opened.
+  An in-progress send cannot be cancelled retroactively.
+- There are at most 20 active tasks and roughly 50 retained tasks per account.
+  OAuth state is single-use, expires after 10 minutes, and is bounded to one
+  current authorization per account. Credentials never enter model prompts,
+  logs, training examples, or browser responses.
+- The chat loop makes at most one cloud lookup and two model calls per response.
+  Search results include source URLs and are treated as untrusted data.
+- Search requires the search key; weather works through the public Open-Meteo
+  service. Follow its attribution/usage terms; its public free endpoint is for
+  noncommercial use. Commercial use needs an appropriate service plan/integration.
+
+Routes: `GET /api/nebula/cloud`, `POST .../search`, `POST .../weather`,
+`POST .../google/connect`, `GET .../google/callback`, `DELETE .../google`,
+`POST .../jobs`, `DELETE .../jobs/:id`, and protected `POST .../dispatch`.
+
+Official integration references:
+- https://developers.google.com/identity/protocols/oauth2/web-server
+- https://developers.google.com/workspace/gmail/api/guides/sending
+- https://upstash.com/docs/qstash/api-reference/messages/publish-a-message
+- https://api-dashboard.search.brave.com/app/documentation/web-search
+- https://open-meteo.com/en/docs
+
+The tests use mocked provider/queue/Google responses and a memory database. They
+verify transport contracts and application behavior, not a real Google consent,
+provider billing configuration, or external queue delivery. Deploy and perform
+one authorized test task after filling the server configuration.
