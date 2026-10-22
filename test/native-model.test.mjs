@@ -45,9 +45,8 @@ test('missing manifest and missing parts produce distinct sanitized deployment r
 test('native Transformer agrees with independent PyTorch reference logits',{skip:!existsSync(asset)},()=>{
  const model=new NativeNebula(JSON.parse(readFileSync(asset,'utf8'))),reference=JSON.parse(readFileSync(new URL('./fixtures/native-reference.json',import.meta.url),'utf8'));assert.deepEqual(packPrompt(reference.messages,model.config.context),reference.tokens);const actual=model.logits(reference.tokens);assert.ok(Math.max(...actual.map((v,i)=>Math.abs(v-reference.logits[i])))<.0001);assert.ok(model.reply(reference.messages,{temperature:0}).length>0);
 });
-test('embedded mode produces a real answer through API and persists it under the account',{skip:!existsSync(asset)},async()=>{
- const{db}=memoryDatabase();const app=createApp({getStore:async()=>createStore(db),verifyToken:async()=>({uid:'test-user'}),config:{origins:[],rateSecret:'s'.repeat(40),modelMode:'embedded',training:false},log:()=>{}});
- const request=async(path,method='GET',body)=>{const r=await app(new Request('https://api.test/api/nebula'+path,{method,headers:{Authorization:'Bearer valid.test.token','Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}));return{status:r.status,body:await r.json()};};
- await request('/chats/chat','PUT',{revision:0,title:'Native inference',messages:[{id:'turn',role:'user',content:'What is your name?',trainingEligible:false}]});const random=Math.random;Math.random=()=>.25;
- try{const answer=await request('/chat','POST',{chatId:'chat',turnId:'turn',messages:[{role:'user',content:'What is your name?'}]});assert.equal(answer.status,200);assert.ok(answer.body.reply.length>0);assert.equal(answer.body.usage.questions,1);const remote=await request('/chats/chat');assert.equal(remote.status,200,JSON.stringify(remote.body));assert.equal(remote.body.chat.messages.at(-1).content,answer.body.reply);}finally{Math.random=random;}
+test('public chat requires Ultra configuration even when embedded artifacts exist',async()=>{
+ const{db}=memoryDatabase();const app=createApp({getStore:async()=>createStore(db),config:{origins:[],rateSecret:'s'.repeat(40),modelMode:'embedded',training:false},log:()=>{}});
+ const r=await app(new Request('https://api.test/api/nebula/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'Hi'}]})}));
+ assert.equal(r.status,503);assert.equal((await r.json()).code,'ULTRA_NOT_CONFIGURED');
 });

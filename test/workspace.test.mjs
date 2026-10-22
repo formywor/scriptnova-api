@@ -8,7 +8,7 @@ import {memoryDatabase} from './helpers/database.mjs';
 const user={uid:'alice',name:'Alice'};
 function fixture(overrides={}){
  const{db,records}=memoryDatabase();const store=createStore(db);let time=1700000000000;const calls=[];
- const app=createApp({getStore:async()=>store,verifyToken:async token=>({uid:token==='bob.test.token'?'bob':'alice',name:'Alice'}),config:{origins:[],rateSecret:'x'.repeat(40),modelUrl:'https://model.invalid',training:true,guestLimit:10,askingFraction:2,heavyFraction:2,...overrides},now:()=>time,generate:async messages=>{calls.push(messages);return 'Answer';},log:()=>{}});
+ const app=createApp({getStore:async()=>store,verifyToken:async token=>({uid:token==='bob.test.token'?'bob':'alice',name:'Alice'}),config:{ultraKey:'unit-test-only-key',origins:[],rateSecret:'x'.repeat(40),modelUrl:'https://model.invalid',training:true,guestLimit:10,askingFraction:2,heavyFraction:2,...overrides},now:()=>time,generate:async messages=>{calls.push(messages);return 'Answer';},log:()=>{}});
  const request=async(path,method='GET',body,token='alice.test.token')=>{const r=await app(new Request('https://api.scriptnovaa.com/api/nebula'+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})}));return{status:r.status,body:await r.json()};};
  return{request,store,records,calls,setTime:t=>time=t,get time(){return time;}};
 }

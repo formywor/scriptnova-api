@@ -55,7 +55,7 @@ test('the real API router can produce checked Groq teaching examples without a G
   assert.equal(url,'https://api.groq.com/openai/v1/chat/completions');assert.equal(options.headers.Authorization,'Bearer groq-test-only');calls++;
   return new Response(JSON.stringify({choices:[{message:{content:JSON.stringify({verdict:calls===1?'needs_correction':'acceptable',correctedReply:'2 + 2 = 4.',trainingQuestion:'What is 2 + 2?'})}}]}));
  });
- const app=createApp({getStore:async()=>store,verifyToken:async()=>({uid:'alice'}),config:{origins:[],rateSecret:'x'.repeat(40),modelMode:'embedded',training:true,reviewEnabled:true,reviewGroqKey:'groq-test-only',reviewGroqModel:'openai/gpt-oss-20b'},now:()=>time,generate:async()=> '2 + 2 = 44.',log:()=>{}});
+ const app=createApp({getStore:async()=>store,verifyToken:async()=>({uid:'alice'}),config:{ultraKey:'unit-test-only-key',origins:[],rateSecret:'x'.repeat(40),modelMode:'embedded',training:true,reviewEnabled:true,reviewGroqKey:'groq-test-only',reviewGroqModel:'openai/gpt-oss-20b'},now:()=>time,generate:async()=> '2 + 2 = 44.',log:()=>{}});
  const request=async(path,body)=>{const response=await app(new Request('https://api.test/api/nebula'+path,{method:path.startsWith('/chats/')?'PUT':'POST',headers:{Authorization:'Bearer alice.test.token','Content-Type':'application/json'},body:JSON.stringify(body)}));assert.equal(response.status,200);return response.json();};
  await request('/chats/chat',{title:'Practice',revision:0,messages:[{id:'turn',role:'user',content:'What is 2 + 2?',trainingEligible:true,reviewEligible:true}]});
  await request('/chat',{chatId:'chat',turnId:'turn',messages:[{role:'user',content:'Hi'}],training:{enabled:true,token:'a'.repeat(64),consentVersion:1,chatId:'chat',turnId:'turn'}});time+=301000;

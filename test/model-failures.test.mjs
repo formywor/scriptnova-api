@@ -6,7 +6,7 @@ import {memoryDatabase} from './helpers/database.mjs';
 test('a missing model is logged specifically while public responses contain no private exception details',async()=>{
  for(const code of ['MODEL_RELEASE_MISSING','MODEL_SHARD_MISSING','private-secret-code']){
   const {db}=memoryDatabase(),logs=[];
-  const app=createApp({getStore:async()=>createStore(db),config:{origins:[],rateSecret:'s'.repeat(40),modelMode:'embedded',training:false},
+  const app=createApp({getStore:async()=>createStore(db),config:{ultraKey:'unit-test-only-key',origins:[],rateSecret:'s'.repeat(40),modelMode:'embedded',training:false},
    generate:async()=>{throw Object.assign(Error('secret private-model-host/path'),{code});},log:value=>logs.push(value)});
   const result=await app(new Request('https://api.test/api/nebula/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:'Hi'}]})}));
   assert.equal(result.status,503);assert.equal((await result.json()).code,'UNAVAILABLE');

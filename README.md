@@ -2,7 +2,17 @@
 
 Server-only source for the existing Vercel project. Upload the contents of this `api` directory to the API repository root. The main website remains a separate GitHub Pages repository. No secrets belong in either repository.
 
-## Public experimental model
+## Active public model: Nebula Ultra
+
+The public catalog now exposes Nebula Ultra. Classic, V1, V1 Lite and V2.1 are disabled with `Currently in training`; older client selections route to Ultra. API replies and saved messages record the actual Ultra model identity.
+
+Set server-only `NEBULA_ULTRA_API_KEY` and optionally `NEBULA_ULTRA_MODEL` (default `openai/gpt-oss-20b`). The key falls back to `GROQ_API_KEY`, then `NEBULA_REVIEW_GROQ_API_KEY`. No key is sent to the website. Missing configuration and upstream rate limits produce explicit unavailable/busy states.
+
+Ultra uses Groq Chat Completions for writing, explanations, coding help and planning. It cannot browse or execute code. On explicit appearance requests it may return one allowlisted settings patch. Theme, font, size, spacing, accents, animation, starters and layout are supported. The browser validates the patch again, saves account preferences when signed in, and offers Undo. No generated HTML/CSS/JavaScript executes.
+
+Training sharing and optional reviews retain their independent consent checks. Normal Ultra generation requires sending relevant chat context to Groq; the website discloses this separately. Model artifacts are excluded from this API bundle while experimental models are unavailable. `check:model` skips legacy artifact checks unless `NEBULA_VALIDATE_TRAINING_MODELS=true`.
+
+## Historical experimental model (not currently served)
 
 `model-assets/release.json` pins V4 trial 1: 8,227,328 parameters, 35/70 limited diagnostics. The exported weights are split into six `model-assets/nebula-v4-experimental-1-*.part` files, each at most 8 MiB, and verified by size and SHA-256 after assembly. Upload all six parts and `release.json`. They stay on the API server. This model is experimental and frequently gives incorrect or unclear answers, including basic arithmetic. The website says so. Passing these checks is not general chat readiness.
 

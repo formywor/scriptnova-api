@@ -7,7 +7,7 @@ import {memoryDatabase} from './helpers/database.mjs';
 function fixture(generate=async()=> 'Reply'){
  const {db,records}=memoryDatabase();let sequence=0;
  const auth=publicAuthConfig({FIREBASE_WEB_API_KEY:'public-key',FIREBASE_AUTH_DOMAIN:'test.firebaseapp.com',FIREBASE_PROJECT_ID:'test',FIREBASE_WEB_APP_ID:'public-app',FIREBASE_PRIVATE_KEY:'NEVER-PUBLISH'});
- const app=createApp({getStore:async()=>createStore(db),verifyToken:async token=>{if(!['alice.valid.token','bob.valid.token'].includes(token))throw Object.assign(Error('Invalid token'),{code:'auth/invalid-id-token'});return{uid:token.split('.')[0],name:'Name'};},config:{origins:['https://scriptnovaa.com'],training:true,modelUrl:'https://model.invalid',rateSecret:'x'.repeat(40),auth,askingFraction:2,heavyFraction:2},generate,now:()=>1700000000000,log:()=>{}});
+ const app=createApp({getStore:async()=>createStore(db),verifyToken:async token=>{if(!['alice.valid.token','bob.valid.token'].includes(token))throw Object.assign(Error('Invalid token'),{code:'auth/invalid-id-token'});return{uid:token.split('.')[0],name:'Name'};},config:{ultraKey:'unit-test-only-key',origins:['https://scriptnovaa.com'],training:true,modelUrl:'https://model.invalid',rateSecret:'x'.repeat(40),auth,askingFraction:2,heavyFraction:2},generate,now:()=>1700000000000,log:()=>{}});
  async function request(path='/account',method='GET',body,token='alice.valid.token'){
   const r=await app(new Request('https://api.scriptnovaa.com/api/nebula'+path,{method,headers:{Origin:'https://scriptnovaa.com','Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})}));return{status:r.status,body:await r.json(),headers:r.headers};
  }

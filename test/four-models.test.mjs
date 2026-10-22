@@ -6,7 +6,7 @@ import {reviewPlan,reviewRevision} from '../lib/review-schedule.mjs';
 import {ownerRules} from '../lib/rules.mjs';
 
 test('four actual owned checkpoints have distinct selectable identities and account defaults',()=>{
- const catalog=modelCatalog({modelMode:'embedded'});assert.deepEqual(catalog.models.map(x=>x.name),['Nebula Classic','Nebula V1','Nebula V1 Lite','Nebula V2.1']);
+ const catalog=modelCatalog({modelMode:'embedded'});assert.deepEqual(catalog.models.map(x=>x.name),['Nebula Ultra','Nebula Classic','Nebula V1','Nebula V1 Lite','Nebula V2.1']);
  for(const model of catalog.models)assert.equal(preferencePatch({defaultModel:model.id}).defaultModel,model.id);
  assert.throws(()=>preferencePatch({defaultModel:'untrusted-provider'}));
  const lite=loadGraphRelease('nebula-v1-lite').release,large=loadGraphRelease('nebula-v2-1').release;
@@ -38,11 +38,12 @@ test('optional personalization can fit a small model without dropping owner rule
  assert.deepEqual(fitPromptContext([owner,{role:'system',optionalContext:true,content:'x'.repeat(300)},question],128),packPrompt([owner,question],128));
  assert.throws(()=>fitPromptContext([{role:'system',content:'x'.repeat(300)},question],128),e=>e.code==='MODEL_CONTEXT_LIMIT');
 });
-test('the real API serves the selected 100M checkpoint and saves its model fingerprint',async()=>{
+test('disabled owned checkpoints cannot reach inference without configured Ultra',async()=>{
  const {createApp}=await import('../lib/app.mjs'),{createStore}=await import('../lib/firebase.mjs'),{memoryDatabase}=await import('./helpers/database.mjs');const {db}=memoryDatabase();const store=createStore(db);
  const app=createApp({getStore:async()=>store,verifyToken:async()=>({uid:'model-test'}),config:{origins:[],rateSecret:'r'.repeat(40),modelMode:'embedded',training:false},log:()=>{}});
  const request=async(path,method,body)=>{const result=await app(new Request('https://api.test/api/nebula'+path,{method,headers:{Authorization:'Bearer test.user.token','Content-Type':'application/json'},body:JSON.stringify(body)}));return {status:result.status,body:await result.json()};};
  assert.equal((await request('/chats/models','PUT',{revision:0,title:'Model test',messages:[{id:'turn',role:'user',content:'hi',trainingEligible:false}]})).status,200);
  const result=await request('/chat','POST',{chatId:'models',turnId:'turn',messages:[{role:'user',content:'hi'}],modelId:'nebula-v2-1',responseLength:'quick'});
- assert.equal(result.status,200,JSON.stringify(result.body));assert.ok(result.body.reply.length>0);assert.equal(result.body.chat.messages.at(-1).modelId,'nebula-v2-1');assert.equal(result.body.chat.messages.at(-1).modelRevision,loadGraphRelease('nebula-v2-1').release.sha256);assert.equal(result.body.usage.questions,1);
+ assert.equal(result.status,503);assert.equal(result.body.code,'ULTRA_NOT_CONFIGURED');
+ assert.equal((await store.getChat((await import('../lib/accounts.mjs')).accountKey('model-test'),'models')).messages.length,1);
 });

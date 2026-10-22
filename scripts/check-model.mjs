@@ -3,7 +3,9 @@ import {loadReleaseArtifact,NativeNebula} from '../lib/native-model.mjs';
 import {readFileSync} from 'node:fs';
 import {loadGraphRelease} from '../lib/onnx-model.mjs';
 import {createRequire} from 'node:module';
-try{
+if(process.env.NEBULA_VALIDATE_TRAINING_MODELS!=='true'){
+ console.log(JSON.stringify({modelReleaseChecked:false,reason:'LEGACY_MODELS_CURRENTLY_IN_TRAINING',activeModel:'nebula-ultra'}));
+}else try{
  const {release,artifact}=loadReleaseArtifact();
  new NativeNebula(artifact);
  new NativeNebula(JSON.parse(readFileSync(new URL('../model-assets/nebula-pilot.json',import.meta.url),'utf8')));

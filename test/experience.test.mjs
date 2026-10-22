@@ -8,7 +8,7 @@ import {memoryDatabase} from './helpers/database.mjs';
 import {reviewAnswer} from '../lib/gemini-review.mjs';
 import {selectContributions} from '../scripts/model-data.mjs';
 function fixture({review}={}){
- const {db,records}=memoryDatabase(),store=createStore(db);let calls=0,selected,time=1800000000000;const config={origins:[],rateSecret:'x'.repeat(40),modelMode:'embedded',training:true,reviewEnabled:true,reviewKey:'server-only-test-key',reviewModel:'gemini-test'};
+ const {db,records}=memoryDatabase(),store=createStore(db);let calls=0,selected,time=1800000000000;const config={ultraKey:'unit-test-only-key',origins:[],rateSecret:'x'.repeat(40),modelMode:'embedded',training:true,reviewEnabled:true,reviewKey:'server-only-test-key',reviewModel:'gemini-test'};
  const app=createApp({now:()=>time,getStore:async()=>store,verifyToken:async token=>({uid:token==='other.user.token'?'other':'alice'}),config,generate:async(messages,c)=>{selected={messages,config:c};return 'Bad answer';},review:async args=>{calls++;return review?review(args):{verdict:'needs_correction',correctedReply:'A corrected answer.'};},log:()=>{}});
  const request=async(path,method='GET',body,token='alice.test.token')=>{const response=await app(new Request('https://api.test/api/nebula'+path,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})}));return {status:response.status,body:await response.json()};};
  async function turn(id='chat',reviewEligible=true,modelId='nebula-v4'){
@@ -18,8 +18,8 @@ function fixture({review}={}){
  return {store,records,request,turn,advance(ms=301000){time+=ms;},get calls(){return calls;},get selected(){return selected;}};
 }
 test('model choices and response budgets are allowlisted and server credentials stay private',async()=>{
- const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,4);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
- assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-classic');assert.equal(f.selected.config.responseLength,'standard');
+ const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,5);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
+ assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-ultra');assert.equal(f.selected.config.responseLength,'standard');
  assert.equal((await f.request('/chat','POST',{modelId:'private-provider-model',messages:[{role:'user',content:'Hi'}]},null)).status,400);
 });
 test('personalization synchronizes with the account and is excluded when disabled',async()=>{
@@ -82,6 +82,7 @@ test('provider failures defer quietly and retry later without a 48-hour review l
 });
 test('idle reviews skip classic, unversioned, previous checkpoints and turns sent with review off',async()=>{
  const f=fixture();await f.turn('classic',true,'nebula-classic');await f.turn('no-consent',false);await f.turn('chat');f.advance();
+ f.records.get('nebulaChats/v1/'+accountKey('alice')+'/classic').messages.at(-1).modelId='nebula-classic';
  for(const id of ['classic','no-consent'])assert.equal((await f.request('/reviews','POST',{chatId:id})).body.skipped,true);
  const path='nebulaChats/v1/'+accountKey('alice')+'/chat',chat=f.records.get(path);chat.messages.at(-1).modelRevision='previous-release';
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.skipped,true);
