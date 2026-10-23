@@ -1,0 +1,208 @@
+"""Two explicitly selected stages; fresh BPE weights, RAM-only HF persistence."""
+import copy
+import gc
+import json
+import math
+import os
+import random
+import re
+import time
+from pathlib import Path
+import numpy as np
+import requests
+import torch
+import torch.nn.functional as F
+from v18_stream import Hub,sha,digest,emit
+from v18_foundation_control import read_source
+from v27_subword_model import Config,Model,PAD,checkpoint,restore,generate
+from v27_subword_data import prepare,raw_batch,public_windows
+
+DEFAULT=dict(repo='iiidevv/nebula-raw-training',rawRun='nebula-v18-raw-1gb',
+    rawRevision='e167fff3bb27c36c25460fcd4c61915a5b7016ed',
+    publicRun='nebula-v23-longrun',publicRevision='c21aafa220d33b9787791fcaf7aebf413bc62cf8',
+    trainBytes=128_000_000,validationBytes=4_000_000,tokenizerBytes=16_000_000,
+    sourceMix={'fineweb':55,'cosmopedia':30,'textbooks':10,'stories':5},
+    vocab=8192,width=768,heads=12,layers=13,context=1024,seed=270221,
+    foundationUpdates=10000,conversationUpdates=1000,batch=8,microbatch=1,
+    foundationLR=.0003,conversationLR=.00003,warmup=500,saveEvery=250,evaluateEvery=2000)
+RAW_PROBES=['The rain stopped, and the neighbors opened their windows.',
+    'Ice changes from a solid to a liquid when',
+    'A student wanted to learn how plants grow. First,']
+CHAT_PROBES=['I have a notebook and ten minutes. How can I start practicing drawing?',
+    'Write a short note thanking Mila for watering my plants.',
+    'Ravi has a red bag. Sora has a blue bag. Which color is Sora\'s bag?']
+
+class Store(Hub):
+    def __init__(self,repo,token,run):
+        from huggingface_hub import HfApi
+        if not re.fullmatch(r'[\w-]+/[\w.-]+',repo) or not re.fullmatch(r'nebula-v27-[\w-]{1,45}',run):raise ValueError('Use a separate V27 output run')
+        self.repo=repo;self.token=token;self.prefix='experiments/'+run+'/'
+        self.api=HfApi(token=token);self.session=requests.Session()
+        if self.api.whoami()['name']!=repo.split('/')[0]:raise ValueError('Use your own namespace')
+        info=self.api.model_info(repo)
+        if info.private is not False:raise ValueError('Output repository must be public')
+        self.revision=info.sha
+
+
+def signature(config):
+    import tokenizers
+    root=Path(__file__).parent
+    names=['v27_subword_model.py','v27_subword_data.py','v27_subword_train.py',
+        'v18_stream.py','v18_foundation_control.py']
+    return digest(dict(config=config,code=sha(''.join((root/n).read_text(encoding='utf-8') for n in names).encode()),
+                       tokenizersVersion=tokenizers.__version__))
+
+
+def validate(config,stage):
+    if set(config)!=set(DEFAULT) or stage not in ['foundation','conversation']:raise ValueError('Unknown settings/stage')
+    for k in ['trainBytes','validationBytes','tokenizerBytes','vocab','width','heads','layers','context','foundationUpdates','conversationUpdates','batch','microbatch','warmup','saveEvery','evaluateEvery']:
+        if type(config[k]) is not int or config[k]<1:raise ValueError('Invalid '+k)
+    if not 262<=config['vocab']<=32000 or config['width']%config['heads'] or not 64<=config['context']<=2048:raise ValueError('Invalid architecture')
+    if config['microbatch']>config['batch'] or config['batch']>32:raise ValueError('Invalid batch')
+    if config['trainBytes']>512_000_000 or config['validationBytes']>16_000_000 or config['tokenizerBytes']>config['trainBytes']:raise ValueError('RAM preparation budget exceeded')
+    if set(config['sourceMix'])!={'fineweb','cosmopedia','textbooks','stories'} or sum(config['sourceMix'].values())!=100 or any(v<=0 for v in config['sourceMix'].values()):raise ValueError('Invalid source mix')
+    for k in ['foundationLR','conversationLR']:
+        if not math.isfinite(config[k]) or not 0<config[k]<=.001:raise ValueError('Invalid LR')
+    return config
+
+
+def collate(pairs):
+    n=max(len(x) for x,y in pairs)
+    x=torch.full((len(pairs),n),PAD,dtype=torch.long);y=torch.full_like(x,-100)
+    for i,(a,b) in enumerate(pairs):x[i,:len(a)]=a;y[i,:len(b)]=b
+    return x,y
+
+
+def make_optimizer(model,lr):
+    groups=[dict(params=[p for p in model.parameters() if p.ndim>=2],weight_decay=.1),
+            dict(params=[p for p in model.parameters() if p.ndim<2],weight_decay=0.)]
+    return torch.optim.AdamW(groups,lr=lr,betas=(.9,.95))
+
+
+@torch.inference_mode()
+def loss_on(model,pairs):
+    model.eval();device=next(model.parameters()).device;total=0.;targets=0
+    for pair in pairs:
+        x,y=collate([pair]);count=int((y!=-100).sum())
+        loss=F.cross_entropy(model(x.to(device)).float().flatten(0,1),y.to(device).flatten(),reduction='sum')
+        if not torch.isfinite(loss):raise ValueError('Nonfinite heldout loss')
+        total+=float(loss);targets+=count
+    return dict(loss=total/targets,targets=targets)
+
+
+def evaluate(model,tokenizer,valid,stage,step,public_valid=None):
+    pairs=raw_batch(valid,0,16,model.config.context,991027)
+    report=dict(stage=stage,updates=step,heldoutLanguage=loss_on(model,pairs),
+        rawCompletions=[dict(prefix=p,continuation=generate(model,tokenizer,p,limit=80),grade='pending-human-review') for p in RAW_PROBES],
+        qualityApproved=False,humanVerified=False,publicWebsiteUpdated=False,
+        notice='Subword loss is not comparable to byte-model loss. These are development probes, not certification.')
+    if stage=='conversation':
+        report['heldoutPublic']=loss_on(model,public_valid)
+        report['openReplies']=[dict(prompt=p,reply=generate(model,tokenizer,p,chat=True,limit=96),grade='pending-human-review') for p in CHAT_PROBES]
+    emit(v27Evaluation=report)
+    return report
+
+
+def run(run_name='nebula-v27-subword',config=None,stage='foundation',hours=7.,device='cuda',clock=None):
+    config=copy.deepcopy(DEFAULT if config is None else config);validate(config,stage)
+    if not 0<hours<=7.5:raise ValueError('Invalid session hours')
+    clock=time.monotonic if clock is None else clock;deadline=clock()+hours*3600
+    if device=='cuda' and not torch.cuda.is_available():raise ValueError('Enable NVIDIA GPU')
+    token=os.environ.get('NEBULA_HF_TOKEN') or os.environ.get('HF_TOKEN')
+    if not token:raise ValueError('Enable NEBULA_HF_TOKEN')
+    hub=Store(config['repo'],token,run_name);state=hub.state();sig=signature(config)
+    if state and state.get('signature')!=sig:raise ValueError('Settings/code changed; use original notebook or a NEW V27 run name')
+    if state is None:state=hub.publish(dict(format='nebula-v27-subword-1',signature=sig,config=config,steps={},targets={},
+        initializedFrom='random; no previous weights imported',qualityApproved=False,publicWebsiteUpdated=False))
+    if stage=='conversation' and not state.get('foundationComplete'):raise ValueError('Finish foundation stage and inspect raw completions before selecting conversation')
+    if state.get(stage+'Complete'):
+        report=json.loads(hub.read_entry(state[stage+'Final']))
+        emit(v27StageAlreadyComplete=stage,report=report);return report
+    if not state.get('dataReady'):
+        source,saved=read_source(config['repo'],config['rawRun'],config['rawRevision'],token)
+        state,tokenizer=prepare(hub,state,source,saved,config)
+    else:
+        from tokenizers import Tokenizer
+        tokenizer=Tokenizer.from_str(hub.read_entry(state['tokenizer']).decode())
+    train=np.frombuffer(hub.read_entry(state['trainTokens']),dtype='<u2')
+    valid=np.frombuffer(hub.read_entry(state['validationTokens']),dtype='<u2')
+    torch.set_num_threads(2);torch.manual_seed(config['seed'])
+    working=stage+'Working';training={}
+    if state.get(working):model,training=restore(hub.read_entry(state[working]),state['tokenizer']['sha256'])
+    elif stage=='conversation':model,_=restore(hub.read_entry(state['foundationWorking']),state['tokenizer']['sha256'])
+    else:model=Model(Config(vocab=tokenizer.get_vocab_size(),width=config['width'],heads=config['heads'],layers=config['layers'],context=config['context']))
+    model.to(device)
+    amp=device=='cuda';bf16=amp and torch.cuda.get_device_capability(0)[0]>=8 and torch.cuda.is_bf16_supported()
+    dtype=torch.bfloat16 if bf16 else torch.float16
+    scaler=torch.amp.GradScaler('cuda',enabled=amp and not bf16,init_scale=1024)
+    lr=config['foundationLR'] if stage=='foundation' else config['conversationLR']
+    optimizer=make_optimizer(model,lr)
+    if training:
+        if training['signature']!=sig or training['stage']!=stage or training['updates']!=state['steps'].get(stage,0):raise ValueError('Checkpoint stage/signature mismatch')
+        optimizer.load_state_dict(training['optimizer'])
+        if scaler.is_enabled():scaler.load_state_dict(training['scaler'])
+        torch.set_rng_state(training['rng'])
+    public_train=public_valid=None
+    if stage=='conversation':
+        source,saved=read_source(config['repo'],config['publicRun'],config['publicRevision'],token)
+        rows=json.loads(source.read_entry(saved['publicRows']))
+        public_train,public_valid,public_report=public_windows(rows,tokenizer,config['context'])
+        public_report.update(sourceRepo=config['repo'],sourceRun=config['publicRun'],sourceRevision=config['publicRevision'],sourceSha256=saved['publicRows']['sha256'])
+        state=hub.publish(state,{'sftDataReport':('sft-data-report.json',json.dumps(public_report,indent=2).encode())})
+        emit(v27ConversationData=public_report)
+    emit(v27TrainingSetup=True,stage=stage,parameters=sum(p.numel() for p in model.parameters()),vocab=tokenizer.get_vocab_size(),
+        contextTokens=config['context'],trainingGPUs=1,precision=str(dtype) if amp else 'float32',
+        optimizerRestored=bool(training),oldModelsUntouched=True,publicWebsiteUpdated=False)
+    del training;gc.collect()
+    updates=state['steps'].get(stage,0);targets=state['targets'].get(stage,0);last_saved=updates
+    budget=config['foundationUpdates'] if stage=='foundation' else config['conversationUpdates']
+    warmup=min(config['warmup'],max(1,budget//10));bad=0;interrupted=False;started=clock();start_targets=targets
+    def save():
+        nonlocal state,last_saved
+        steps=dict(state['steps']);steps[stage]=updates;counts=dict(state['targets']);counts[stage]=targets
+        stream=checkpoint(model,dict(signature=sig,stage=stage,updates=updates,optimizer=optimizer.state_dict(),scaler=scaler.state_dict(),rng=torch.get_rng_state()),state['tokenizer']['sha256'])
+        emit(v27BackupStarting=True,stage=stage,updates=updates)
+        try:state=hub.publish({**state,'steps':steps,'targets':counts},{working:(stage+'-working.pt',stream.getbuffer())})
+        finally:stream.close()
+        last_saved=updates;emit(v27CheckpointConfirmed=True,stage=stage,updates=updates)
+    if not state.get(stage+'Baseline'):
+        report=evaluate(model,tokenizer,valid,stage,updates,public_valid)
+        state=hub.publish(state,{stage+'Baseline':(stage+'-baseline.json',json.dumps(report,indent=2).encode())})
+    try:
+        while updates<budget and clock()<deadline:
+            if stage=='foundation':pairs=raw_batch(train,updates,config['batch'],config['context'],config['seed'])
+            else:
+                rng=random.Random(config['seed']+updates*7919)
+                pairs=[public_train[rng.randrange(len(public_train))] for _ in range(config['batch'])]
+            rate=lr*min(1.,(updates+1)/warmup)*(.1+.9*.5*(1+math.cos(math.pi*updates/budget)))
+            for group in optimizer.param_groups:group['lr']=rate
+            denominator=sum(int((y!=-100).sum()) for _,y in pairs)
+            model.train();optimizer.zero_grad(set_to_none=True);loss_value=0.
+            for offset in range(0,len(pairs),config['microbatch']):
+                x,y=collate(pairs[offset:offset+config['microbatch']]);x=x.to(device);y=y.to(device)
+                with torch.autocast('cuda',dtype=dtype,enabled=amp):
+                    loss=F.cross_entropy(model(x).flatten(0,1),y.flatten(),reduction='sum')/denominator
+                if not torch.isfinite(loss):raise ValueError('Nonfinite loss; previous backup retained')
+                loss_value+=float(loss.detach());scaler.scale(loss).backward()
+            scaler.unscale_(optimizer);norm=torch.nn.utils.clip_grad_norm_(model.parameters(),1.)
+            if not torch.isfinite(norm):
+                bad+=1
+                if not scaler.is_enabled() or bad>12:raise ValueError('Nonfinite gradients')
+                scaler.update(new_scale=scaler.get_scale()/2);continue
+            scaler.step(optimizer);scaler.update();bad=0;updates+=1;targets+=denominator
+            if updates%25==0:emit(v27Update=updates,stage=stage,budget=budget,loss=round(loss_value,4),learningRate=rate,
+                supervisedSubwordTokens=targets,tokensPerSecond=round((targets-start_targets)/max(.01,clock()-started)))
+            if updates%config['saveEvery']==0:save()
+            if updates%config['evaluateEvery']==0 and updates<budget:
+                if last_saved!=updates:save()
+                report=evaluate(model,tokenizer,valid,stage,updates,public_valid)
+                state=hub.publish(state,{stage+'LatestEvaluation':(stage+'-evaluation.json',json.dumps(report,indent=2).encode())})
+    except KeyboardInterrupt:interrupted=True
+    if last_saved!=updates or not state.get(working):save()
+    if updates<budget or interrupted:
+        emit(v27Paused=True,stage=stage,updatesSaved=updates,runAgainWithSameSettings=True);return state
+    report=evaluate(model,tokenizer,valid,stage,updates,public_valid)
+    report['supervisedSubwordTokens']=targets
+    state=hub.publish({**state,stage+'Complete':True},{stage+'Final':(stage+'-final.json',json.dumps(report,indent=2).encode())})
+    emit(v27StageComplete=stage,updates=updates,nextStageRequiresExplicitSelection=True,publicWebsiteUpdated=False)
+    return report

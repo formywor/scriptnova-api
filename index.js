@@ -1,3 +1,4 @@
+import {createDevicesHandler} from './lib/devices.mjs';
 import {createCloudHandler} from './lib/cloud.mjs';
 import {readReviewTraining} from './lib/review-training.mjs';
 import {Readable} from 'node:stream';
@@ -32,7 +33,8 @@ export function createNodeHandler(app) {
   };
 }
 
+const devicesApp=createDevicesHandler({getStore,verifyToken});
 const cloudApp=createCloudHandler({getStore,verifyToken});
 const publicApp=createApp({getStore,verifyToken});
 const researchApp=createResearchHandler({services:researchServices,learning:async now=>readLearningTopics(await getAdminDatabase(),now),reviewTraining:async now=>readReviewTraining(await getAdminDatabase(),now)});
-export default createNodeHandler(request=>new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
+export default createNodeHandler(request=>/^\/api\/nebula\/devices(?:\/|$)/.test(new URL(request.url).pathname)?devicesApp(request):new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
