@@ -4,7 +4,7 @@ import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url),{Session}=require('../../main-website/devices-session.js');
 const base={mode:'wake',wakePhrase:'Hey Nebula',camera:false,microphone:false,ocr:false,questions:true,menus:true,people:false,autoRespond:true,cloudText:true,cooldownSeconds:30,scanSeconds:15,output:'text'};
 const defer=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
-function fixture(extra={}){const events=[],answers=[],requests=[];let stopped=0,timers=0;const a={setInterval:()=>++timers,clearInterval:()=>{},setTimeout:()=>++timers,clearTimeout:()=>{},video:()=>{},stopOcr:()=>{},cancelSpeech:()=>{},people:()=>{},render:x=>events.push(x),answer:r=>answers.push(r),camera:async()=>({getTracks:()=>[{stop:()=>stopped++}]}),request:async b=>{requests.push(b);return {text:'A reply'};},...extra};return {session:new Session(a),events,answers,requests,get stopped(){return stopped;}};}
+function fixture(extra={}){const events=[],answers=[],requests=[];let stopped=0,timers=0;const stream=kind=>{const track={kind,enabled:true,readyState:'live',stop:()=>stopped++};return {getTracks:()=>[track],getVideoTracks:()=>kind==='video'?[track]:[],getAudioTracks:()=>kind==='audio'?[track]:[]};};const a={setInterval:()=>++timers,clearInterval:()=>{},setTimeout:()=>++timers,clearTimeout:()=>{},video:()=>{},stopOcr:()=>{},cancelSpeech:()=>{},people:()=>{},render:x=>events.push(x),answer:r=>answers.push(r),camera:async()=>stream('video'),microphone:async()=>stream('audio'),request:async b=>{requests.push(b);return {text:'A reply'};},...extra};return {session:new Session(a),events,answers,requests,get stopped(){return stopped;}};}
 test('wake phrase gates speech, supports activation, and adaptive mode accepts new speech',async()=>{
  const f=fixture();await f.session.start(base);f.session.hear('random background speech');await Promise.resolve();assert.equal(f.requests.length,0);
  f.session.hear('Hey Nebula how are you');await new Promise(setImmediate);assert.equal(f.requests.length,1);
@@ -18,7 +18,7 @@ test('stop releases late permission streams and aborts pending replies without r
  await f.session.start(base);const pending=f.session.respond('Hi');f.session.stop();assert.equal(signal.aborted,true);reply.resolve({text:'late private answer'});await pending;assert.equal(f.answers.length,0);
 });
 test('denied permissions and unsupported speech remain explicit and typed input still works',async()=>{
- const f=fixture({camera:async()=>{throw Error('NotAllowedError');}});await f.session.start({...base,camera:true,microphone:true});assert.match(f.session.media.camera,/denied/);assert.equal(f.session.media.microphone,'unsupported');await f.session.respond('Typed question');assert.equal(f.answers.length,1);f.session.stop();
+ const f=fixture({camera:async()=>{throw Error('NotAllowedError');}});await f.session.start({...base,camera:true,microphone:true});assert.equal(f.session.media.camera,'unsupported');assert.equal(f.session.media.microphone,'active');assert.equal(f.session.media.transcription,'unsupported');await f.session.respond('Typed question');assert.equal(f.answers.length,1);f.session.stop();
 });
 test('duplicate automatic answers and cooldown are enforced; retries work after API failure',async()=>{
  let now=100000,failed=true;const f=fixture({clock:()=>now,request:async()=>{if(failed)throw Error('API failed');return {text:'Success'};}});await f.session.start(base);
@@ -37,5 +37,5 @@ test('OCR rejects unclear text, suppresses unchanged scenes and discards late OC
 });
 test('pausing cancels recognition restarts, tracks, timers and speech playback',async()=>{
  let clear=0,abort=0,cancel=0;const rec={start(){this.onstart?.();},abort(){abort++;}};
- const f=fixture({recognition:()=>rec,clearInterval:()=>clear++,clearTimeout:()=>clear++,cancelSpeech:()=>cancel++});await f.session.start({...base,camera:true,microphone:true});f.session.pause();assert.equal(f.session.phase,'paused');assert.ok(clear>=2&&abort>=1&&cancel>=1&&f.stopped===1);assert.equal(rec.onend,null);
+ const f=fixture({recognition:()=>rec,clearInterval:()=>clear++,clearTimeout:()=>clear++,cancelSpeech:()=>cancel++});await f.session.start({...base,camera:true,microphone:true});f.session.pause();assert.equal(f.session.phase,'paused');assert.ok(clear>=2&&abort>=1&&cancel>=1&&f.stopped===2);assert.equal(rec.onend,null);
 });

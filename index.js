@@ -10,6 +10,8 @@ import {researchServices} from './lib/research-storage.mjs';
 
 export function createNodeHandler(app) {
   return async function handler(req,res) {
+    const abort=new AbortController(),onAborted=()=>abort.abort(),onClose=()=>{if(!res.writableEnded)abort.abort();};
+    req.on?.('aborted',onAborted);res.on?.('close',onClose);
     try {
       const headers=new Headers();
       for(const [name,value] of Object.entries(req.headers || {})) {
@@ -22,14 +24,14 @@ export function createNodeHandler(app) {
         if(req.body !== undefined)body=typeof req.body==='string'||Buffer.isBuffer(req.body)?req.body:JSON.stringify(req.body);
         else body=Readable.toWeb(req);
       }
-      const request=new Request(new URL(req.url || '/', 'https://nebula.invalid'),{method,headers,...(body!==undefined?{body,duplex:'half'}:{})});
+      const request=new Request(new URL(req.url || '/', 'https://nebula.invalid'),{method,headers,signal:abort.signal,...(body!==undefined?{body,duplex:'half'}:{})});
       const response=await app(request);
       res.writeHead(response.status,Object.fromEntries(response.headers));
       res.end(Buffer.from(await response.arrayBuffer()));
     } catch {
       if(!res.headersSent)res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
       res.end('{"code":"UNAVAILABLE"}');
-    }
+    }finally{req.removeListener?.('aborted',onAborted);res.removeListener?.('close',onClose);}
   };
 }
 
