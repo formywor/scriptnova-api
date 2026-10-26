@@ -22,13 +22,16 @@ def audit_sources(inventory,token=None,max_bytes=512_000_000,max_object_bytes=12
             used+=size
             try:
                 blob=reader(source['repo'],source['revision'],source['entry'])
-                counts=collections.Counter();rejected=0
+                counts=collections.Counter();rejected=0;pending={}
                 for value in texts(blob,'jsonl'):
                     text=clean(value)
                     if text is None:rejected+=1;continue
                     fingerprint=sha(re.sub(r'\s+',' ',text).encode());kind=category(text);counts[kind]+=1
                     target='validation' if split=='validation' or int(fingerprint[:8],16)%50==0 else 'train'
-                    if fingerprint not in records or target=='validation':records[fingerprint]=(target,kind)
+                    if fingerprint not in pending or target=='validation':pending[fingerprint]=(target,kind)
+                # A malformed object must not contribute a partially parsed corpus.
+                for fingerprint,value in pending.items():
+                    if fingerprint not in records or value[0]=='validation':records[fingerprint]=value
                 report.update(status='inspected',counts=dict(counts),rejected=rejected)
                 del blob
             except Exception as error:

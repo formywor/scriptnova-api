@@ -33,4 +33,10 @@ class Tests(unittest.TestCase):
   def read(*args):calls.append(args);return blob
   report=audit_sources({'candidates':rows},reader=read)
   self.assertEqual(len(calls),1);self.assertEqual(report['counts'],{'validation/code':1});self.assertFalse(report['sourcesApproved'])
+ def test_audit_discards_partially_parsed_objects(self):
+  from vd2_audit import audit_sources
+  blob=(json.dumps({'text':self.text()})+'\n{broken').encode()
+  row=dict(self.src(),format='jsonl',entry=dict(bytes=len(blob),sha256=sha(blob),path='data.jsonl'))
+  report=audit_sources({'candidates':[row]},reader=lambda *args:blob)
+  self.assertEqual(report['counts'],{});self.assertEqual(report['sources'][0]['status'],'inspection_failed')
 if __name__=='__main__':unittest.main()
