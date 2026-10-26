@@ -12,7 +12,7 @@ test('catalog can explicitly disable legacy models and exposes no credentials',(
  const config=configFromEnv({GROQ_API_KEY:'private-test-key',NEBULA_ENABLE_LEGACY_MODELS:'false'}),catalog=modelCatalog(config);
  assert.equal(catalog.defaultModel,'nebula-ultra');assert.equal(catalog.models[0].available,true);
  assert.equal(catalog.models.filter(m=>m.available).length,1);
- for(const m of catalog.models.slice(1)){assert.equal(m.available,false);assert.equal(m.description,'Currently in training');}
+ for(const m of catalog.models.slice(1)){assert.equal(m.available,false);assert.equal(m.unavailableReason,'disabled_by_configuration');}
  assert.ok(!JSON.stringify(catalog).includes('private-test-key'));
  assert.equal(modelCatalog(configFromEnv({})).models[0].available,false);
 });

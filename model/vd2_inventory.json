@@ -1,0 +1,2768 @@
+{
+  "format": "nebula-vd2-inventory-1",
+  "runs": [
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v18-foundation-control/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v18-raw-1gb/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v19-tutor/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v20-generalize/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v21-curriculum/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v22-conversation/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v23-longrun/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v24-context/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v25-answers/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v26-lr-high/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v26-lr-low/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v26-lr-reference/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v27-subword/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "path": "experiments/nebula-v28-inspect-1/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v10-dialogue/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v11-verified/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v12-public/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v13-four-sources-preparation/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v13-four-sources/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v14-foundation-preparation/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v14-foundation/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v15-full-chats/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v16-diagnostics/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v17-lab/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v17-raw-prose/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v4/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v5/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v6/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v7/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v8-100m/state.json"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "path": "experiments/nebula-v9-curriculum/state.json"
+    }
+  ],
+  "candidates": [
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/0",
+      "entry": {
+        "bytes": 63047792,
+        "sha256": "162bc278f97194ad585fc79e0719458b075f0fc0a3c961b6caebeb35ba3b86cc",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/162bc278f97194ad585fc79e0719458b075f0fc0a3c961b6caebeb35ba3b86cc/train.bin.part000.bin",
+            "bytes": 63047792,
+            "sha256": "162bc278f97194ad585fc79e0719458b075f0fc0a3c961b6caebeb35ba3b86cc"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/1",
+      "entry": {
+        "bytes": 62837934,
+        "sha256": "646cf08deabd24fedf87c0a2e8d7435320dc23d287821324be916f6fa5768c8e",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/646cf08deabd24fedf87c0a2e8d7435320dc23d287821324be916f6fa5768c8e/train.bin.part000.bin",
+            "bytes": 62837934,
+            "sha256": "646cf08deabd24fedf87c0a2e8d7435320dc23d287821324be916f6fa5768c8e"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/2",
+      "entry": {
+        "bytes": 62906408,
+        "sha256": "03542f6db3f49d234c6bf2a65ed019d64c4b8b0e14f5ba52ee4b7f07196fc76b",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/03542f6db3f49d234c6bf2a65ed019d64c4b8b0e14f5ba52ee4b7f07196fc76b/train.bin.part000.bin",
+            "bytes": 62906408,
+            "sha256": "03542f6db3f49d234c6bf2a65ed019d64c4b8b0e14f5ba52ee4b7f07196fc76b"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/3",
+      "entry": {
+        "bytes": 61911370,
+        "sha256": "fd1c586d74b9dcd44a6a57661838ebbd5d05e4b0c9674181332014db02ebc844",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/fd1c586d74b9dcd44a6a57661838ebbd5d05e4b0c9674181332014db02ebc844/train.bin.part000.bin",
+            "bytes": 61911370,
+            "sha256": "fd1c586d74b9dcd44a6a57661838ebbd5d05e4b0c9674181332014db02ebc844"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/4",
+      "entry": {
+        "bytes": 62734430,
+        "sha256": "659aad998bafb5b3b9448685914ab9af9480d9d61b51717c5fdfb1eb52673578",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/659aad998bafb5b3b9448685914ab9af9480d9d61b51717c5fdfb1eb52673578/train.bin.part000.bin",
+            "bytes": 62734430,
+            "sha256": "659aad998bafb5b3b9448685914ab9af9480d9d61b51717c5fdfb1eb52673578"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/5",
+      "entry": {
+        "bytes": 62672390,
+        "sha256": "cf8247070970dad318c9b51d0a9ee7b8e8f74072943496c17546de97bef839c7",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/cf8247070970dad318c9b51d0a9ee7b8e8f74072943496c17546de97bef839c7/train.bin.part000.bin",
+            "bytes": 62672390,
+            "sha256": "cf8247070970dad318c9b51d0a9ee7b8e8f74072943496c17546de97bef839c7"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/6",
+      "entry": {
+        "bytes": 63015738,
+        "sha256": "14b1932d5f81850b25b5e53d063bc4a99b85c5b31a6feca7651a23092ab2283d",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/14b1932d5f81850b25b5e53d063bc4a99b85c5b31a6feca7651a23092ab2283d/train.bin.part000.bin",
+            "bytes": 63015738,
+            "sha256": "14b1932d5f81850b25b5e53d063bc4a99b85c5b31a6feca7651a23092ab2283d"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/7",
+      "entry": {
+        "bytes": 62949886,
+        "sha256": "aceb212e16f42510f89e2ea2fdc290921cc543c33a5597b9968087fb95eed1ef",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/aceb212e16f42510f89e2ea2fdc290921cc543c33a5597b9968087fb95eed1ef/train.bin.part000.bin",
+            "bytes": 62949886,
+            "sha256": "aceb212e16f42510f89e2ea2fdc290921cc543c33a5597b9968087fb95eed1ef"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/8",
+      "entry": {
+        "bytes": 62469908,
+        "sha256": "bd2b4a0258a1d7f58b85724682b44eae7ecf1ccdc24d28310f50397639b57c86",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/bd2b4a0258a1d7f58b85724682b44eae7ecf1ccdc24d28310f50397639b57c86/train.bin.part000.bin",
+            "bytes": 62469908,
+            "sha256": "bd2b4a0258a1d7f58b85724682b44eae7ecf1ccdc24d28310f50397639b57c86"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/9",
+      "entry": {
+        "bytes": 62990796,
+        "sha256": "fedf82b60d25bbe95f8dc4297f47300980a7ba887846a5d60e81decbe24b7141",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/fedf82b60d25bbe95f8dc4297f47300980a7ba887846a5d60e81decbe24b7141/train.bin.part000.bin",
+            "bytes": 62990796,
+            "sha256": "fedf82b60d25bbe95f8dc4297f47300980a7ba887846a5d60e81decbe24b7141"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/10",
+      "entry": {
+        "bytes": 62525982,
+        "sha256": "51f9da3d15d0823ee9465dae43527f38e09815beab64ae626f6dcf0c28cbefb6",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/51f9da3d15d0823ee9465dae43527f38e09815beab64ae626f6dcf0c28cbefb6/train.bin.part000.bin",
+            "bytes": 62525982,
+            "sha256": "51f9da3d15d0823ee9465dae43527f38e09815beab64ae626f6dcf0c28cbefb6"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/11",
+      "entry": {
+        "bytes": 62531932,
+        "sha256": "8d43aba5c371dea22c16cb6db53c8eae56bb0425d8ce63d0bde55adc0d2c69f5",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/8d43aba5c371dea22c16cb6db53c8eae56bb0425d8ce63d0bde55adc0d2c69f5/train.bin.part000.bin",
+            "bytes": 62531932,
+            "sha256": "8d43aba5c371dea22c16cb6db53c8eae56bb0425d8ce63d0bde55adc0d2c69f5"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/12",
+      "entry": {
+        "bytes": 62700616,
+        "sha256": "79ba8604eb14002f406ec98cacc718b7793824ba7efcb8b533b18f097de7f1bd",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/79ba8604eb14002f406ec98cacc718b7793824ba7efcb8b533b18f097de7f1bd/train.bin.part000.bin",
+            "bytes": 62700616,
+            "sha256": "79ba8604eb14002f406ec98cacc718b7793824ba7efcb8b533b18f097de7f1bd"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/13",
+      "entry": {
+        "bytes": 62755082,
+        "sha256": "f43bbd5f1f817f134e77db36ca8beaeeee86cc131dabcd8daec41d39e2d5e8af",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/f43bbd5f1f817f134e77db36ca8beaeeee86cc131dabcd8daec41d39e2d5e8af/train.bin.part000.bin",
+            "bytes": 62755082,
+            "sha256": "f43bbd5f1f817f134e77db36ca8beaeeee86cc131dabcd8daec41d39e2d5e8af"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/14",
+      "entry": {
+        "bytes": 62740858,
+        "sha256": "9176dcb735d39638f138b38eeffb63057abbe6a78dba27e4f10b2854e19a8fac",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/9176dcb735d39638f138b38eeffb63057abbe6a78dba27e4f10b2854e19a8fac/train.bin.part000.bin",
+            "bytes": 62740858,
+            "sha256": "9176dcb735d39638f138b38eeffb63057abbe6a78dba27e4f10b2854e19a8fac"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/15",
+      "entry": {
+        "bytes": 62770496,
+        "sha256": "ab5575f3da2502865bdeed9df2becb7301814ef1a40ca811f3247aaca5c0a062",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/ab5575f3da2502865bdeed9df2becb7301814ef1a40ca811f3247aaca5c0a062/train.bin.part000.bin",
+            "bytes": 62770496,
+            "sha256": "ab5575f3da2502865bdeed9df2becb7301814ef1a40ca811f3247aaca5c0a062"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/16",
+      "entry": {
+        "bytes": 62753692,
+        "sha256": "66a32522aa5f5d9bb43f9f8dacd76d8c585204839c92d3e9b52585727055f17f",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/66a32522aa5f5d9bb43f9f8dacd76d8c585204839c92d3e9b52585727055f17f/train.bin.part000.bin",
+            "bytes": 62753692,
+            "sha256": "66a32522aa5f5d9bb43f9f8dacd76d8c585204839c92d3e9b52585727055f17f"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/17",
+      "entry": {
+        "bytes": 62827840,
+        "sha256": "0497c63659fbad308fd4e3c76138998c6842fc8d8bdc1286048999532b2881a0",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/0497c63659fbad308fd4e3c76138998c6842fc8d8bdc1286048999532b2881a0/train.bin.part000.bin",
+            "bytes": 62827840,
+            "sha256": "0497c63659fbad308fd4e3c76138998c6842fc8d8bdc1286048999532b2881a0"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/18",
+      "entry": {
+        "bytes": 62870940,
+        "sha256": "d444bcdf6626b402310abc637abe2961e672c8a7ed02bc326906d654ec49a4d6",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/d444bcdf6626b402310abc637abe2961e672c8a7ed02bc326906d654ec49a4d6/train.bin.part000.bin",
+            "bytes": 62870940,
+            "sha256": "d444bcdf6626b402310abc637abe2961e672c8a7ed02bc326906d654ec49a4d6"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/19",
+      "entry": {
+        "bytes": 62796594,
+        "sha256": "2ae1b8a6d43332c3054f7576c0a26c712e35e01c681853071b05b5b9c3d2c7c0",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/2ae1b8a6d43332c3054f7576c0a26c712e35e01c681853071b05b5b9c3d2c7c0/train.bin.part000.bin",
+            "bytes": 62796594,
+            "sha256": "2ae1b8a6d43332c3054f7576c0a26c712e35e01c681853071b05b5b9c3d2c7c0"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/20",
+      "entry": {
+        "bytes": 62868780,
+        "sha256": "a7004e5299c78fac4ccd7ab54a67595ea4afbd6eb71d0013f24e30340b352b83",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/a7004e5299c78fac4ccd7ab54a67595ea4afbd6eb71d0013f24e30340b352b83/train.bin.part000.bin",
+            "bytes": 62868780,
+            "sha256": "a7004e5299c78fac4ccd7ab54a67595ea4afbd6eb71d0013f24e30340b352b83"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/21",
+      "entry": {
+        "bytes": 62863686,
+        "sha256": "5adaa7a5464197815c6bac3a06e87b7415ed6f5dcf0a50d8710c4291c3e9a594",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/5adaa7a5464197815c6bac3a06e87b7415ed6f5dcf0a50d8710c4291c3e9a594/train.bin.part000.bin",
+            "bytes": 62863686,
+            "sha256": "5adaa7a5464197815c6bac3a06e87b7415ed6f5dcf0a50d8710c4291c3e9a594"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/22",
+      "entry": {
+        "bytes": 62753048,
+        "sha256": "47c8b6ea50c1df708ccf165b8be2ce41e9be50e9a3d2ef9b2507b6ac976e7631",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/47c8b6ea50c1df708ccf165b8be2ce41e9be50e9a3d2ef9b2507b6ac976e7631/train.bin.part000.bin",
+            "bytes": 62753048,
+            "sha256": "47c8b6ea50c1df708ccf165b8be2ce41e9be50e9a3d2ef9b2507b6ac976e7631"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/23",
+      "entry": {
+        "bytes": 62826542,
+        "sha256": "8169469621e3ba8bbae8714c760e2968093dfbb0d7151a1ba559505c4393d917",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/8169469621e3ba8bbae8714c760e2968093dfbb0d7151a1ba559505c4393d917/train.bin.part000.bin",
+            "bytes": 62826542,
+            "sha256": "8169469621e3ba8bbae8714c760e2968093dfbb0d7151a1ba559505c4393d917"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/24",
+      "entry": {
+        "bytes": 62840356,
+        "sha256": "271e98ed97ff1814f829e7fe31b940a802cd048e09a439c35dd4ed4a8192db0a",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/271e98ed97ff1814f829e7fe31b940a802cd048e09a439c35dd4ed4a8192db0a/train.bin.part000.bin",
+            "bytes": 62840356,
+            "sha256": "271e98ed97ff1814f829e7fe31b940a802cd048e09a439c35dd4ed4a8192db0a"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/25",
+      "entry": {
+        "bytes": 62935520,
+        "sha256": "2095f10ab99dd81e5328666529595318f55607d923f86ccb4c5d17b2d13f49da",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/2095f10ab99dd81e5328666529595318f55607d923f86ccb4c5d17b2d13f49da/train.bin.part000.bin",
+            "bytes": 62935520,
+            "sha256": "2095f10ab99dd81e5328666529595318f55607d923f86ccb4c5d17b2d13f49da"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/26",
+      "entry": {
+        "bytes": 62723172,
+        "sha256": "e315a5391f5f3ed2f83a6a2111413f9aedb13ad4687948cb0267ca07d4665ca4",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/e315a5391f5f3ed2f83a6a2111413f9aedb13ad4687948cb0267ca07d4665ca4/train.bin.part000.bin",
+            "bytes": 62723172,
+            "sha256": "e315a5391f5f3ed2f83a6a2111413f9aedb13ad4687948cb0267ca07d4665ca4"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/27",
+      "entry": {
+        "bytes": 62763802,
+        "sha256": "d3cf113afc1b25451e31fb0a9b7c5a660a6028ee743afe69438a75253e25ed6d",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/d3cf113afc1b25451e31fb0a9b7c5a660a6028ee743afe69438a75253e25ed6d/train.bin.part000.bin",
+            "bytes": 62763802,
+            "sha256": "d3cf113afc1b25451e31fb0a9b7c5a660a6028ee743afe69438a75253e25ed6d"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/28",
+      "entry": {
+        "bytes": 62610974,
+        "sha256": "354f3599e6bb28825717233c6deb243664c44ac69de7a2985416e6797f47dced",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/354f3599e6bb28825717233c6deb243664c44ac69de7a2985416e6797f47dced/train.bin.part000.bin",
+            "bytes": 62610974,
+            "sha256": "354f3599e6bb28825717233c6deb243664c44ac69de7a2985416e6797f47dced"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/29",
+      "entry": {
+        "bytes": 62888058,
+        "sha256": "7a8359ea50172439d8909edfb879a6a3372a732e47940c799f1beeedce52abfe",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/7a8359ea50172439d8909edfb879a6a3372a732e47940c799f1beeedce52abfe/train.bin.part000.bin",
+            "bytes": 62888058,
+            "sha256": "7a8359ea50172439d8909edfb879a6a3372a732e47940c799f1beeedce52abfe"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/30",
+      "entry": {
+        "bytes": 62792520,
+        "sha256": "596edb70db2f2f0b7f4df13fbaf7ee7745001d44ad46becc18cbc38b044d71c9",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/596edb70db2f2f0b7f4df13fbaf7ee7745001d44ad46becc18cbc38b044d71c9/train.bin.part000.bin",
+            "bytes": 62792520,
+            "sha256": "596edb70db2f2f0b7f4df13fbaf7ee7745001d44ad46becc18cbc38b044d71c9"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/train/31",
+      "entry": {
+        "bytes": 5738520,
+        "sha256": "deeb82bd5f7978c13dc7f1aeb4a82c3c4b5115ac8a7570f063915dc74869bec1",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/deeb82bd5f7978c13dc7f1aeb4a82c3c4b5115ac8a7570f063915dc74869bec1/train.bin.part000.bin",
+            "bytes": 5738520,
+            "sha256": "deeb82bd5f7978c13dc7f1aeb4a82c3c4b5115ac8a7570f063915dc74869bec1"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/0",
+      "entry": {
+        "bytes": 1012652,
+        "sha256": "41a3e99a0d1182cf36bda9d80b6caa6f4637af068503cdedb602f078984d417d",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/41a3e99a0d1182cf36bda9d80b6caa6f4637af068503cdedb602f078984d417d/validation.bin.part000.bin",
+            "bytes": 1012652,
+            "sha256": "41a3e99a0d1182cf36bda9d80b6caa6f4637af068503cdedb602f078984d417d"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/1",
+      "entry": {
+        "bytes": 1199234,
+        "sha256": "49ac02d170c392524120ffd53fd6dcf25d881ab1bcd9e8fd4721cada62ca93c2",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/49ac02d170c392524120ffd53fd6dcf25d881ab1bcd9e8fd4721cada62ca93c2/validation.bin.part000.bin",
+            "bytes": 1199234,
+            "sha256": "49ac02d170c392524120ffd53fd6dcf25d881ab1bcd9e8fd4721cada62ca93c2"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/2",
+      "entry": {
+        "bytes": 1122470,
+        "sha256": "c78ab7a83646996ec17e0440bc3382626929d323976dfc5d3972ecd371d701cf",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/c78ab7a83646996ec17e0440bc3382626929d323976dfc5d3972ecd371d701cf/validation.bin.part000.bin",
+            "bytes": 1122470,
+            "sha256": "c78ab7a83646996ec17e0440bc3382626929d323976dfc5d3972ecd371d701cf"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/3",
+      "entry": {
+        "bytes": 2114634,
+        "sha256": "1e362893885209827a7c595965dc398188f06538cfdda2ab11343ccc50c4da64",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/1e362893885209827a7c595965dc398188f06538cfdda2ab11343ccc50c4da64/validation.bin.part000.bin",
+            "bytes": 2114634,
+            "sha256": "1e362893885209827a7c595965dc398188f06538cfdda2ab11343ccc50c4da64"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/4",
+      "entry": {
+        "bytes": 1297234,
+        "sha256": "22cd0ca56dda9bd196ebbd79caf41b3ad54d050acca8369728f1fab2647899c6",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/22cd0ca56dda9bd196ebbd79caf41b3ad54d050acca8369728f1fab2647899c6/validation.bin.part000.bin",
+            "bytes": 1297234,
+            "sha256": "22cd0ca56dda9bd196ebbd79caf41b3ad54d050acca8369728f1fab2647899c6"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/5",
+      "entry": {
+        "bytes": 1364956,
+        "sha256": "9b5cfcd8b84ea430b7ac51fe137fbd9570671c70463fecbe99b6886b34752ada",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/9b5cfcd8b84ea430b7ac51fe137fbd9570671c70463fecbe99b6886b34752ada/validation.bin.part000.bin",
+            "bytes": 1364956,
+            "sha256": "9b5cfcd8b84ea430b7ac51fe137fbd9570671c70463fecbe99b6886b34752ada"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/6",
+      "entry": {
+        "bytes": 1033114,
+        "sha256": "9c35bc12c639fff848fa6893293ad429904794b16928acc77a1fd098b5022207",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/9c35bc12c639fff848fa6893293ad429904794b16928acc77a1fd098b5022207/validation.bin.part000.bin",
+            "bytes": 1033114,
+            "sha256": "9c35bc12c639fff848fa6893293ad429904794b16928acc77a1fd098b5022207"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/7",
+      "entry": {
+        "bytes": 1093712,
+        "sha256": "119aadb33b9164c0f7b06f67e4e9ed7e8d20f4f66d14d8627a6736a6bf476f18",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/119aadb33b9164c0f7b06f67e4e9ed7e8d20f4f66d14d8627a6736a6bf476f18/validation.bin.part000.bin",
+            "bytes": 1093712,
+            "sha256": "119aadb33b9164c0f7b06f67e4e9ed7e8d20f4f66d14d8627a6736a6bf476f18"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/8",
+      "entry": {
+        "bytes": 1563046,
+        "sha256": "2c68c68b0cdaa7d709597b9b32e3e0c5ad4d281425772e023a0ef5bc49ba047f",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/2c68c68b0cdaa7d709597b9b32e3e0c5ad4d281425772e023a0ef5bc49ba047f/validation.bin.part000.bin",
+            "bytes": 1563046,
+            "sha256": "2c68c68b0cdaa7d709597b9b32e3e0c5ad4d281425772e023a0ef5bc49ba047f"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/9",
+      "entry": {
+        "bytes": 1038356,
+        "sha256": "f7abda9f13a7734b632ef7c1c18f9b04421b06271ca51f5725cf7dbae1968ac1",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/f7abda9f13a7734b632ef7c1c18f9b04421b06271ca51f5725cf7dbae1968ac1/validation.bin.part000.bin",
+            "bytes": 1038356,
+            "sha256": "f7abda9f13a7734b632ef7c1c18f9b04421b06271ca51f5725cf7dbae1968ac1"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/10",
+      "entry": {
+        "bytes": 1506512,
+        "sha256": "e2aa4f2030c90adc3b2309c1b56ac12fe581912ce9f90fe81b9e3219e8089065",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/e2aa4f2030c90adc3b2309c1b56ac12fe581912ce9f90fe81b9e3219e8089065/validation.bin.part000.bin",
+            "bytes": 1506512,
+            "sha256": "e2aa4f2030c90adc3b2309c1b56ac12fe581912ce9f90fe81b9e3219e8089065"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/11",
+      "entry": {
+        "bytes": 1496946,
+        "sha256": "0da217b59ba908fb2e6aea2299a095ad1a1a064ec0bd331d108eaead664589f0",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/0da217b59ba908fb2e6aea2299a095ad1a1a064ec0bd331d108eaead664589f0/validation.bin.part000.bin",
+            "bytes": 1496946,
+            "sha256": "0da217b59ba908fb2e6aea2299a095ad1a1a064ec0bd331d108eaead664589f0"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/12",
+      "entry": {
+        "bytes": 1336908,
+        "sha256": "67eb3848efb54ad12f7665efabb9fe63324eabdb9b7f8712f6a3013a3f092022",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/67eb3848efb54ad12f7665efabb9fe63324eabdb9b7f8712f6a3013a3f092022/validation.bin.part000.bin",
+            "bytes": 1336908,
+            "sha256": "67eb3848efb54ad12f7665efabb9fe63324eabdb9b7f8712f6a3013a3f092022"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/13",
+      "entry": {
+        "bytes": 1276604,
+        "sha256": "5e2856cbad0420f49528f81caf99357192aa23257bcb6ed1eec36bd910863d74",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/5e2856cbad0420f49528f81caf99357192aa23257bcb6ed1eec36bd910863d74/validation.bin.part000.bin",
+            "bytes": 1276604,
+            "sha256": "5e2856cbad0420f49528f81caf99357192aa23257bcb6ed1eec36bd910863d74"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/14",
+      "entry": {
+        "bytes": 1300582,
+        "sha256": "099a91f4643a81d2e8a99c7c30a847b59fb04dbdc449794d060eb361e213a8be",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/099a91f4643a81d2e8a99c7c30a847b59fb04dbdc449794d060eb361e213a8be/validation.bin.part000.bin",
+            "bytes": 1300582,
+            "sha256": "099a91f4643a81d2e8a99c7c30a847b59fb04dbdc449794d060eb361e213a8be"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/15",
+      "entry": {
+        "bytes": 1261696,
+        "sha256": "2b115a9369360e9b7013dd5907643c8779514555cfe4e64b260e5a549eefd392",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/2b115a9369360e9b7013dd5907643c8779514555cfe4e64b260e5a549eefd392/validation.bin.part000.bin",
+            "bytes": 1261696,
+            "sha256": "2b115a9369360e9b7013dd5907643c8779514555cfe4e64b260e5a549eefd392"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/16",
+      "entry": {
+        "bytes": 1284924,
+        "sha256": "cca7bcd7be6c67b1c19db3365f89d6de4a5d43064f0e82c4339995f40f93a9fe",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/cca7bcd7be6c67b1c19db3365f89d6de4a5d43064f0e82c4339995f40f93a9fe/validation.bin.part000.bin",
+            "bytes": 1284924,
+            "sha256": "cca7bcd7be6c67b1c19db3365f89d6de4a5d43064f0e82c4339995f40f93a9fe"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/17",
+      "entry": {
+        "bytes": 1210464,
+        "sha256": "18ea69edca0f99f614ce18ca2eba6bf0bd227df75c97592570a52114f669d3c8",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/18ea69edca0f99f614ce18ca2eba6bf0bd227df75c97592570a52114f669d3c8/validation.bin.part000.bin",
+            "bytes": 1210464,
+            "sha256": "18ea69edca0f99f614ce18ca2eba6bf0bd227df75c97592570a52114f669d3c8"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/18",
+      "entry": {
+        "bytes": 1165794,
+        "sha256": "aa0346e12dc2118abbf3c8494ca439c27315e8d1d489e45846c7b7ec36348a59",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/aa0346e12dc2118abbf3c8494ca439c27315e8d1d489e45846c7b7ec36348a59/validation.bin.part000.bin",
+            "bytes": 1165794,
+            "sha256": "aa0346e12dc2118abbf3c8494ca439c27315e8d1d489e45846c7b7ec36348a59"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/19",
+      "entry": {
+        "bytes": 1239122,
+        "sha256": "3d170fd8b261454b5ffe40e638fa9782918eff62fc79dfaab40b196af8f6f3e6",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/3d170fd8b261454b5ffe40e638fa9782918eff62fc79dfaab40b196af8f6f3e6/validation.bin.part000.bin",
+            "bytes": 1239122,
+            "sha256": "3d170fd8b261454b5ffe40e638fa9782918eff62fc79dfaab40b196af8f6f3e6"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/20",
+      "entry": {
+        "bytes": 1167964,
+        "sha256": "5914d2779d8adae455cb95b9049e5b24f96a3b33a66f7b0fcd96ed049fdfd883",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/5914d2779d8adae455cb95b9049e5b24f96a3b33a66f7b0fcd96ed049fdfd883/validation.bin.part000.bin",
+            "bytes": 1167964,
+            "sha256": "5914d2779d8adae455cb95b9049e5b24f96a3b33a66f7b0fcd96ed049fdfd883"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/21",
+      "entry": {
+        "bytes": 1174378,
+        "sha256": "47e4521707ea0ab79f5257d05e47639949b75a308ccc128d5813b8641812fbcd",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/47e4521707ea0ab79f5257d05e47639949b75a308ccc128d5813b8641812fbcd/validation.bin.part000.bin",
+            "bytes": 1174378,
+            "sha256": "47e4521707ea0ab79f5257d05e47639949b75a308ccc128d5813b8641812fbcd"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/22",
+      "entry": {
+        "bytes": 1288182,
+        "sha256": "025cc272581d7d3998c516bf0a42e01cde04b7b574a07dfd8a6c1c2a744862c1",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/025cc272581d7d3998c516bf0a42e01cde04b7b574a07dfd8a6c1c2a744862c1/validation.bin.part000.bin",
+            "bytes": 1288182,
+            "sha256": "025cc272581d7d3998c516bf0a42e01cde04b7b574a07dfd8a6c1c2a744862c1"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/23",
+      "entry": {
+        "bytes": 1279590,
+        "sha256": "bc39a2e1f0f204b70c5d350dca344077ba5bfcedb0c13d28822dab4ee4e6feb0",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/bc39a2e1f0f204b70c5d350dca344077ba5bfcedb0c13d28822dab4ee4e6feb0/validation.bin.part000.bin",
+            "bytes": 1279590,
+            "sha256": "bc39a2e1f0f204b70c5d350dca344077ba5bfcedb0c13d28822dab4ee4e6feb0"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/24",
+      "entry": {
+        "bytes": 1303786,
+        "sha256": "42908be5d8d5207059cd1172721f7be8e2903de2376c4899467eba42b2c9d42f",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/42908be5d8d5207059cd1172721f7be8e2903de2376c4899467eba42b2c9d42f/validation.bin.part000.bin",
+            "bytes": 1303786,
+            "sha256": "42908be5d8d5207059cd1172721f7be8e2903de2376c4899467eba42b2c9d42f"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/25",
+      "entry": {
+        "bytes": 1208620,
+        "sha256": "4b0f1fc499348f9e52aa11cdadc844a268c1b5e00f397fc31d8cb59dfa7331aa",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/4b0f1fc499348f9e52aa11cdadc844a268c1b5e00f397fc31d8cb59dfa7331aa/validation.bin.part000.bin",
+            "bytes": 1208620,
+            "sha256": "4b0f1fc499348f9e52aa11cdadc844a268c1b5e00f397fc31d8cb59dfa7331aa"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/26",
+      "entry": {
+        "bytes": 1419286,
+        "sha256": "6ac8564ed9346d29ffcd1444bf43f1fcd54b5a6ad751fd5f9f6cc8af5dfa5e64",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/6ac8564ed9346d29ffcd1444bf43f1fcd54b5a6ad751fd5f9f6cc8af5dfa5e64/validation.bin.part000.bin",
+            "bytes": 1419286,
+            "sha256": "6ac8564ed9346d29ffcd1444bf43f1fcd54b5a6ad751fd5f9f6cc8af5dfa5e64"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/27",
+      "entry": {
+        "bytes": 1380014,
+        "sha256": "f156f246317fc26e8de3b97b949c9ae8cdf9182cb815b5ea9615c05faf92c1ed",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/f156f246317fc26e8de3b97b949c9ae8cdf9182cb815b5ea9615c05faf92c1ed/validation.bin.part000.bin",
+            "bytes": 1380014,
+            "sha256": "f156f246317fc26e8de3b97b949c9ae8cdf9182cb815b5ea9615c05faf92c1ed"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/28",
+      "entry": {
+        "bytes": 1423290,
+        "sha256": "52d5912d550b0e7aef038c15fc32ad60514cbb0309b1e09cec28b81703a35561",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/52d5912d550b0e7aef038c15fc32ad60514cbb0309b1e09cec28b81703a35561/validation.bin.part000.bin",
+            "bytes": 1423290,
+            "sha256": "52d5912d550b0e7aef038c15fc32ad60514cbb0309b1e09cec28b81703a35561"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/29",
+      "entry": {
+        "bytes": 1147742,
+        "sha256": "c9c753d7e9d231ef1c924198092b96fbbbcf693144e5f64e39226d38af7f617b",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/c9c753d7e9d231ef1c924198092b96fbbbcf693144e5f64e39226d38af7f617b/validation.bin.part000.bin",
+            "bytes": 1147742,
+            "sha256": "c9c753d7e9d231ef1c924198092b96fbbbcf693144e5f64e39226d38af7f617b"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/30",
+      "entry": {
+        "bytes": 1241146,
+        "sha256": "d8c2ab5fb045ed255104bd70826fb3c0cbacf6b859976183fe50d183faf69f94",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/d8c2ab5fb045ed255104bd70826fb3c0cbacf6b859976183fe50d183faf69f94/validation.bin.part000.bin",
+            "bytes": 1241146,
+            "sha256": "d8c2ab5fb045ed255104bd70826fb3c0cbacf6b859976183fe50d183faf69f94"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v18-raw-1gb/state.json",
+      "key": "corpus/validation/31",
+      "entry": {
+        "bytes": 84148,
+        "sha256": "8553a350e4f202d26e3aa069535a3aedb65d299bd94c4981bba75cc25a96cfe7",
+        "parts": [
+          {
+            "path": "experiments/nebula-v18-raw-1gb/objects/8553a350e4f202d26e3aa069535a3aedb65d299bd94c4981bba75cc25a96cfe7/validation.bin.part000.bin",
+            "bytes": 84148,
+            "sha256": "8553a350e4f202d26e3aa069535a3aedb65d299bd94c4981bba75cc25a96cfe7"
+          }
+        ]
+      },
+      "format": "bytes-u16",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v19-tutor/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 575075,
+        "sha256": "ee931aad97b1ceaf7bfb644e37b1f2e39fd857431b4f7c03b888c7a42136eb82",
+        "parts": [
+          {
+            "path": "experiments/nebula-v19-tutor/objects/ee931aad97b1ceaf7bfb644e37b1f2e39fd857431b4f7c03b888c7a42136eb82/tutor-practice.jsonl.part000.bin",
+            "bytes": 575075,
+            "sha256": "ee931aad97b1ceaf7bfb644e37b1f2e39fd857431b4f7c03b888c7a42136eb82"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v20-generalize/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 9541922,
+        "sha256": "5a07f8830b50f1e064828d65ff37e82ac9d4481e55af5d2f170ddc208b633a90",
+        "parts": [
+          {
+            "path": "experiments/nebula-v20-generalize/objects/5a07f8830b50f1e064828d65ff37e82ac9d4481e55af5d2f170ddc208b633a90/tutor-practice.jsonl.part000.bin",
+            "bytes": 9541922,
+            "sha256": "5a07f8830b50f1e064828d65ff37e82ac9d4481e55af5d2f170ddc208b633a90"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v21-curriculum/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 13097914,
+        "sha256": "5a052cb8e61021e37fcdb02abbd20bb7830fa6a0201183e5242ae4efcfa96a39",
+        "parts": [
+          {
+            "path": "experiments/nebula-v21-curriculum/objects/5a052cb8e61021e37fcdb02abbd20bb7830fa6a0201183e5242ae4efcfa96a39/tutor-practice.jsonl.part000.bin",
+            "bytes": 13097914,
+            "sha256": "5a052cb8e61021e37fcdb02abbd20bb7830fa6a0201183e5242ae4efcfa96a39"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v22-conversation/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 22755394,
+        "sha256": "30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902",
+        "parts": [
+          {
+            "path": "experiments/nebula-v22-conversation/objects/30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902/tutor-practice.jsonl.part000.bin",
+            "bytes": 22755394,
+            "sha256": "30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v23-longrun/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 22755394,
+        "sha256": "30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902",
+        "parts": [
+          {
+            "path": "experiments/nebula-v23-longrun/objects/30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902/tutor-practice.jsonl.part000.bin",
+            "bytes": 22755394,
+            "sha256": "30890fefb46f547e7b1678bd76bf03a9e3fbb014eaff7d523fed4f7ad620e902"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v24-context/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 34082699,
+        "sha256": "e70eeb81cb781264c88009633929c36ab1d6095a456c0ce6a63bc20e5ac0dc8d",
+        "parts": [
+          {
+            "path": "experiments/nebula-v24-context/objects/e70eeb81cb781264c88009633929c36ab1d6095a456c0ce6a63bc20e5ac0dc8d/tutor-practice.jsonl.part000.bin",
+            "bytes": 34082699,
+            "sha256": "e70eeb81cb781264c88009633929c36ab1d6095a456c0ce6a63bc20e5ac0dc8d"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v25-answers/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 38689055,
+        "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb",
+        "parts": [
+          {
+            "path": "experiments/nebula-v25-answers/objects/78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb/tutor-practice.jsonl.part000.bin",
+            "bytes": 38689055,
+            "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v26-lr-high/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 38689055,
+        "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb",
+        "parts": [
+          {
+            "path": "experiments/nebula-v26-lr-high/objects/78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb/tutor-practice.jsonl.part000.bin",
+            "bytes": 38689055,
+            "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v26-lr-low/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 38689055,
+        "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb",
+        "parts": [
+          {
+            "path": "experiments/nebula-v26-lr-low/objects/78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb/tutor-practice.jsonl.part000.bin",
+            "bytes": 38689055,
+            "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v26-lr-reference/state.json",
+      "key": "practice",
+      "entry": {
+        "bytes": 38689055,
+        "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb",
+        "parts": [
+          {
+            "path": "experiments/nebula-v26-lr-reference/objects/78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb/tutor-practice.jsonl.part000.bin",
+            "bytes": 38689055,
+            "sha256": "78e37269dde9de8517839e800059837747043c2872011b0846924961b77f85cb"
+          }
+        ]
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v27-subword/state.json",
+      "key": "trainTokens",
+      "entry": {
+        "bytes": 64364932,
+        "sha256": "c9ffd9451de1cf956dfbdd5648226bda8cb9deea6f94764b61793f0a51feb89f",
+        "parts": [
+          {
+            "path": "experiments/nebula-v27-subword/objects/c9ffd9451de1cf956dfbdd5648226bda8cb9deea6f94764b61793f0a51feb89f/train-bpe-u16.bin.part000.bin",
+            "bytes": 64364932,
+            "sha256": "c9ffd9451de1cf956dfbdd5648226bda8cb9deea6f94764b61793f0a51feb89f"
+          }
+        ]
+      },
+      "format": "bpe-u16",
+      "tokenizer": {
+        "bytes": 233872,
+        "sha256": "67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b",
+        "parts": [
+          {
+            "path": "experiments/nebula-v27-subword/objects/67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b/tokenizer.json.part000.bin",
+            "bytes": 233872,
+            "sha256": "67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b"
+          }
+        ]
+      },
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-raw-training",
+      "revision": "6e9739ee3c5700c1b404a52931df329982f43b4a",
+      "state": "experiments/nebula-v27-subword/state.json",
+      "key": "validationTokens",
+      "entry": {
+        "bytes": 2076796,
+        "sha256": "b3768889c413e32bca17f06234316e76213035c6cb311626cd96899a550751b3",
+        "parts": [
+          {
+            "path": "experiments/nebula-v27-subword/objects/b3768889c413e32bca17f06234316e76213035c6cb311626cd96899a550751b3/validation-bpe-u16.bin.part000.bin",
+            "bytes": 2076796,
+            "sha256": "b3768889c413e32bca17f06234316e76213035c6cb311626cd96899a550751b3"
+          }
+        ]
+      },
+      "format": "bpe-u16",
+      "tokenizer": {
+        "bytes": 233872,
+        "sha256": "67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b",
+        "parts": [
+          {
+            "path": "experiments/nebula-v27-subword/objects/67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b/tokenizer.json.part000.bin",
+            "bytes": 233872,
+            "sha256": "67dac9cb0537aa48f58c18ab21e265456c120f3bd9ef6eb6d8a7fe894be4083b"
+          }
+        ]
+      },
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v10-dialogue/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v10-dialogue/data/train.jsonl",
+        "bytes": 16251616,
+        "sha256": "2576079edfacc54480cb973ab46fe874442250bce011220e87e09618ce12038d"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v10-dialogue/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v10-dialogue/data/validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v10-dialogue/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v10-dialogue/data/teacher.jsonl",
+        "bytes": 200981,
+        "sha256": "e91527e4a5c6d01503d412f0f2332fa574072a3adca754072e4fb07efe63cb5f"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v11-verified/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v11-verified/model/data/v10-train.jsonl",
+        "bytes": 16251616,
+        "sha256": "2576079edfacc54480cb973ab46fe874442250bce011220e87e09618ce12038d"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v11-verified/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v11-verified/model/data/fixed-validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v11-verified/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v11-verified/data/teacher.jsonl",
+        "bytes": 234872,
+        "sha256": "18d5770850cf35e254cc3248579cc88a93a3740205346fc267a891ca08465387"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v12-public/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v12-public/data/train.jsonl",
+        "bytes": 16515040,
+        "sha256": "aa84d210b38790d13bfe1abe3b08118d11bf4db13a93cc3873ab019b78b438b3"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v12-public/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v12-public/data/validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v12-public/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v12-public/data/teacher.jsonl",
+        "bytes": 250079,
+        "sha256": "9e11db0009d8d96ac1529bb20398d971e3f62e9dc2f75293f5d5daffdfcd9e04"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "stories.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/stories.jsonl",
+        "bytes": 1828740,
+        "sha256": "2f5cdd9b8d1fda4c80ca6d0edd5b324e8be32cc9334eb6c55ab06aeaaa8ca9db"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "chat.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/chat.jsonl",
+        "bytes": 65881097,
+        "sha256": "adfa1182565aba6c253b0f3e6cd88f5ed455d5739fff39822c91d76e6d1b2291"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "cosmopedia.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/cosmopedia.jsonl",
+        "bytes": 4657383,
+        "sha256": "def648fb3bee4c0ee29a00e995132c0a5f2c505ee3b883a98e534412e65f1295"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "fineweb.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/fineweb.jsonl",
+        "bytes": 4219515,
+        "sha256": "53926c9ce0a5567e3e93caa74f56a241b14c13e4ea401a17fa6006263cc6feda"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "preparationFiles/stories.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/stories.jsonl",
+        "bytes": 1828740,
+        "sha256": "2f5cdd9b8d1fda4c80ca6d0edd5b324e8be32cc9334eb6c55ab06aeaaa8ca9db"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "preparationFiles/chat.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/chat.jsonl",
+        "bytes": 65881097,
+        "sha256": "adfa1182565aba6c253b0f3e6cd88f5ed455d5739fff39822c91d76e6d1b2291"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "preparationFiles/cosmopedia.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/cosmopedia.jsonl",
+        "bytes": 4657383,
+        "sha256": "def648fb3bee4c0ee29a00e995132c0a5f2c505ee3b883a98e534412e65f1295"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources-preparation/state.json",
+      "key": "preparationFiles/fineweb.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources-preparation/public/fineweb.jsonl",
+        "bytes": 4219515,
+        "sha256": "53926c9ce0a5567e3e93caa74f56a241b14c13e4ea401a17fa6006263cc6feda"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources/data/train.jsonl",
+        "bytes": 83399249,
+        "sha256": "a28fbd8c020815290427d69adbd6b2f68f47ad77f84bc7821100a81222d3906e"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources/data/validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources/data/teacher.jsonl",
+        "bytes": 250079,
+        "sha256": "9e11db0009d8d96ac1529bb20398d971e3f62e9dc2f75293f5d5daffdfcd9e04"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v13-four-sources/state.json",
+      "key": "newPublicHoldout",
+      "entry": {
+        "path": "experiments/nebula-v13-four-sources/data/public-heldout.jsonl",
+        "bytes": 7439631,
+        "sha256": "9ea0b9144f25ac541c9f990dd330ecb227750c540226816613eb0ef5f82d7bfd"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation-preparation/state.json",
+      "key": "cosmopedia.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation-preparation/public/cosmopedia.jsonl",
+        "bytes": 18599702,
+        "sha256": "edd54200ad6b35e6a45ffd435cebce95152110e638a9970ce429b351516dbe2e"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation-preparation/state.json",
+      "key": "stories.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation-preparation/public/stories.jsonl",
+        "bytes": 17884669,
+        "sha256": "7a72988126f132ecf9799986490d185a1ebfa47441400bb420215e4173c0654b"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation-preparation/state.json",
+      "key": "fineweb.jsonl",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation-preparation/public/fineweb.jsonl",
+        "bytes": 17246301,
+        "sha256": "9a32f00ef59ff33890926c3ec341c36ecc1ade0d85cf169b04ffd742d1adb31d"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "foundationData",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/foundation.jsonl",
+        "bytes": 47751529,
+        "sha256": "156f7c3c72d531bea88012dd6fa7c3a1216c8b2829d3a1b55b8149a13084aed9"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "foundationValidation",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/foundation-valid.jsonl",
+        "bytes": 4670145,
+        "sha256": "60448be11c8ecd438c8499ade1ac8f90a66a0239e589bd1b7445cbbbed2f0343"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "conversationData",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/conversation.jsonl",
+        "bytes": 64120019,
+        "sha256": "b284dca7048c48171bfb256c804c652cf06b6d25a4c7c2f710e4417e0aaa37a5"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "conversationValidation",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/conversation-valid.jsonl",
+        "bytes": 6873836,
+        "sha256": "c9b45de854ebf6c0f69f0103e33909495bc6a9c631733a9db3d7cc64727feba3"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "sourceFixedValidation",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/source-fixed-validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v14-foundation/state.json",
+      "key": "sourcePublicHoldout",
+      "entry": {
+        "path": "experiments/nebula-v14-foundation/data/source-public-heldout.jsonl",
+        "bytes": 7439631,
+        "sha256": "9ea0b9144f25ac541c9f990dd330ecb227750c540226816613eb0ef5f82d7bfd"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v15-full-chats/state.json",
+      "key": "filteredData",
+      "entry": {
+        "path": "experiments/nebula-v15-full-chats/source/source-filteredData.jsonl",
+        "bytes": 64120019,
+        "sha256": "b284dca7048c48171bfb256c804c652cf06b6d25a4c7c2f710e4417e0aaa37a5"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v15-full-chats/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v15-full-chats/source/source-validationData.jsonl",
+        "bytes": 6873836,
+        "sha256": "c9b45de854ebf6c0f69f0103e33909495bc6a9c631733a9db3d7cc64727feba3"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v15-full-chats/state.json",
+      "key": "fixedValidation",
+      "entry": {
+        "path": "experiments/nebula-v15-full-chats/source/source-fixedValidation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v15-full-chats/state.json",
+      "key": "publicHoldout",
+      "entry": {
+        "path": "experiments/nebula-v15-full-chats/source/source-publicHoldout.jsonl",
+        "bytes": 7439631,
+        "sha256": "9ea0b9144f25ac541c9f990dd330ecb227750c540226816613eb0ef5f82d7bfd"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v15-full-chats/state.json",
+      "key": "candidateData",
+      "entry": {
+        "path": "experiments/nebula-v15-full-chats/data/full-chats.jsonl",
+        "bytes": 94855895,
+        "sha256": "c9f12a56d0f8cae110e0713710b0f11573ade712f4b0329a6ece98f81ad5ac3b"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v17-lab/state.json",
+      "key": "foundationData",
+      "entry": {
+        "path": "experiments/nebula-v17-lab/data/source-foundationData.jsonl",
+        "bytes": 47751529,
+        "sha256": "156f7c3c72d531bea88012dd6fa7c3a1216c8b2829d3a1b55b8149a13084aed9"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v17-lab/state.json",
+      "key": "foundationValidation",
+      "entry": {
+        "path": "experiments/nebula-v17-lab/data/source-foundationValidation.jsonl",
+        "bytes": 4670145,
+        "sha256": "60448be11c8ecd438c8499ade1ac8f90a66a0239e589bd1b7445cbbbed2f0343"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v17-lab/state.json",
+      "key": "conversationData",
+      "entry": {
+        "path": "experiments/nebula-v17-lab/data/source-conversationData.jsonl",
+        "bytes": 64120019,
+        "sha256": "b284dca7048c48171bfb256c804c652cf06b6d25a4c7c2f710e4417e0aaa37a5"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v17-lab/state.json",
+      "key": "conversationValidation",
+      "entry": {
+        "path": "experiments/nebula-v17-lab/data/source-conversationValidation.jsonl",
+        "bytes": 6873836,
+        "sha256": "c9b45de854ebf6c0f69f0103e33909495bc6a9c631733a9db3d7cc64727feba3"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v4/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v4/data/v4-chat.jsonl",
+        "bytes": 11262181,
+        "sha256": "7cd800758355eaded830703cb3f3977480dd5aee8b726db8f643749b9080f2b0"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v5/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v5/data/v5-chat.jsonl",
+        "bytes": 13052978,
+        "sha256": "4b2ee29a93b2538c840d0ba7ecfe0af0d691f62149e824efc565c58a79d1575b"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v6/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v6/data/v6-chat.jsonl",
+        "bytes": 13440976,
+        "sha256": "2cb7c40f3b5041fdd1ad0523b2fee03254d9d4fa7645bad52474ce71bee4420e"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v7/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v7/data/v7-chat.jsonl",
+        "bytes": 13092603,
+        "sha256": "8e4068035dd73081f93e849af151c2cda2e4357840c1975c9ca2bdc46ae53f68"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v7/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v7/data/teacher.jsonl",
+        "bytes": 31775,
+        "sha256": "86dbade0cb5565e2adbe1f9738c695eb02343b4c6d3c7b68c4c524662fe7b8af"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v8-100m/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v8-100m/data/v7-chat.jsonl",
+        "bytes": 13092603,
+        "sha256": "8e4068035dd73081f93e849af151c2cda2e4357840c1975c9ca2bdc46ae53f68"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v8-100m/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v8-100m/data/teacher.jsonl",
+        "bytes": 81044,
+        "sha256": "9b5071a05c5b13c7231afc7ee1882546a0089bcbcb8f3089862a90e31ed6c974"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v9-curriculum/state.json",
+      "key": "data",
+      "entry": {
+        "path": "experiments/nebula-v9-curriculum/data/train.jsonl",
+        "bytes": 29794571,
+        "sha256": "fc96ebc2105b083147b704102bb94d50d46324e746b764a66c0e8956015d283f"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v9-curriculum/state.json",
+      "key": "validationData",
+      "entry": {
+        "path": "experiments/nebula-v9-curriculum/data/validation.jsonl",
+        "bytes": 2530236,
+        "sha256": "ca4034127c04c6490eb9574fd1a9beaa6dbcc47c20fc1207ec813201426b68e1"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "validation",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    },
+    {
+      "repo": "iiidevv/nebula-research",
+      "revision": "b1bd4ffd41cb79f58f0cb779608f97ed5a75cb31",
+      "state": "experiments/nebula-v9-curriculum/state.json",
+      "key": "teacherData",
+      "entry": {
+        "path": "experiments/nebula-v9-curriculum/data/teacher.jsonl",
+        "bytes": 130468,
+        "sha256": "06e4a174d0437029fc5fde8f77fecf0847736861646c0b59928b2a3b4b96c1bc"
+      },
+      "format": "jsonl",
+      "tokenizer": null,
+      "split": "train",
+      "approved": false,
+      "license": "",
+      "origin": "historical-unreviewed"
+    }
+  ],
+  "notScanned": [
+    "Private/GCS/S3 buckets without configured credentials",
+    "Other repos not explicitly identified"
+  ],
+  "noObjectsMoved": true
+}

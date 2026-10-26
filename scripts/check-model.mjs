@@ -3,7 +3,7 @@ import {loadReleaseArtifact,NativeNebula} from '../lib/native-model.mjs';
 import {readFileSync} from 'node:fs';
 import {loadGraphRelease} from '../lib/onnx-model.mjs';
 import {createRequire} from 'node:module';
-if(process.env.NEBULA_VALIDATE_TRAINING_MODELS!=='true'){
+if(process.env.NEBULA_VALIDATE_TRAINING_MODELS!=='true'&&!process.env.VERCEL){
  console.log(JSON.stringify({modelReleaseChecked:false,reason:'LEGACY_MODELS_CURRENTLY_IN_TRAINING',activeModel:'nebula-ultra'}));
 }else try{
  const {release,artifact}=loadReleaseArtifact();
