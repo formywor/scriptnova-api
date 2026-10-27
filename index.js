@@ -3,6 +3,7 @@ import {createDevicesHandler} from './lib/devices.mjs';
 import {createCloudHandler} from './lib/cloud.mjs';
 import {readReviewTraining} from './lib/review-training.mjs';
 import {Readable} from 'node:stream';
+import {once} from 'node:events';
 import {createApp} from './lib/app.mjs';
 import {getStore,verifyToken,getAdminDatabase} from './lib/firebase.mjs';
 import {readLearningTopics} from './lib/learning.mjs';
@@ -28,7 +29,11 @@ export function createNodeHandler(app) {
       const request=new Request(new URL(req.url || '/', 'https://nebula.invalid'),{method,headers,signal:abort.signal,...(body!==undefined?{body,duplex:'half'}:{})});
       const response=await app(request);
       res.writeHead(response.status,Object.fromEntries(response.headers));
-      res.end(Buffer.from(await response.arrayBuffer()));
+      if(response.headers.get('content-type')?.startsWith('text/event-stream')){
+        res.flushHeaders?.();
+        for await(const chunk of response.body){if(abort.signal.aborted)break;if(!res.write(Buffer.from(chunk)))await once(res,'drain',{signal:abort.signal});}
+        res.end();
+      }else res.end(Buffer.from(await response.arrayBuffer()));
     } catch {
       if(!res.headersSent)res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
       res.end('{"code":"UNAVAILABLE"}');
