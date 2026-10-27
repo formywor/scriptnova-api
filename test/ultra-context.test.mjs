@@ -14,7 +14,7 @@ test('Ultra receives trusted product context and executes independent lookups to
  let round=0,active=0,peak=0;
  const cloud={calculate:async expr=>{active++;peak=Math.max(peak,active);await new Promise(r=>setTimeout(r,5));active--;return {result:expr==='1+1'?2:4};}};
  const response=await ultraReply([{role:'user',content:'Calculate 1+1 and 2+2.'}],{ultraKey:'test',contextUsed:{memoryEnabled:false},availableModels:[{id:'nebula-v2-1',available:true}]},{cloud,fetcher:async(_,init)=>{
-  const body=JSON.parse(init.body);assert.equal(body.parallel_tool_calls,true);assert.match(body.messages[0].content,/https:\/\/api.scriptnovaa.com/);assert.match(body.messages[0].content,/Groq/);
+  const body=JSON.parse(init.body);assert.equal(body.parallel_tool_calls,true);assert.match(body.messages[0].content,/https:\/\/api.scriptnovaa.com/);assert.doesNotMatch(body.messages[0].content,/Groq|Kaggle|Vercel/);
   if(round++===0)return Response.json({choices:[{message:{tool_calls:['1+1','2+2'].map((expression,i)=>({id:'tool'+i,type:'function',function:{name:'calculate',arguments:JSON.stringify({expression})}}))}}]});
   assert.equal(body.messages.filter(m=>m.role==='tool').length,2);return Response.json({choices:[{message:{content:'The results are 2 and 4.',reasoning:'private trace must not leave the provider'}}]});
  }});

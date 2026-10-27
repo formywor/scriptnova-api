@@ -6,7 +6,7 @@ import {reviewPlan,reviewRevision} from '../lib/review-schedule.mjs';
 import {ownerRules} from '../lib/rules.mjs';
 
 test('four actual owned checkpoints have distinct selectable identities and account defaults',()=>{
- const catalog=modelCatalog({modelMode:'embedded'});assert.deepEqual(catalog.models.map(x=>x.name),['Nebula Ultra','Nebula Classic','Nebula V1','Nebula V1 Lite','Nebula V2.1']);
+ const catalog=modelCatalog({modelMode:'embedded'});assert.deepEqual(catalog.models.map(x=>x.name),['Nebula Ultra','Nebula Spark','Nebula Duo','Nebula Classic','Nebula V1','Nebula V1 Lite','Nebula V2.1']);
  for(const model of catalog.models)assert.equal(preferencePatch({defaultModel:model.id}).defaultModel,model.id);
  assert.throws(()=>preferencePatch({defaultModel:'untrusted-provider'}));
  const lite=loadGraphRelease('nebula-v1-lite').release,large=loadGraphRelease('nebula-v2-1').release;
