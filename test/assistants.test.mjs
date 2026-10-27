@@ -50,3 +50,9 @@ test('model identity answers use Nebula branding without revealing private confi
  const r=await sparkReply([{role:'user',content:'Say hello and tell me your Nebula model name.'}],{sparkKey:'s'},{fetcher:async()=>{throw Error('Identity does not require provider metadata');}});assert.match(r.text,/Nebula Spark/);assert.doesNotMatch(r.text,/Gemini|Google|Groq|Kaggle/);
  const d=await duoReply([{role:'user',content:'Who are you?'}],{sparkKey:'s',ultraKey:'u'});assert.match(d.text,/Nebula Duo/);assert.equal(d.collaboration.mode,'direct');
 });
+
+test('Cloud tasks finalize results when the database transaction cache is cold',async()=>{
+ const store=createStore(memoryDatabase({coldTransactions:true}).db);const h=createCloudHandler({getStore:async()=>store,verifyToken:async()=>({uid:'alice'}),config:cloudConfig({})});
+ const r=await h(new Request('https://api.test/api/nebula/cloud/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer test.valid.token'},body:JSON.stringify({kind:'reminder',instructions:'Saved with a cold cache'})}));assert.equal(r.status,200);const jobs=Object.values((await store.cloudState(accountKey('alice'))).jobs);assert.equal(jobs[0].status,'completed');assert.equal(jobs[0].result.text,'Saved with a cold cache');
+ const update=await store.cloudJob(accountKey('alice'),jobs[0].id,j=>({...j,status:'cancelled'}));assert.equal(update.status,'cancelled');assert.equal(await store.cloudJob(accountKey('bob'),jobs[0].id,j=>({...j,status:'completed'})),null);
+});
