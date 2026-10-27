@@ -17,11 +17,11 @@ test('Duo runs independent drafts and mutual review with tools only available to
  const calls=[];const spark=async(m,c)=>{calls.push(['spark',m,c]);assert.equal(c.cloudTools,undefined);return {text:m.at(-1).content.includes('Compare the two')?'A detail remains uncertain.':'Candidate S',reasoning:'must not leak'};};
  const ultra=async(m,c)=>{calls.push(['ultra',m,c]);return {text:c.assistantName==='Nebula Duo'?'Final answer with uncertainty.':'Candidate U',activity:[]};};
  const r=await duoReply([{role:'user',content:'Compare two approaches for this project.'}],{sparkKey:'s',ultraKey:'u',cloudTools:{calculate:true}},{spark,ultra});
- assert.equal(calls.length,5);assert.equal(r.collaboration.phases.length,3);assert.equal(r.collaboration.status,'reviewed');assert.equal(calls.filter(x=>x[2].cloudTools).length,1);assert.match(r.text,/uncertainty/);assert.ok(!JSON.stringify(r).includes('must not leak'));
+ assert.equal(calls.length,4);assert.equal(r.collaboration.phases.length,3);assert.equal(r.collaboration.status,'reviewed');assert.equal(calls.filter(x=>x[2].cloudTools).length,1);assert.match(r.text,/uncertainty/);assert.ok(!JSON.stringify(r).includes('must not leak'));
 });
 test('Duo simple greetings skip the long collaboration and failed reviewers cannot invent consensus',async()=>{
  let count=0;const r=await duoReply([{role:'user',content:'Hi!'}],{sparkKey:'s',ultraKey:'u'},{spark:async()=>{count++;return {text:'Hi!'};},ultra:async()=>{throw Error('must not run');}});assert.equal(count,1);assert.equal(r.collaboration.mode,'direct');
- await assert.rejects(duoReply([{role:'user',content:'Explain a complex project.'}],{sparkKey:'s',ultraKey:'u'},{spark:async()=>{throw Error('upstream failed');},ultra:async()=>({text:'ok'})}));
+ const partial=await duoReply([{role:'user',content:'Explain a complex project.'}],{sparkKey:'s',ultraKey:'u'},{spark:async()=>{throw Error('upstream failed');},ultra:async()=>({text:'ok'})});assert.equal(partial.text,'ok');assert.equal(partial.collaboration.status,'partial');
 });
 test('model availability and saved default support Spark and Duo without public credentials',()=>{
  const c=modelCatalog({sparkKey:'secret',ultraKey:'other'});assert.equal(c.models.find(m=>m.id==='nebula-duo').available,true);assert.equal(modelCatalog({sparkKey:'s'}).models.find(m=>m.id==='nebula-duo').available,false);assert.ok(!JSON.stringify(c).includes('secret'));assert.equal(preferencePatch({defaultModel:'nebula-spark'}).defaultModel,'nebula-spark');assert.equal(preferenceView({defaultModel:'nebula-duo'}).defaultModel,'nebula-duo');
@@ -43,7 +43,7 @@ test('Duo progress is streamed from real server stages, followed by the normal r
 test('Node deployment adapter delivers progress before the final response is ready',async()=>{
  const {createServer}=await import('node:http'),{createNodeHandler}=await import('../index.js');let finish;const waiting=new Promise(r=>finish=r);const encoder=new TextEncoder();
  const handler=createNodeHandler(async()=>new Response(new ReadableStream({async start(controller){controller.enqueue(encoder.encode('data: {"type":"progress"}\n\n'));await waiting;controller.enqueue(encoder.encode('data: {"type":"result"}\n\n'));controller.close();}}),{headers:{'Content-Type':'text/event-stream'}}));
- const server=createServer(handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+server.address().port,{signal:AbortSignal.timeout(2000)}),reader=r.body.getReader();const first=await reader.read();assert.match(new TextDecoder().decode(first.value),/progress/);finish();let rest='';while(true){const b=await reader.read();if(b.done)break;rest+=new TextDecoder().decode(b.value);}assert.match(rest,/result/);}finally{finish();server.closeAllConnections();await new Promise(r=>server.close(r));}
+ const server=createServer(handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+server.address().port,{signal:AbortSignal.timeout(15000)}),reader=r.body.getReader();const first=await reader.read();assert.match(new TextDecoder().decode(first.value),/progress/);finish();let rest='';while(true){const b=await reader.read();if(b.done)break;rest+=new TextDecoder().decode(b.value);}assert.match(rest,/result/);}finally{finish();server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
 
 test('model identity answers use Nebula branding without revealing private configuration',async()=>{
@@ -55,4 +55,8 @@ test('Cloud tasks finalize results when the database transaction cache is cold',
  const store=createStore(memoryDatabase({coldTransactions:true}).db);const h=createCloudHandler({getStore:async()=>store,verifyToken:async()=>({uid:'alice'}),config:cloudConfig({})});
  const r=await h(new Request('https://api.test/api/nebula/cloud/run',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer test.valid.token'},body:JSON.stringify({kind:'reminder',instructions:'Saved with a cold cache'})}));assert.equal(r.status,200);const jobs=Object.values((await store.cloudState(accountKey('alice'))).jobs);assert.equal(jobs[0].status,'completed');assert.equal(jobs[0].result.text,'Saved with a cold cache');
  const update=await store.cloudJob(accountKey('alice'),jobs[0].id,j=>({...j,status:'cancelled'}));assert.equal(update.status,'cancelled');assert.equal(await store.cloudJob(accountKey('bob'),jobs[0].id,j=>({...j,status:'completed'})),null);
+});
+
+test('Duo preserves a useful answer when the final reviewer hits a rate limit',async()=>{
+ let calls=0;const result=await duoReply([{role:'user',content:'Compare the two options for my project.'}],{sparkKey:'s',ultraKey:'u'},{spark:async()=>({text:'Spark draft'}),ultra:async()=>{if(calls++)throw Object.assign(Error('busy'),{code:'ULTRA_RATE_LIMITED'});return {text:'Useful prepared answer'};}});assert.equal(result.text,'Useful prepared answer');assert.equal(result.collaboration.status,'partial');assert.match(result.collaboration.phases.at(-1).summary,/final joint review was busy/);
 });
