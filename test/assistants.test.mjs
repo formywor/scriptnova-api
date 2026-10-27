@@ -45,3 +45,8 @@ test('Node deployment adapter delivers progress before the final response is rea
  const handler=createNodeHandler(async()=>new Response(new ReadableStream({async start(controller){controller.enqueue(encoder.encode('data: {"type":"progress"}\n\n'));await waiting;controller.enqueue(encoder.encode('data: {"type":"result"}\n\n'));controller.close();}}),{headers:{'Content-Type':'text/event-stream'}}));
  const server=createServer(handler);await new Promise(r=>server.listen(0,'127.0.0.1',r));try{const r=await fetch('http://127.0.0.1:'+server.address().port,{signal:AbortSignal.timeout(2000)}),reader=r.body.getReader();const first=await reader.read();assert.match(new TextDecoder().decode(first.value),/progress/);finish();let rest='';while(true){const b=await reader.read();if(b.done)break;rest+=new TextDecoder().decode(b.value);}assert.match(rest,/result/);}finally{finish();server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
+
+test('model identity answers use Nebula branding without revealing private configuration',async()=>{
+ const r=await sparkReply([{role:'user',content:'Say hello and tell me your Nebula model name.'}],{sparkKey:'s'},{fetcher:async()=>{throw Error('Identity does not require provider metadata');}});assert.match(r.text,/Nebula Spark/);assert.doesNotMatch(r.text,/Gemini|Google|Groq|Kaggle/);
+ const d=await duoReply([{role:'user',content:'Who are you?'}],{sparkKey:'s',ultraKey:'u'});assert.match(d.text,/Nebula Duo/);assert.equal(d.collaboration.mode,'direct');
+});
