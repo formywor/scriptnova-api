@@ -34,7 +34,8 @@ export function createNodeHandler(app) {
         for await(const chunk of response.body){if(abort.signal.aborted)break;if(!res.write(Buffer.from(chunk)))await once(res,'drain',{signal:abort.signal});}
         res.end();
       }else res.end(Buffer.from(await response.arrayBuffer()));
-    } catch {
+    } catch(error) {
+      if(!abort.signal.aborted)console.error('NEBULA_ADAPTER_FAILED',{name:String(error?.name||'Error').slice(0,50),code:/^[A-Z_]{1,60}$/.test(error?.code||'')?error.code:'ADAPTER_ERROR'});
       if(!res.headersSent)res.writeHead(503,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
       res.end('{"code":"UNAVAILABLE"}');
     }finally{req.removeListener?.('aborted',onAborted);res.removeListener?.('close',onClose);}
