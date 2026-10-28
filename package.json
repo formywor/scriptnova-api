@@ -19,6 +19,7 @@
     "postinstall": "node scripts/check-model.mjs && node --no-experimental-require-module scripts/check-firebase.mjs"
   },
   "dependencies": {
+    "@vercel/sandbox": "^3.9.0",
     "firebase-admin": "14.5.0",
     "onnxruntime-node": "1.30.0"
   },
