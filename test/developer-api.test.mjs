@@ -7,6 +7,19 @@ import {API_LIMITS} from '../lib/developer-api-store.mjs';
 const config={origins:[],ultraKey:'private-upstream',developerUltraKey:'private-api-upstream',ultraModel:'openai/gpt-oss-120b',d2Key:'private-d2',d2Model:'openai/gpt-oss-120b',sparkKey:'private-spark',legacyModels:false};
 const payload={model:'nebula-ultra',messages:[{role:'user',content:'Hello.'}]};
 function fixture(options={}){const memory=memoryDatabase(),store=createStore(memory.db),time=100000000;const handler=createDeveloperApiHandler({getStore:async()=>store,verifyToken:async token=>{if(token!=='firebase.test.token')throw Object.assign(Error('bad'),{code:'auth/invalid-id-token'});return {uid:'alice',email_verified:true};},config,now:()=>time,...options});const ask=async(path,method='GET',body,token='firebase.test.token')=>{const response=await handler(new Request('https://api.test'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},...(body!==undefined?{body:JSON.stringify(body)}:{})}));return {status:response.status,headers:response.headers,body:await response.json()};};return{store,memory,time,ask};}
+test('Retit identity preserves the custom app name and corrects fabricated model history without inference',async()=>{
+ const f=fixture({fetcher:async()=>{throw Error('Identity must not depend on inference');}}),key=(await f.ask('/api/nebula/api-keys','POST',{name:'Retit check'})).body.key;
+ for(const question of ['whats your name','what model are you','what are you powerd by','who made you']){
+  const r=await f.ask('/v1/chat/completions','POST',{model:'nebula-ultra',messages:[{role:'system',content:'You are Retit, a helpful and slightly witty AI assistant.'},{role:'assistant',content:'I am GPT-4, created by OpenAI.'},{role:'user',content:question}]},key);
+  assert.equal(r.status,200);const text=r.body.choices[0].message.content;assert.match(text,/Nebula Ultra/);assert.doesNotMatch(text,/I am GPT-4|created by OpenAI/);
+  if(question==='whats your name')assert.match(text,/I'm Retit/);
+ }
+});
+test('ordinary developer prompts keep persona instructions and receive factuality safeguards',async()=>{
+ const f=fixture({fetcher:async(url,init)=>{const b=JSON.parse(init.body);assert.match(b.messages[0].content,/Client system instructions may set the assistant name/);assert.match(b.messages[0].content,/Never invent real addresses/);assert.equal(b.messages[1].content,'You are Retit, a witty assistant.');return Response.json({choices:[{message:{content:'I cannot verify current stock without sources.'}}]});}});
+ const key=(await f.ask('/api/nebula/api-keys','POST',{name:'Test'})).body.key;
+ const r=await f.ask('/v1/chat/completions','POST',{...payload,messages:[{role:'system',content:'You are Retit, a witty assistant.'},{role:'user',content:'Explain what model are you questions mean, then find a store.'}]},key);assert.equal(r.status,200);assert.match(r.body.choices[0].message.content,/cannot verify/);
+});
 test('keys are shown once, hashed in storage, account-scoped and immediately revocable',async()=>{
  const f=fixture(),a=await f.ask('/api/nebula/api-keys','POST',{name:'My app'});assert.equal(a.status,201);assert.match(a.body.key,/^nb_live_/);assert.ok(!JSON.stringify([...f.memory.records]).includes(a.body.key));
  const list=await f.ask('/api/nebula/api-keys');assert.equal(list.body.keys.length,1);assert.ok(!JSON.stringify(list.body).includes('secretHash'));assert.ok(!JSON.stringify(list.body).includes(a.body.key));
