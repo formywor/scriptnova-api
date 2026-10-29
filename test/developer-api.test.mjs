@@ -10,7 +10,7 @@ function fixture(options={}){const memory=memoryDatabase(),store=createStore(mem
 test('Retit identity preserves the custom app name and corrects fabricated model history without inference',async()=>{
  const f=fixture({fetcher:async()=>{throw Error('Identity must not depend on inference');}}),key=(await f.ask('/api/nebula/api-keys','POST',{name:'Retit check'})).body.key;
  for(const question of ['whats your name','what model are you','what are you powerd by','who made you']){
-  const r=await f.ask('/v1/chat/completions','POST',{model:'nebula-ultra',messages:[{role:'system',content:'You are Retit, a helpful and slightly witty AI assistant.'},{role:'assistant',content:'I am GPT-4, created by OpenAI.'},{role:'user',content:question}]},key);
+  const r=await f.ask('/v1/chat/completions','POST',{model:'nebula-ultra',tools:[{type:'function',function:{name:'calculate',parameters:{type:'object',properties:{}}}}],messages:[{role:'system',content:'You are Retit, a helpful and slightly witty AI assistant.'},{role:'assistant',content:'I am GPT-4, created by OpenAI.'},{role:'user',content:question}]},key);
   assert.equal(r.status,200);const text=r.body.choices[0].message.content;assert.match(text,/Nebula Ultra/);assert.doesNotMatch(text,/I am GPT-4|created by OpenAI/);
   if(question==='whats your name')assert.match(text,/I'm Retit/);
  }
