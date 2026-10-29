@@ -38,3 +38,7 @@ test('validation rejects Spark, hosted Cloud, oversized requests, invalid tool h
  const result=validateApiCompletion({...payload,messages:[{role:'user',content:'Multiply.'},{role:'assistant',content:null,tool_calls:[{id:'c',type:'function',function:{name:'multiply',arguments:'{}'}}]},{role:'tool',tool_call_id:'c',content:'56'}]},config);assert.equal(result.messages.at(-1).content,'56');
  assert.equal(API_LIMITS.requestsPerDay,100);
 });
+test('revocation succeeds with an empty server-side transaction cache',async()=>{
+ const memory=memoryDatabase({coldTransactions:true}),store=createStore(memory.db),key=await store.apiCreateKey('owner','cold-key',100000);
+ assert.ok(await store.apiAuthenticate(key.key));await store.apiRevokeKey('owner',key.id);assert.equal(await store.apiAuthenticate(key.key),null);
+});
