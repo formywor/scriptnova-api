@@ -24,7 +24,7 @@ test('keys are shown once, hashed in storage, account-scoped and immediately rev
  const f=fixture(),a=await f.ask('/api/nebula/api-keys','POST',{name:'My app'});assert.equal(a.status,201);assert.match(a.body.key,/^nb_live_/);assert.ok(!JSON.stringify([...f.memory.records]).includes(a.body.key));
  const list=await f.ask('/api/nebula/api-keys');assert.equal(list.body.keys.length,1);assert.ok(!JSON.stringify(list.body).includes('secretHash'));assert.ok(!JSON.stringify(list.body).includes(a.body.key));
  assert.equal((await f.ask('/v1/models','GET',undefined,a.body.key)).status,200);
- const models=(await f.ask('/v1/models','GET',undefined,a.body.key)).body.data;assert.ok(models.every(m=>m.id!=='nebula-spark'&&m.free&&!m.cloud));
+ const models=(await f.ask('/v1/models','GET',undefined,a.body.key)).body.data;assert.ok(models.every(m=>m.id!=='nebula-spark'&&(m.free||m.id==='nebula-d2'&&!m.available&&m.priceMonthly===2.99)&&!m.cloud));
  await assert.rejects(f.store.apiRevokeKey('another-account',a.body.id),e=>e.code==='KEY_NOT_FOUND');
  assert.equal((await f.ask('/api/nebula/api-keys/'+a.body.id,'DELETE')).status,200);assert.equal((await f.ask('/v1/models','GET',undefined,a.body.key)).status,401);
 });

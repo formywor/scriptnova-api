@@ -43,7 +43,7 @@ test('chat advertises scanner only for verified owner or active invitation with 
   const app=createApp({getStore:async()=>store,verifyToken:async()=>identity,config:{publicTiers:false,origins:[],rateSecret:'x'.repeat(40),d2Key:'test'},log:()=>{},generate:async(_,c)=>{received=c;return {text:'Review ready.'};}});
   const request=(path,method,body)=>app(new Request('https://api.test/api/nebula'+path,{method,headers:{Authorization:'Bearer test.user.token','Content-Type':'application/json'},body:JSON.stringify(body)}));
   await request('/chats/review','PUT',{revision:0,title:'Review',messages:[{id:'turn',role:'user',content:'Scan scriptnovaa.com for vulnerabilities.'}]});
-  const response=await request('/chat','POST',{chatId:'review',turnId:'turn',modelId:'nebula-d2',cloudMode:enabled,messages:[{role:'user',content:'Scan scriptnovaa.com for vulnerabilities.'}]});assert.equal(response.status,200,JSON.stringify(await response.clone().json()));assert.equal(typeof received.cloudTools?.securityScan==='function',expected);
+  const response=await request('/chat','POST',{chatId:'review',turnId:'turn',modelId:'nebula-d2',cloudMode:enabled,messages:[{role:'user',content:'Scan scriptnovaa.com for vulnerabilities.'}]});const admitted=securityAccess(identity,{},grant);assert.equal(response.status,admitted?200:403,JSON.stringify(await response.clone().json()));if(admitted)assert.equal(typeof received.cloudTools?.securityScan==='function',expected);else assert.equal(received,undefined);
  }}finally{if(old===undefined)delete process.env.NEBULA_ENVIRONMENT_ENABLED;else process.env.NEBULA_ENVIRONMENT_ENABLED=old;}
 });
 test('explicit invitation unlocks D2 without automatically promoting public account tier',async()=>{

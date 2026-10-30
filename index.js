@@ -7,7 +7,7 @@ import {readReviewTraining} from './lib/review-training.mjs';
 import {Readable} from 'node:stream';
 import {once} from 'node:events';
 import {createApp} from './lib/app.mjs';
-import {getStore,verifyToken,getAdminDatabase} from './lib/firebase.mjs';
+import {getStore,verifyToken,getAdminDatabase,developerUserByEmail} from './lib/firebase.mjs';
 import {readLearningTopics} from './lib/learning.mjs';
 import {createResearchHandler} from './lib/research.mjs';
 import {researchServices} from './lib/research-storage.mjs';
@@ -45,10 +45,10 @@ export function createNodeHandler(app) {
 }
 
 const deskApp=createDeskHandler({getStore,verifyToken});
-const developerApi=createDeveloperApiHandler({getStore,verifyToken});
+const developerApi=createDeveloperApiHandler({getStore,verifyToken,lookupUser:developerUserByEmail});
 const developerApp=createDeveloperHandler({getStore,verifyToken});
 const devicesApp=createDevicesHandler({getStore,verifyToken});
 const cloudApp=createCloudHandler({getStore,verifyToken});
 const publicApp=createApp({getStore,verifyToken});
 const researchApp=createResearchHandler({services:researchServices,learning:async now=>readLearningTopics(await getAdminDatabase(),now),reviewTraining:async now=>readReviewTraining(await getAdminDatabase(),now)});
-export default createNodeHandler(request=>/^\/api\/nebula\/desk(?:\/|$)/.test(new URL(request.url).pathname)?deskApp(request):/^\/v1(?:\/|$)/.test(new URL(request.url).pathname)||/^\/api\/nebula\/api-keys(?:\/|$)/.test(new URL(request.url).pathname)?developerApi(request):/^\/api\/nebula\/developer(?:\/|$)/.test(new URL(request.url).pathname)?developerApp(request):/^\/api\/nebula\/devices(?:\/|$)/.test(new URL(request.url).pathname)?devicesApp(request):new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
+export default createNodeHandler(request=>/^\/api\/nebula\/desk(?:\/|$)/.test(new URL(request.url).pathname)?deskApp(request):/^\/v1(?:\/|$)/.test(new URL(request.url).pathname)||/^\/api\/nebula\/(?:api-keys|developer-platform)(?:\/|$)/.test(new URL(request.url).pathname)?developerApi(request):/^\/api\/nebula\/developer(?:\/|$)/.test(new URL(request.url).pathname)?developerApp(request):/^\/api\/nebula\/devices(?:\/|$)/.test(new URL(request.url).pathname)?devicesApp(request):new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
