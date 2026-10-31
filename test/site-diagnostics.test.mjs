@@ -19,7 +19,7 @@ test('exposure review detects signatures, withholds secrets, limits requests and
 });
 test('API tests check three nonmutating methods, report auth errors and JSON shape without response values',async()=>{
  const methods=[],r=await testPublicApi('https://api.owned.test/api/status',{reader:async(url,options)=>{methods.push(options);return {...response(url,'{"privateExample":"do-not-publish","ok":true}',options.method==='GET'?401:204),headers:{'content-type':'application/json','access-control-allow-origin':'*','access-control-allow-credentials':'true'}};}});
- assert.deepEqual(methods.map(m=>m.method),['GET','HEAD','OPTIONS']);assert.ok(methods.every(m=>m.origin==='https://nebula-diagnostic.invalid'&&m.maxRedirects===0));assert.equal(r.checks[0].status,401);assert.ok(r.checks[0].jsonShape.keys.includes('ok'));assert.ok(!JSON.stringify(r).includes('do-not-publish'));assert.ok(r.findings.some(f=>f.code==='INVALID_CORS_COMBINATION'));
+ assert.deepEqual(methods.map(m=>m.method),['GET','HEAD','OPTIONS']);assert.equal(methods[0].origin,undefined);assert.equal(methods[1].origin,undefined);assert.equal(methods[2].origin,'https://nebula-diagnostic.invalid');assert.ok(methods.every(m=>m.maxRedirects===0));assert.equal(r.checks[0].status,401);assert.ok(r.checks[0].jsonShape.keys.includes('ok'));assert.ok(!JSON.stringify(r).includes('do-not-publish'));assert.ok(r.findings.some(f=>f.code==='INVALID_CORS_COMBINATION'));
  for(const url of ['https://api.owned.test/logout','https://api.owned.test/api/delete','https://api.owned.test/api?key=secret','https://user:pass@api.owned.test/'])await assert.rejects(testPublicApi(url),e=>e.code==='INVALID_API_TARGET');
 });
 test('discovery does not schedule mutations, query credentials or arbitrary outbound admin probes',()=>{
