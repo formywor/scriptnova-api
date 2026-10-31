@@ -23,7 +23,7 @@ test('API tests check three nonmutating methods, report auth errors and JSON sha
  for(const url of ['https://api.owned.test/logout','https://api.owned.test/api/delete','https://api.owned.test/api?key=secret','https://user:pass@api.owned.test/'])await assert.rejects(testPublicApi(url),e=>e.code==='INVALID_API_TARGET');
 });
 test('discovery does not schedule mutations, query credentials or arbitrary outbound admin probes',()=>{
- const r=discoverSurface('<a href="https://other.test/admin">Other</a><a href="/logout">Logout</a><script src="/app.js"></script> const a="/api/users"; const b="https://api.owned.test/api?token=sensitive";','https://owned.test/');assert.deepEqual(r.adminPages,[]);assert.deepEqual(r.scripts,['https://owned.test/app.js']);assert.ok(r.endpoints.includes('https://owned.test/api/users'));assert.ok(!r.endpoints.some(u=>u.includes('?')));
+ const r=discoverSurface('<a href="https://other.test/admin">Other</a><a href="/logout">Logout</a><script defer src=/app.js?v=cloud-4></script> const a="/api/users"; const b="https://api.owned.test/api?token=sensitive";','https://owned.test/');assert.deepEqual(r.adminPages,[]);assert.deepEqual(r.scripts,['https://owned.test/app.js']);assert.ok(r.endpoints.includes('https://owned.test/api/users'));assert.ok(!r.endpoints.some(u=>u.includes('?')));
 });
 test('browser traffic collection enforces public scope/read-only methods and removes credential headers',async()=>{
  let routeHandler,wsHandler,written,forwarded,stopped=false;const handlers={};
