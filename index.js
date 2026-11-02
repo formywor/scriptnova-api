@@ -1,3 +1,4 @@
+import {createFamilyHandler} from './lib/family-handler.mjs';
 import {createPcHandler} from './lib/pc.mjs';
 import {createDeskHandler} from './lib/desk.mjs';
 import {createDeveloperApiHandler} from './lib/developer-api.mjs';
@@ -53,4 +54,5 @@ const devicesApp=createDevicesHandler({getStore,verifyToken});
 const cloudApp=createCloudHandler({getStore,verifyToken});
 const publicApp=createApp({getStore,verifyToken});
 const researchApp=createResearchHandler({services:researchServices,learning:async now=>readLearningTopics(await getAdminDatabase(),now),reviewTraining:async now=>readReviewTraining(await getAdminDatabase(),now)});
-export default createNodeHandler(request=>/^\/api\/nebula\/pc(?:\/|$)/.test(new URL(request.url).pathname)?pcApp(request):/^\/api\/nebula\/desk(?:\/|$)/.test(new URL(request.url).pathname)?deskApp(request):/^\/v1(?:\/|$)/.test(new URL(request.url).pathname)||/^\/api\/nebula\/(?:api-keys|developer-platform)(?:\/|$)/.test(new URL(request.url).pathname)?developerApi(request):/^\/api\/nebula\/developer(?:\/|$)/.test(new URL(request.url).pathname)?developerApp(request):/^\/api\/nebula\/devices(?:\/|$)/.test(new URL(request.url).pathname)?devicesApp(request):new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
+const familyApp=createFamilyHandler({getDatabase:getAdminDatabase});
+export default createNodeHandler(request=>new URL(request.url).pathname.startsWith('/api/family/')?familyApp(request):/^\/api\/nebula\/pc(?:\/|$)/.test(new URL(request.url).pathname)?pcApp(request):/^\/api\/nebula\/desk(?:\/|$)/.test(new URL(request.url).pathname)?deskApp(request):/^\/v1(?:\/|$)/.test(new URL(request.url).pathname)||/^\/api\/nebula\/(?:api-keys|developer-platform)(?:\/|$)/.test(new URL(request.url).pathname)?developerApi(request):/^\/api\/nebula\/developer(?:\/|$)/.test(new URL(request.url).pathname)?developerApp(request):/^\/api\/nebula\/devices(?:\/|$)/.test(new URL(request.url).pathname)?devicesApp(request):new URL(request.url).pathname.startsWith('/api/nebula/cloud')?cloudApp(request):new URL(request.url).pathname.startsWith('/api/nebula/research/')?researchApp(request):publicApp(request));
