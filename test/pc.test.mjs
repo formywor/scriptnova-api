@@ -50,3 +50,32 @@ test('expired jobs stop looking busy even when the extension never polls again',
 test('status checks wait briefly for the existing action instead of requiring another user turn',async()=>{const f=await fixture();await f.store.pcQueue(f.pair.deviceId,f.key,pcCommand('inspect',{}),'8'.repeat(32),f.time);const claim=(await f.store.pcPoll(f.pair.deviceId,f.time)).job;let waits=0;const tools=pcTools(f.store,f.key,f.pair.deviceId,{now:()=>f.time,wait:async()=>{waits++;await f.store.pcResult(f.pair.deviceId,claim.id,claim.lease,{title:'Ready'},null,f.time);}});const result=await tools.result(claim.id);assert.equal(result.status,'completed');assert.equal(waits,1);assert.equal((await f.store.pcDevice(f.pair.deviceId)).issued,1);});
 test('Gmail PC tasks continue from a real tab lookup rather than returning a stale capability refusal',async()=>{let round=0;const steps=[];const r=await ultraReply([{role:'user',content:'Send a Gmail to friend@example.com and tell them I said hi'}],{ultraKey:'fixture',pcContext:{device:'Browser'}},{cloud:{pc:{run:async action=>{steps.push(action);return action==='tabs'?{status:'completed',result:{tabs:[{tabId:7,url:'https://mail.google.com/'}]}}:action==='inspect'?{status:'completed',result:{snapshotId:randomUUID(),elements:[{id:'e1',label:'Compose',role:'button'}]}}:{status:'awaiting-approval',jobId:'9'.repeat(32)};}}},fetcher:async(_u,init)=>{const b=JSON.parse(init.body);const n=round++;if(n===1)return Response.json({choices:[{message:{content:"I’m sorry, but I don’t have access to your Gmail account or the ability to send an email."}}]});const action=n===0?'tabs':n===2?'inspect':'click';if(n===2)assert.equal(b.tool_choice.function.name,'pc_browser');return Response.json({choices:[{message:{tool_calls:[{id:'step'+n,function:{name:'pc_browser',arguments:JSON.stringify({action,arguments:'{}'})}}]}}]});}});assert.deepEqual(steps,['tabs','inspect','click']);assert.match(r.text,/Review the action card/);assert.equal(r.activity.at(-1).jobStatus,'awaiting-approval');});
 test('email followups preserve the goal but never revive it after a different user request',()=>{const m=content=>({role:'user',content});assert.equal(pcEmailTask([m('Send a Gmail to friend@example.com'),m('Sure do so'),m('Use pc skill')]),true);assert.equal(pcEmailTask([m('Send a Gmail to friend@example.com'),m('Find today’s weather'),m('Continue')]),false);assert.equal(pcEmailTask([m('Do not send any email')]),false);});
+
+test('Gmail draft intent survives status followups and Full Browser Access does not override draft-only scope',async()=>{
+ const m=content=>({role:'user',content});
+ assert.equal(pcEmailTask([m('Write a message to friend@example.com saying hello on Gmail'),m('use the pc'),m('my settings are on full access no need to ask for approval'),m('gmail is open')]),true);
+ const f=await fixture(),device=f.pair.deviceId;
+ await f.store.pcPolicy(device,f.key,'full',f.time);
+ const snapshotId=randomUUID(),readId='e'.repeat(32);
+ await f.store.pcQueue(device,f.key,pcCommand('inspect',{}),readId,f.time);
+ const read=(await f.store.pcPoll(device,f.time)).job;
+ await f.store.pcResult(device,readId,read.lease,{snapshotId,tabId:7,url:'https://mail.google.com/mail/u/0/',elements:[{id:'e1',label:'Send',role:'button'},{id:'e2',label:'Compose',role:'button'}]},null,f.time);
+ let claim;
+ const tools=pcTools(f.store,f.key,device,{modelId:'nebula-open',turnTag:'chat:turn',now:()=>f.time,wait:async()=>{
+  claim=(await f.store.pcPoll(device,f.time)).job;
+  await f.store.pcResult(device,claim.id,claim.lease,{target:'Compose'},null,f.time);
+ }});
+ await assert.rejects(tools.run('click',JSON.stringify({snapshotId,elementId:'e1'}),{mailIntent:'draft'}),e=>e.code==='PC_EMAIL_DRAFT_ONLY');
+ const first=await tools.run('click',JSON.stringify({snapshotId,elementId:'e2'}),{mailIntent:'draft'});
+ assert.equal(first.status,'completed');
+ assert.equal(claim.approvalSource,'full');
+ assert.equal(claim.modelId,'nebula-open');
+ const secondSnapshot=randomUUID(),secondRead='d'.repeat(32);
+ await f.store.pcQueue(device,f.key,pcCommand('inspect',{}),secondRead,f.time);
+ const secondClaim=(await f.store.pcPoll(device,f.time)).job;
+ await f.store.pcResult(device,secondRead,secondClaim.lease,{snapshotId:secondSnapshot,tabId:7,url:'https://mail.google.com/mail/u/0/',elements:[{id:'e4',label:'Compose',role:'button'}]},null,f.time);
+ const repeat=await tools.run('click',JSON.stringify({snapshotId:secondSnapshot,elementId:'e4'}),{mailIntent:'draft'});
+ assert.equal(repeat.deduplicated,true);
+ assert.equal(repeat.jobId,first.jobId);
+ assert.equal((await f.store.pcPoll(device,f.time)).job,null);
+});
