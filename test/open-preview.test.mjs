@@ -20,6 +20,7 @@ test('Nebula Open sends a tool round trip only to the Cloudflare endpoint',async
    assert.equal(body.model,'@cf/openai/gpt-oss-20b');
    assert.equal(typeof body.max_tokens,'number');
    assert.equal(body.max_completion_tokens,undefined);
+   assert.ok(body.messages.every(message=>typeof message.content==='string'));
    assert.ok(body.tools.some(tool=>tool.function.name==='calculate'));
    bodies.push(body);
    const message=bodies.length===1?{content:null,tool_calls:[{id:'call_1',type:'function',function:{name:'calculate',arguments:'{"expression":"32*7"}'}}]}:{content:'32 × 7 = 224',reasoning:'private'};
