@@ -74,3 +74,20 @@ test('D2 API summaries cannot turn a root-only check into a no-endpoints assuran
  let round=0;const r=await d2Reply([{role:'user',content:'Review https://api.owned.test for flaws.'}],{d2Key:'fixture'},{cloud:{testApi:async()=>({url:'https://api.owned.test/',findings:[]})},fetcher:async()=>Response.json({choices:[{message:round++===0?{tool_calls:[{id:'api',function:{name:'test_public_api',arguments:'{"url":"https://api.owned.test/"}'}}]}:{content:'No public endpoints exposed to unauthenticated callers. The API surface appears benign.'}}]})});
  assert.doesNotMatch(r.text,/No public endpoints exposed|surface appears benign/);assert.match(r.text,/other endpoints and access controls remain unverified/);
 });
+
+
+test('real-app style base concatenations and wrappers retain route kind and source location',()=>{
+ const d=discoverSurface(`const API='https://api.owned.test/v1'; fetch(API+'/health'); api('/status'); api('/records/'+id); api('/delete');`,'https://owned.test/assets/client.js');
+ assert.ok(d.apiReferences.some(r=>r.url==='https://api.owned.test/v1/health'&&r.kind==='static-route'));
+ assert.ok(d.apiReferences.some(r=>r.url==='https://api.owned.test/v1/status'&&r.sourceUrl==='https://owned.test/assets/client.js'));
+ assert.ok(d.apiReferences.some(r=>r.url.endsWith('/records/')&&r.kind==='dynamic-prefix'));
+ assert.ok(!d.endpoints.some(u=>u.endsWith('/delete')));
+});
+test('nested source maps resolve against their script, expose route references, and keep fixture claims unverified',async()=>{
+ const secret='sk-'+'s'.repeat(30),map=JSON.stringify({version:3,sources:['client.ts'],sourcesContent:[`// Synthetic fixture claim, not proof of safety.\nconst api_key="${secret}"; const endpoint='https://api.owned.test/v1/info';`]});
+ const r=await auditPublicSurface('https://owned.test/',{pause:async()=>{},reader:async url=>{const path=new URL(url).pathname;return response(url,path==='/'?'<script src="/assets/client.js"></script>':path==='/assets/client.js'?"const API='https://api.owned.test/v1'; api('/status'); //# sourceMappingURL=client.js.map":path==='/assets/client.js.map'?map:'Not found',path==='/'||path.startsWith('/assets/')?200:404);}});
+ assert.ok(r.discovered.sourceMaps.includes('https://owned.test/assets/client.js.map'));
+ assert.ok(r.discovered.endpoints.includes('https://api.owned.test/v1/info'));
+ assert.equal(r.coverage.brokenLinksTested,false);assert.ok(r.checks.some(c=>c.purpose==='missing-page-control'));
+ const finding=r.findings.find(f=>f.code==='POSSIBLE_EXPOSED_CREDENTIAL');assert.equal(finding.sourceContext.claimsSynthetic,true);assert.equal(finding.sourceContext.claimVerified,false);assert.equal(finding.confidence,'needs-verification');assert.ok(!JSON.stringify(r).includes(secret));
+});

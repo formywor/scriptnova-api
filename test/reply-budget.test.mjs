@@ -60,3 +60,11 @@ test('Cloud audits fit long descriptions and prior chat without losing policy or
  const tools=Array.from({length:10},(_,i)=>({type:'function',function:{name:'cloud_'+i,description:'Long tool prose '.repeat(200),parameters:{type:'object',properties:{url:{type:'string'}}}}}));
  const result=fitProviderBody({messages,tools});assert.equal(result.body.messages[0].content,policy);assert.equal(result.body.messages.findLast(m=>m.role==='user').content,latest);assert.equal(result.body.messages.at(-1).tool_call_id,'audit');assert.equal(JSON.parse(result.body.messages.at(-1).content).findings[0].code,'PUBLIC_ERROR_TRACE');assert.deepEqual(result.body.tools[0].function.parameters,tools[0].function.parameters);assert.ok(Buffer.byteLength(JSON.stringify({messages:result.body.messages,tools:result.body.tools}))<=22000);
 });
+
+
+test('diagnostic API leads and uncertainty survive both model budget passes',()=>{
+ const data={mode:'bounded-public-surface-review',url:'https://owned.test/',summary:{requests:21},coverage:{brokenLinksTested:false,apiMethodsTested:false},discovered:{endpoints:['https://api.owned.test/v1/status'],apiReferences:[{url:'https://api.owned.test/v1/status',kind:'static-route',sourceUrl:'https://owned.test/client.js'}]},findings:[{code:'POSSIBLE_EXPOSED_CREDENTIAL',severity:'high',confidence:'needs-verification',url:'https://owned.test/client.js.map',evidence:'Credential pattern only',sourceContext:{claimsSynthetic:true,claimVerified:false}}],checks:Array.from({length:22},(_,i)=>({url:'https://owned.test/check-'+i,status:404,headers:{padding:'x'.repeat(3000)}}))};
+ const first=compactToolResult(data),second=compactToolResult(first,2500);
+ for(const result of [first,second]){assert.ok(result.discovered.endpoints.includes('https://api.owned.test/v1/status'));assert.equal(result.findings[0].confidence,'needs-verification');assert.equal(result.coverage.brokenLinksTested,false);assert.ok(Buffer.byteLength(JSON.stringify(result))<=6500);}
+ assert.ok(Buffer.byteLength(JSON.stringify(second))<=2500);
+});
