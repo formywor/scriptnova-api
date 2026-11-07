@@ -55,7 +55,8 @@ router rejected tool requests with require_parameters=true, while its documented
 automatic tool-capability routing succeeded without that setting.
 
 The owner subsequently activated Cerebras and the dashboard shows a $5 balance.
-Its dedicated Nebula Open fallback key is being connected separately. No billing
+The owner-supplied default key is stored as a production-only Vercel secret.
+Cerebras completed a live calculator round trip with one tool execution. No billing
 settings were changed by the agent. Mistral was removed from routing, configuration
 and compatibility adapters at the owner's request. The unused Mistral account was
 not deleted.
