@@ -88,3 +88,9 @@ test('D2 can exhaust capacity across four independent services without using ano
  const hosts=[];const result=await d2Reply([{role:'user',content:'Help explain a code review.'}],{d2Key:'primary',openKey:'cf-d2-test',openAccountId:'a'.repeat(32),openCerebrasKey:'cerebras-d2-test',openRouterKey:'router-d2-test',sparkKey:'gemini-d2-test',openGroqKey:'must-not-use'},{fetcher:async(url,init)=>{hosts.push(new URL(url).hostname);assert.notEqual(init.headers.Authorization,'Bearer must-not-use');return url.includes('googleapis.com')?answer('Available through backup.'):new Response('busy',{status:429});}});
  assert.equal(result.text,'Available through backup.');assert.deepEqual(hosts,['api.groq.com','api.groq.com','api.cerebras.ai','api.cloudflare.com','openrouter.ai','generativelanguage.googleapis.com']);
 });
+
+
+test('configured independent D2 capacity is tried without spending the reply waiting on one provider',async()=>{
+ let calls=0;const transport=d2Transport({d2Key:'primary',openCerebrasKey:'fast-independent-d2-test'},async url=>{calls++;return url.includes('cerebras.ai')?answer('Backup ready'):new Response('busy',{status:429,headers:{'Retry-After':'3'}});},async()=>{throw Error('Use independent capacity before waiting');});
+ const result=await transport('https://api.groq.com/openai/v1/chat/completions',{method:'POST',body:'{"messages":[],"max_completion_tokens":128}'});assert.equal(result.status,200);assert.equal(calls,3);
+});
