@@ -7,8 +7,8 @@ test('memory off never reads other conversations or facts',async()=>{
  assert.deepEqual(await accountContext(store,'owner',{},'current'),{memoryEnabled:false,savedMemories:[],pastChats:[]});
 });
 test('account context bounds history and omits private and archived conversations',async()=>{
- const store={memory:async key=>{assert.equal(key,'owner');return [{text:'Likes dogs'}];},listChats:async()=>[{id:'current'},{id:'private'},{id:'old'},{id:'archived',archived:true}],getChat:async(key,id)=>{assert.equal(key,'owner');return {title:id,messages:[{role:'user',content:'hello',...(id==='private'?{contextPrivate:true}:{})}]};}};
- const context=await accountContext(store,'owner',{memoryEnabled:true},'current');assert.equal(context.pastChats.length,1);assert.equal(context.pastChats[0].title,'old');assert.deepEqual(context.savedMemories,['Likes dogs']);assert.match(contextMessage(context),/untrusted user data/);
+ const store={memory:async key=>{assert.equal(key,'owner');return [{text:'Likes dogs'}];},listChats:async()=>[{id:'current'},{id:'private',title:'dogs private'},{id:'old',title:'dogs old'},{id:'archived',title:'dogs archived',archived:true}],getChat:async(key,id)=>{assert.equal(key,'owner');return {title:id,messages:[{role:'user',content:'hello',...(id==='private'?{contextPrivate:true}:{})}]};}};
+ const context=await accountContext(store,'owner',{memoryEnabled:true},'current','Find previous chats about dogs');assert.equal(context.pastChats.length,1);assert.equal(context.pastChats[0].title,'old');assert.deepEqual(context.savedMemories,['Likes dogs']);assert.match(contextMessage(context),/untrusted user data/);
 });
 test('Ultra receives trusted product context and executes independent lookups together',async()=>{
  let round=0,active=0,peak=0;
@@ -19,4 +19,17 @@ test('Ultra receives trusted product context and executes independent lookups to
   assert.equal(body.messages.filter(m=>m.role==='tool').length,2);return Response.json({choices:[{message:{content:'The results are 2 and 4.',reasoning:'private trace must not leave the provider'}}]});
  }});
  assert.equal(peak,2);assert.equal(response.activity.length,2);assert.equal(response.text,'The results are 2 and 4.');assert.ok(!JSON.stringify(response).includes('private trace'));
+});
+
+
+test('simple requests skip all account memory reads even when enabled',async()=>{
+ const store=new Proxy({},{get(){throw Error('Unneeded account read');}});
+ for(const query of ['Hi','Calculate 87 times 76','Read this tab https://example.com','Play any song']){
+  const result=await accountContext(store,'owner',{memoryEnabled:true},'current',query);assert.deepEqual(result.pastChats,[]);assert.deepEqual(result.savedMemories,[]);
+ }
+});
+test('history retrieval uses current keywords and only bounded matching snippets',async()=>{
+ const store={memory:async()=>[],searchChats:async(key,query,exclude)=>{assert.equal(key,'owner');assert.match(query,/D2/);assert.equal(exclude,'current');return [{id:'training'}];},getChat:async(key,id)=>({title:'D2 training',messages:[{role:'user',content:'Unrelated weather'},{role:'assistant',content:'D2 saved checkpoint at 8600 updates'}]})};
+ const result=await accountContext(store,'owner',{memoryEnabled:true},'current','Find previous chats about D2 checkpoint');
+ assert.equal(result.pastChats.length,1);assert.equal(result.pastChats[0].messages.length,1);assert.match(result.pastChats[0].messages[0].content,/8600/);
 });

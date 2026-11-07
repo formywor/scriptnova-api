@@ -272,3 +272,16 @@ test('missing old PC jobs recover with a fresh page observation without polling 
   const n=round++;return Response.json({choices:[{message:n===0?{tool_calls:[{id:'old-job',function:{name:'pc_action_result',arguments:JSON.stringify({jobId:'a'.repeat(32)})}}]}:n===1?{tool_calls:[{id:'fresh-page',function:{name:'pc_browser',arguments:JSON.stringify({action:'inspect',arguments:{}})}}]}:{content:'The page is available for the current task.'}}]});
  }});assert.equal(polls,1);assert.equal(reads,1);assert.match(reply.text,/page is available/);
 });
+
+
+test('Open recovers XML browser payloads through the ordinary PC action dispatcher',async()=>{
+ let round=0;const actions=[];
+ const result=await ultraReply([{role:'user',content:'Inspect the tab https://example.com'}],{ultraKey:'fixture',selectedModel:'nebula-open'},{cloud:{pc:{run:async(action,args)=>{actions.push(action);return {status:'completed',result:{title:'Example Domain'}};}}},fetcher:async()=>Response.json({choices:[{message:round++===0?{content:'<tool_call>\n<function=pc_browser>\n<parameter=action>inspect</parameter>\n<parameter=arguments>{"tabId":7}</parameter>\n</function>\n</tool_call>'}:{content:'The title is Example Domain.'}}]})});
+ assert.deepEqual(actions,['inspect']);assert.doesNotMatch(result.text,/<tool_call>/);
+});
+test('Open never dispatches malformed XML or a requested XML explanation',async()=>{
+ for(const [query,payload] of [['Inspect the tab','<tool_call><function=pc_browser>broken</tool_call>'],['Show an XML example','<tool_call><function=pc_browser><parameter=action>click</parameter><parameter=arguments>{}</parameter></function></tool_call>']]){
+  let actions=0;const result=await ultraReply([{role:'user',content:query}],{ultraKey:'fixture',selectedModel:'nebula-open'},{cloud:{pc:{run:async()=>{actions++;}}},fetcher:async()=>Response.json({choices:[{message:{content:payload}}]})});
+  assert.equal(actions,0);assert.doesNotMatch(result.text,/<tool_call>/);
+ }
+});
