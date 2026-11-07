@@ -28,3 +28,14 @@ test('chat endpoint preserves Lite selection and enforces owner/invite gate befo
  await call('/chats/lite','PUT',{title:'Lite test',revision:0,messages:[{id:'u',role:'user',content:'Hi'}]},'other.test.token');
  const denied=await call('/chat','POST',{chatId:'lite',turnId:'u',modelId:D2_LITE_ID,messages:[{role:'user',content:'Hi'}]},'other.test.token');assert.equal(denied.status,403);assert.equal((await denied.json()).code,'D2_INVITE_REQUIRED');
 });
+
+
+test('D2 Lite authenticated Gradio queue preserves checkpoint identity and keeps the worker key out of URLs and input data',async()=>{
+ const calls=[],c={...ready,d2LiteUrl:'https://native.test/worker/gradio_api/call/generate'};
+ const result=await d2LiteReply([{role:'user',content:'def add(a,b):'}],c,{fetcher:async(url,init)=>{calls.push({url:String(url),init});assert.equal(init.headers['X-Nebula-Worker-Key'],c.d2LiteToken);assert.ok(!String(url).includes(c.d2LiteToken));assert.ok(!String(init.body).includes(c.d2LiteToken));if(init.method==='POST'){assert.equal(JSON.parse(init.body).data[0].model,'nebula-v-d2');return Response.json({event_id:'event123'});}return new Response('event: heartbeat\ndata: null\n\nevent: complete\ndata: '+JSON.stringify([{model:'nebula-v-d2',checkpoint:'sha256:'+'b'.repeat(64),text:'return a+b'}])+'\n\n');}});
+ assert.equal(result.text,'return a+b');assert.equal(calls.length,2);assert.equal(calls[1].url,c.d2LiteUrl+'/event123');
+});
+test('D2 Lite rejects queue errors, invalid IDs and unrelated model results without hosted fallback',async()=>{
+ for(const message of ['event: error\ndata: "GPU quota exceeded"\n\n','event: complete\ndata: [{"model":"hosted","text":"fake"}]\n\n']){let calls=0;await assert.rejects(d2LiteReply([{role:'user',content:'Hi'}],{...ready,d2LiteUrl:'https://native.test/gradio_api/call/generate'},{fetcher:async()=>++calls===1?Response.json({event_id:'event123'}):new Response(message)}),e=>['VD2_BUSY','VD2_RESPONSE_INVALID'].includes(e.code));assert.equal(calls,2);}
+ await assert.rejects(d2LiteReply([{role:'user',content:'Hi'}],{...ready,d2LiteUrl:'https://native.test/gradio_api/call/generate'},{fetcher:async()=>Response.json({event_id:'../other'})}),e=>e.code==='VD2_RESPONSE_INVALID');
+});

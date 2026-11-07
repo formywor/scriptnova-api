@@ -1,0 +1,111 @@
+{
+  "working": {
+    "bytes": 4079839981,
+    "sha256": "803a2b8df27da444c11b27ce15b10dc7d0eed97b4ce737562f9418b4f3757740",
+    "parts": [
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0000.bin",
+        "bytes": 268435456,
+        "sha256": "b7c49a75ebc8145424f466a3806ad6ab548f05b3d49e55e3001fed05ce7f25cf"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0001.bin",
+        "bytes": 268435456,
+        "sha256": "8677af1ab4637a948012085bfe8e65076dfb5677bb7c6d8551c8e1ee96a08c46"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0002.bin",
+        "bytes": 268435456,
+        "sha256": "3270f96293742585b36c824f9a0cc3b0324a44d0420b3e4a5082887c347aa00b"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0003.bin",
+        "bytes": 268435456,
+        "sha256": "611a7284fbd916dab3845852b9d1199617cc21ebfe9689d1dead4db45108ecd1"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0004.bin",
+        "bytes": 268435456,
+        "sha256": "445097aea19fcec86ff3a7fa9e74ab639380aab04dc150d0d494cab666c259e8"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0005.bin",
+        "bytes": 268435456,
+        "sha256": "c31ee796482072bbb9b9eda5d82f0b3cdc41b1514f99465d307e890ad40a6df8"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0006.bin",
+        "bytes": 268435456,
+        "sha256": "04d6b38cc38cf6b438995d0268bfc00e71b5939f3664dd402d99c173268f91a2"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0007.bin",
+        "bytes": 268435456,
+        "sha256": "fbc7f73e7cacc7cfc53d013e46bbd155421d57bc15cd83011b30d7615dfc4f33"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0008.bin",
+        "bytes": 268435456,
+        "sha256": "7a3078f68c57ad6b2e861a473c4b456681906089a7176df3a7538e5dd0a9b71b"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0009.bin",
+        "bytes": 268435456,
+        "sha256": "60a15562b2426bb081c17d5ecf7beef0b76275594a04edbfbcabefe25f811a0e"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0010.bin",
+        "bytes": 268435456,
+        "sha256": "abf056f3056a028ca1ef2832bdef0a3415fc52b130ced5eda36d0a5d0403b99d"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0011.bin",
+        "bytes": 268435456,
+        "sha256": "3cbff8dda02c999ef4cd8ad17c58c91e7732adaad4d5756a25c16d9f4ad9c85b"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0012.bin",
+        "bytes": 268435456,
+        "sha256": "72320d43f05b6bd3a9e3eba78b8669fba67ca33d34d5ccdfe41ac9fa8f65a681"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0013.bin",
+        "bytes": 268435456,
+        "sha256": "9b618cc0fdab6445b262393572067868877f60eb2881579f9e4f95681de55c0b"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0014.bin",
+        "bytes": 268435456,
+        "sha256": "81001209aec264f254fb785672f4c488aea8dab171b6171f1fb8b2c76a1e1272"
+      },
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/c01a3884eb866ba3530c5d26e3c71a92d28d2ff5f480ae9600e5081c099933eb/part-0015.bin",
+        "bytes": 53308141,
+        "sha256": "37ea65db682f6a9f153e0e2cfb5d8771e47d95971d479c36dcc8e3228ca4a44a"
+      }
+    ]
+  },
+  "tokenizer": {
+    "bytes": 222304,
+    "sha256": "a1dff3e4a7e557829799ecb9bd5a0aabd746074918712310041833c872e7b1ac",
+    "parts": [
+      {
+        "path": "experiments/nebula-vd2-1b-code/objects/a1dff3e4a7e557829799ecb9bd5a0aabd746074918712310041833c872e7b1ac/part-0000.bin",
+        "bytes": 222304,
+        "sha256": "a1dff3e4a7e557829799ecb9bd5a0aabd746074918712310041833c872e7b1ac"
+      }
+    ]
+  },
+  "updates": 8600,
+  "qualityApproved": false,
+  "engine": "92f9aee4d2ae630f465508cdf0a0577e48239a1eafd26d32f193fd3d684e0869",
+  "repo": "iiidevv/nebula-vd2-python-1b-20261026",
+  "revision": "ff0026687a3ca31042dbeb8465ff395e8709aee6",
+  "model": {
+    "vocab": 8192,
+    "width": 1536,
+    "heads": 24,
+    "layers": 35,
+    "context": 2048
+  }
+}
