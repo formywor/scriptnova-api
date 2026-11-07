@@ -264,3 +264,11 @@ test('reading views require the new extension and distinct views never reuse sta
  await tools.run('navigate',{url:'https://www.youtube.com/results?search_query=Kai+Cenat',newTab:true},{preferExistingTab:false});assert.equal(captured.at(-1).args.newTab,true);
  assert.throws(()=>pcCommand('inspect',{view:'arbitrary-selector'}));
 });
+
+
+test('missing old PC jobs recover with a fresh page observation without polling again',async()=>{
+ let polls=0,reads=0,round=0;
+ const reply=await ultraReply([{role:'user',content:'Play Kai Cenat on YouTube'}],{ultraKey:'test'},{cloud:{pc:{result:async()=>{polls++;throw Object.assign(Error('missing'),{code:'PC_ACTION_NOT_FOUND'});},run:async action=>{reads++;assert.equal(action,'inspect');return {status:'completed',result:{snapshotId:randomUUID(),tabId:7,text:'YouTube results',elements:[]}};}}},fetcher:async()=>{
+  const n=round++;return Response.json({choices:[{message:n===0?{tool_calls:[{id:'old-job',function:{name:'pc_action_result',arguments:JSON.stringify({jobId:'a'.repeat(32)})}}]}:n===1?{tool_calls:[{id:'fresh-page',function:{name:'pc_browser',arguments:JSON.stringify({action:'inspect',arguments:{}})}}]}:{content:'The page is available for the current task.'}}]});
+ }});assert.equal(polls,1);assert.equal(reads,1);assert.match(reply.text,/page is available/);
+});
