@@ -23,3 +23,10 @@ test('a retail ZIP follow-up requires search and retains the retailer and locati
 test('Ultra does not retry an authentication failure or repeatedly cycle through capacity failures',async()=>{
  for(const status of [401,429]){let calls=0;await assert.rejects(ultraReply([{role:'user',content:'Hello there.'}],{ultraKey:'test',selectedModel:'nebula-ultra'},{fetcher:async()=>{calls++;return new Response('private',{status});}}));assert.equal(calls,status===401?1:2);}
 });
+
+ test('large PC observations retain actionable identifiers through both budget passes',()=>{
+  const page={elements:[{id:'e1',role:'button',label:'Compose'}],network:Array.from({length:40},()=>({url:'https://example.com/'+ 'x'.repeat(1700)})),snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,url:'https://example.com/'};
+  const data={jobId:'a'.repeat(32),status:'completed',result:page},before=JSON.stringify(data);
+  const first=compactToolResult(data),second=compactToolResult(first,2500);
+  assert.equal(second.result.snapshotId,page.snapshotId);assert.equal(second.result.tabId,7);assert.equal(second.result.elements[0].id,'e1');assert.equal(second.status,'completed');assert.ok(Buffer.byteLength(JSON.stringify(second))<=2500);assert.equal(JSON.stringify(data),before);
+ });
