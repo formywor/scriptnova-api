@@ -175,3 +175,22 @@ test('PC reply completion reports finished, waiting and canceled task states',as
  await ultraReply([{role:'user',content:'Hello'}],c,{fetcher:async()=>Response.json({choices:[{message:{content:'Hello'}}]})});assert.equal(states.pop(),'finished');
  await assert.rejects(ultraReply([{role:'user',content:'Hello'}],c,{fetcher:async()=>{throw Error('interrupted');}}));assert.equal(states.pop(),'canceled');
 });
+
+test('an unrecorded Gmail draft continuation explains the chat mismatch without browser or model calls',async()=>{
+ let calls=0;const result=await ultraReply([{role:'user',content:'Continue the unsent Gmail draft on the Compose window you opened. Fill the body. Do not send.'}],{ultraKey:'fixture',pcContext:{draftRecorded:false}},{cloud:{pc:{run:async()=>{calls++;throw Error('Must not browse');}}},fetcher:async()=>{calls++;throw Error('Must not infer');}});
+ assert.equal(calls,0);assert.match(result.text,/different chat/);assert.match(result.text,/new draft/);assert.deepEqual(result.activity,[]);
+});
+test('a recorded draft continuation still uses the paired browser',async()=>{
+ let calls=0;const result=await ultraReply([{role:'user',content:'Continue the unsent Gmail draft on the Compose window you opened.'}],{ultraKey:'fixture',pcContext:{draftRecorded:true}},{cloud:{pc:{run:async()=>{calls++;return {status:'awaiting-approval',jobId:'a'.repeat(32)};}}},fetcher:async()=>Response.json({choices:[{message:{tool_calls:[{id:'pc',function:{name:'pc_browser',arguments:JSON.stringify({action:'inspect',arguments:{}})}}]}}]})});assert.equal(calls,1);assert.equal(result.activity.at(-1).status,'pending');
+});
+
+test('computer selection follows the account across clients and rejects another account',async()=>{
+ const f=await fixture();
+ const client=uid=>createPcHandler({getStore:async()=>f.store,verifyToken:async()=>({uid,email_verified:true}),now:()=>f.time,config:{origins:[]}});
+ const request=(handler,path,body)=>handler(new Request('https://api.test/api/nebula/pc'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer owner.jwt.token','Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}));
+ assert.equal((await request(client('owner'),'/selection',{deviceId:f.pair.deviceId})).status,200);
+ const data=await (await request(client('owner'),'')).json();assert.equal(data.selectedDeviceId,f.pair.deviceId);assert.equal(data.devices[0].id,f.pair.deviceId);assert.ok(!JSON.stringify(data).includes(f.pair.token));
+ const stranger=await (await request(client('stranger'),'')).json();assert.equal(stranger.selectedDeviceId,'');assert.equal(stranger.devices.length,0);
+ assert.equal((await request(client('stranger'),'/selection',{deviceId:f.pair.deviceId})).status,404);
+ await f.store.pcRevoke(f.pair.deviceId,f.key,f.time);assert.equal((await (await request(client('owner'),'')).json()).selectedDeviceId,'');
+});
