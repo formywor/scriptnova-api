@@ -31,3 +31,13 @@ test('unavailable or policy-blocked image requests release reserved credits',asy
 test('native image generation sends private server credentials, bounded output and multipart parameters',async()=>{
  let calls=0;const r=await renderImage({prompt:'A cozy room',operation:'create'},config,{fetcher:async(url,init)=>{calls++;if(calls===1)return Response.json({choices:[{message:{content:'{"allow":true}'}}]});assert.match(url,/flux-2-klein-4b$/);assert.ok(init.body instanceof FormData);assert.equal(init.body.get('width'),'512');assert.equal(init.body.get('prompt'),'A cozy room');assert.equal(init.headers.Authorization,'Bearer private-test');return Response.json({result:{image:png.split(',')[1]}});}});assert.equal(r.data,png);
 });
+
+test('text-to-image uses its bounded backup when the first image model is at capacity',async()=>{
+ let calls=0;const r=await renderImage({prompt:'A blue house',operation:'create'},config,{fetcher:async(url,init)=>{calls++;if(calls===1)return Response.json({choices:[{message:{content:'{"allow":true}'}}]});if(calls===2)return Response.json({errors:[{code:3040}]},{status:429});assert.match(url,/flux-1-schnell$/);assert.equal(JSON.parse(init.body).prompt,'A blue house');return Response.json({result:{image:png.split(',')[1]}});}});assert.equal(r.data,png);assert.equal(calls,3);
+});
+test('image edits inspect the reference and send the exact selected pixels as multipart data',async()=>{
+ let calls=0;const r=await renderImage({prompt:'Make the background blue',operation:'edit',image:{data:png}},{...config,sparkKey:'vision-test'},{fetcher:async(url,init)=>{calls++;if(calls===1){assert.match(url,/generativelanguage/);return Response.json({choices:[{message:{content:'A small abstract square.'}}]});}if(calls===2)return Response.json({choices:[{message:{content:'{"allow":true}'}}]});assert.ok(init.body.get('input_image_0') instanceof Blob);assert.equal(Buffer.from(await init.body.get('input_image_0').arrayBuffer()).toString('base64'),png.split(',')[1]);return Response.json({result:{image:png.split(',')[1]}});}});assert.equal(r.operation,'edit');assert.equal(calls,3);
+});
+
+import {modelCatalog} from '../lib/personalization.mjs';
+test('every capable hosted model advertises Image studio; text-only research models do not',()=>{const models=modelCatalog(config).models;for(const id of ['nebula-ultra','nebula-open','nebula-spark','nebula-duo','nebula-d2'])assert.equal(models.find(m=>m.id===id)?.imageStudio,true,id);for(const id of ['nebula-d2-lite','nebula-classic','nebula-v4','nebula-v1-lite','nebula-v2-1'])assert.equal(models.find(m=>m.id===id)?.imageStudio,false,id);});
