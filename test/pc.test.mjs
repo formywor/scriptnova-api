@@ -206,3 +206,22 @@ test('tab closure requires a real recent tab observation and follows the approva
 test('tab capability questions do not close a tab or consume an inference',async()=>{
  const reply=await ultraReply([{role:'user',content:'Can you close tabs?'}],{ultraKey:'fixture',pcContext:{features:['close_tab']}},{cloud:{pc:{run:()=>{throw Error('No task requested');}}},fetcher:()=>{throw Error('No inference needed');}});assert.match(reply.text,/Tell me which tab/);assert.equal(reply.activity.length,0);
 });
+
+test('PC heartbeat and action budgets are independent of the old exhausted write bucket',async()=>{
+ const f=await fixture();const minute=Math.floor(f.time/60000),day=Math.floor(f.time/86400000);
+ await f.memory.db.ref('nebulaRateLimits/pc_agent_'+f.pair.deviceId+'_write').set({minute,day,minuteCount:60,dayCount:5000});
+ const handler=createPcHandler({getStore:async()=>f.store,now:()=>f.time,config:{origins:[]}});
+ const call=op=>handler(new Request('https://api.test/api/nebula/pc/agent/'+f.pair.deviceId+'/'+op,{method:'POST',headers:{Authorization:'Bearer '+f.pair.token,'Content-Type':'application/json'},body:'{}'}));
+ assert.equal((await call('poll')).status,200);
+ await f.memory.db.ref('nebulaRateLimits/pc_agent_'+f.pair.deviceId+'_pc-heartbeat').set({minute,day,minuteCount:120,dayCount:1000});
+ const limited=await call('poll');assert.equal(limited.status,429);assert.equal(limited.headers.get('Retry-After'),'60');assert.equal((await limited.json()).retryAfterSeconds,60);
+ assert.equal((await call('stop')).status,200);assert.equal((await f.store.pcDevice(f.pair.deviceId)).revoked,true);
+});
+test('normal all-day polling fits the dedicated heartbeat budget while abuse is throttled',async()=>{
+ const {db}=memoryDatabase(),store=createStore(db);const time=Date.UTC(2026,10,7);
+ // A full day of the old four-second polling pattern must not exhaust a connection.
+ for(let i=0;i<21600;i++)assert.equal(await store.allow('device',time+i*4000,'pc-heartbeat'),true);
+ assert.equal(await store.allow('device',time+21599*4000,'pc-action'),true);
+ for(let i=0;i<119;i++)assert.equal(await store.allow('burst',time,'pc-heartbeat'),true);
+ assert.equal(await store.allow('burst',time,'pc-heartbeat'),true);assert.equal(await store.allow('burst',time,'pc-heartbeat'),false);
+});
