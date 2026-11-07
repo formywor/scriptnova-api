@@ -86,7 +86,7 @@ test('Nebula Open recovers bare PC tool JSON without displaying it as a reply',a
    return Response.json({choices:[{message:{content,tool_calls:[]}}]});
   }
  });
- assert.deepEqual(actions[0],{action:'navigate',args:{url:'https://mail.google.com/',newTab:true},options:{mailIntent:'draft'}});
+ assert.deepEqual(actions[0],{action:'navigate',args:{url:'https://mail.google.com/',newTab:true},options:{mailIntent:'draft',preferExistingTab:true}});
  assert.equal(actions[1].action,'click');
  assert.match(reply.text,/waiting for your approval/);
  assert.equal(reply.activity.at(-1).jobStatus,'awaiting-approval');

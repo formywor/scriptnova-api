@@ -127,3 +127,26 @@ test('PC tasks repair a rejected control and can continue beyond six tool calls'
  assert.equal(dispatched,8);
  assert.match(reply.text,/Finished/);
 });
+
+test('send-it authorizes the existing email task and recovers a stale refusal',async()=>{
+ const messages=[{role:'user',content:'Draft a Gmail to friend@example.com saying Hi how are you. Do not send.'},{role:'assistant',content:'The draft is ready.'},{role:'user',content:'send it'}];
+ assert.equal(pcEmailTask(messages),true);assert.equal(pcEmailTask([{role:'user',content:'send it'}]),false);
+ assert.equal(pcEmailTask([...messages.slice(0,2),{role:'user',content:'Find the weather'},{role:'user',content:'send it'}]),false);
+ let round=0;const actions=[];
+ const reply=await ultraReply(messages,{ultraKey:'fixture',pcContext:{approvalMode:'full',lastTaskTab:{tabId:7,url:'https://mail.google.com/'}}},{cloud:{pc:{run:async(action,args,options)=>{actions.push({action,options});return action==='inspect'?{status:'completed',result:{snapshotId:randomUUID(),tabId:7,elements:[{id:'e1',label:'Send',role:'button'}]}}:{status:'awaiting-approval',jobId:'b'.repeat(32)};}}},fetcher:async(_u,init)=>{
+  const b=JSON.parse(init.body);const n=round++;if(n===1)return Response.json({choices:[{message:{content:'I cannot send the email for you.'}}]});
+  assert.equal(b.tool_choice.function.name,'pc_browser');return Response.json({choices:[{message:{tool_calls:[{id:'s'+n,function:{name:'pc_browser',arguments:JSON.stringify({action:n===0?'inspect':'click',arguments:{tabId:7}})}}]}}]});
+ }});
+ assert.deepEqual(actions.map(x=>x.action),['inspect','click']);assert.equal(actions[1].options.mailIntent,'send');assert.match(reply.text,/approval/);
+});
+test('email continuation inspects the last same-chat Gmail tab instead of opening another',async()=>{
+ const f=await fixture();const id='c'.repeat(32);
+ await f.store.pcQueue(f.pair.deviceId,f.key,{...pcCommand('inspect',{tabId:7}),chatId:'chat',turnId:'previous'},id,f.time);
+ const read=(await f.store.pcPoll(f.pair.deviceId,f.time)).job;
+ await f.store.pcResult(f.pair.deviceId,id,read.lease,{tabId:7,url:'https://mail.google.com/mail/u/0/',snapshotId:randomUUID(),elements:[]},null,f.time);
+ const executed=[];const make=chat=>pcTools(f.store,f.key,f.pair.deviceId,{turnTag:chat+':next',now:()=>f.time,wait:async()=>{const j=(await f.store.pcPoll(f.pair.deviceId,f.time)).job;executed.push(j);await f.store.pcResult(f.pair.deviceId,j.id,j.lease,{tabId:7,url:'https://mail.google.com/'},null,f.time);}});
+ await make('chat').run('navigate',{url:'https://mail.google.com/',newTab:true},{mailIntent:'send',preferExistingTab:true});
+ assert.equal(executed[0].action,'inspect');assert.equal(executed[0].args.tabId,7);
+ await make('other-chat').run('navigate',{url:'https://mail.google.com/',newTab:true},{mailIntent:'send',preferExistingTab:true});assert.equal(executed[1].action,'navigate');
+ await make('explicit-new').run('navigate',{url:'https://mail.google.com/',newTab:true},{mailIntent:'send',preferExistingTab:false});assert.equal(executed[2].action,'navigate');
+});
