@@ -225,3 +225,28 @@ test('normal all-day polling fits the dedicated heartbeat budget while abuse is 
  for(let i=0;i<119;i++)assert.equal(await store.allow('burst',time,'pc-heartbeat'),true);
  assert.equal(await store.allow('burst',time,'pc-heartbeat'),true);assert.equal(await store.allow('burst',time,'pc-heartbeat'),false);
 });
+
+
+test('play-any-song starts browser work and recovers a known pre-dispatch click failure',async()=>{
+ const actions=[],snapshot1=randomUUID(),snapshot2=randomUUID();let round=0;
+ const steps=[{action:'inspect',arguments:{}},{action:'click',arguments:{snapshotId:snapshot1,elementId:'e1'}},{action:'inspect',arguments:{}},{action:'click',arguments:{snapshotId:snapshot2,elementId:'e2'}},{action:'inspect',arguments:{}}];
+ const reply=await ultraReply([{role:'user',content:'play any song'}],{ultraKey:'fixture'},{cloud:{pc:{run:async(action,args)=>{
+  actions.push(action);
+  if(actions.length===2)return {error:'PC_TARGET_DISABLED'};
+  if(action==='inspect')return {status:'completed',result:{snapshotId:actions.length===1?snapshot1:snapshot2,tabId:7,elements:[{id:actions.length===1?'e1':'e2',label:'Play song'}],text:actions.length===5?'Player is playing':'Search results'}};
+  return {status:'completed',result:{target:'Play song'}};
+ }}},fetcher:async(_u,init)=>{
+  const b=JSON.parse(init.body);if(round===0)assert.equal(b.tool_choice.function.name,'pc_browser');
+  const step=steps[round++];return Response.json({choices:[{message:step?{tool_calls:[{id:'music-'+round,function:{name:'pc_browser',arguments:JSON.stringify(step)}}]}:{content:'The song is playing.'}}]});
+ }});
+ assert.deepEqual(actions,['inspect','click','inspect','click','inspect']);
+ assert.equal(reply.text,'The song is playing.');assert.ok(reply.activity.some(x=>x.code==='PC_TARGET_DISABLED'));
+});
+
+test('an uncertain click is never automatically replayed',async()=>{
+ let actions=0,inferences=0;
+ const reply=await ultraReply([{role:'user',content:'Click the Play button'}],{ultraKey:'fixture'},{cloud:{pc:{run:async()=>{actions++;return {error:'PC_CLICK_UNCONFIRMED'};}}},fetcher:async()=>{
+  inferences++;return Response.json({choices:[{message:{tool_calls:[{id:'uncertain',function:{name:'pc_browser',arguments:JSON.stringify({action:'click',arguments:{snapshotId:randomUUID(),elementId:'e1'}})}}]}}]});
+ }});
+ assert.equal(actions,1);assert.equal(inferences,1);assert.match(reply.text,/outcome is unconfirmed/);
+});
