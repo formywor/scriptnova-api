@@ -8,8 +8,8 @@ const config={openAccountId:'b'.repeat(32),openKey:'cf-test',sparkKey:'gemini-te
 const init=()=>({method:'POST',signal:new AbortController().signal,headers:{Authorization:'Bearer must-be-replaced'},body:JSON.stringify({model:'old',messages:[{role:'user',content:'Hi'}],max_completion_tokens:256,stream:false})});
 const ok=()=>Response.json({choices:[{message:{content:'OK'}}]});
 
-test('primary, four independent backups, then dedicated Groq; no implicit Ultra keys',()=>{
- assert.deepEqual(openProviders(config).map(x=>x.id),['cloudflare','cerebras','openrouter','mistral','gemini','groq-final']);
+test('primary, three independent backups, then dedicated Groq; no implicit Ultra keys',()=>{
+ assert.deepEqual(openProviders(config).map(x=>x.id),['cloudflare','cerebras','openrouter','gemini','groq-final']);
  assert.deepEqual(openProviders({ultraKey:'never',d2Key:'never'}),[]);
  assert.equal(configFromEnv({NEBULA_OPEN_GROQ_FALLBACK_KEY:'last'}).openGroqKey,'last');
 });
@@ -86,15 +86,10 @@ test('cancellation and local limits never start another provider',async()=>{
  await assert.rejects(limited('',init()),{code:'OPEN_DAILY_LIMIT'});
 });
 
-test('Mistral IDs are deterministic across assistant and tool messages without changing source',async()=>{
- const request=init(),body=JSON.parse(request.body);
- body.messages=[{role:'assistant',content:null,tool_calls:[{id:'call_long_123',type:'function',function:{name:'calculate',arguments:'{}'}}]},{role:'tool',tool_call_id:'call_long_123',content:'42'}];request.body=JSON.stringify(body);
- const transport=openTransport({openMistralKey:'test'},{fetcher:async(_url,opts)=>{
-  const b=JSON.parse(opts.body),id=b.messages[0].tool_calls[0].id;assert.match(id,/^[a-z0-9]{9}$/);assert.equal(id,b.messages[1].tool_call_id);return ok();
- }});
- await transport('',request);assert.equal(JSON.parse(request.body).messages[1].tool_call_id,'call_long_123');
+test('removed Mistral configuration cannot reactivate the provider',()=>{
+ assert.deepEqual(openProviders({openMistralKey:'obsolete'}),[]);
+ assert.equal(configFromEnv({NEBULA_OPEN_MISTRAL_KEY:'obsolete'}).openMistralKey,undefined);
 });
-
 
 test('Gemini remains second-to-last even after answering an earlier tool round',async()=>{
  let time=10000;const calls=[];
@@ -103,5 +98,5 @@ test('Gemini remains second-to-last even after answering an earlier tool round',
   return id==='gemini'?ok():new Response('',{status:503});
  }});
  await transport('',init());time+=60001;await transport('',init());
- assert.deepEqual(calls,[...Array(2)].flatMap(()=>['cloudflare','cerebras','openrouter','mistral','gemini']));
+ assert.deepEqual(calls,[...Array(2)].flatMap(()=>['cloudflare','cerebras','openrouter','gemini']));
 });

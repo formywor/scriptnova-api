@@ -1,8 +1,8 @@
 # Nebula Open capacity routing (server operations)
 
-Order: Cloudflare primary, Cerebras, OpenRouter free router, Mistral,
+Order: Cloudflare primary, Cerebras, OpenRouter free router,
 Gemini, then the dedicated final Groq credential. Missing credentials are skipped.
-The four intermediate services require their own accounts and quotas. A wired
+The three intermediate services require their own accounts and quotas. A wired
 route is not an activated account or a guarantee of free production capacity.
 
 Set secrets in Vercel's production environment, then deploy:
@@ -13,7 +13,6 @@ Set secrets in Vercel's production environment, then deploy:
 | Gemini | `NEBULA_OPEN_GEMINI_KEY` (otherwise existing Spark key) | `gemini-2.5-flash` |
 | Cerebras | `NEBULA_OPEN_CEREBRAS_KEY` | `gpt-oss-120b` |
 | OpenRouter | `NEBULA_OPEN_OPENROUTER_KEY` | `openrouter/free` |
-| Mistral | `NEBULA_OPEN_MISTRAL_KEY` | `mistral-small-latest` |
 | Final fallback | `NEBULA_OPEN_GROQ_FALLBACK_KEY` | `openai/gpt-oss-20b` |
 
 Use free accounts without auto-recharge or paid billing for a zero-cost setup.
@@ -42,7 +41,7 @@ prompts, response bodies or raw errors. No third-party credentials go to clients
 Validate with `node --test test/open-providers.test.mjs test/open-preview.test.mjs`.
 Before enabling each new credential, test a harmless response and a calculator
 tool round-trip on that provider's actual account. Unit tests cover forced
-fallback through all six routes, credential separation, cooldowns, cancellation,
+fallback through all five routes, credential separation, cooldowns, cancellation,
 quota counting and retaining a completed tool result across service failures.
 
 ## Account activation check — November 7, 2026
@@ -55,8 +54,8 @@ Do not enable strict provider parameter matching for openrouter/free: the live
 router rejected tool requests with require_parameters=true, while its documented
 automatic tool-capability routing succeeded without that setting.
 
-Cerebras created a default key but requires a payment method to activate even its
-one-time promotional credits. Mistral disables API-key creation on this new Free
-account and asks for a paid upgrade. Neither is enabled in Nebula, and no payment
-method or subscription was added. Their adapters remain ready for a future
-separately authorized activation; these accounts are not active free backups.
+The owner subsequently activated Cerebras and the dashboard shows a $5 balance.
+Its dedicated Nebula Open fallback key is being connected separately. No billing
+settings were changed by the agent. Mistral was removed from routing, configuration
+and compatibility adapters at the owner's request. The unused Mistral account was
+not deleted.
