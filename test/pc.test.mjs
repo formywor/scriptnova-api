@@ -79,3 +79,51 @@ test('Gmail draft intent survives status followups and Full Browser Access does 
  assert.equal(repeat.jobId,first.jobId);
  assert.equal((await f.store.pcPoll(device,f.time)).job,null);
 });
+
+test('inspection reuses a snapshot until the page changes, then gives a fresh target',async()=>{
+ const f=await fixture();
+ await f.store.pcPolicy(f.pair.deviceId,f.key,'full',f.time);
+ let inspections=0,lastWrite;
+ const tools=pcTools(f.store,f.key,f.pair.deviceId,{turnTag:'chat:fresh',now:()=>f.time,wait:async()=>{
+  const {job}=await f.store.pcPoll(f.pair.deviceId,f.time);
+  if(job.action==='inspect')inspections++;
+  else lastWrite=job;
+  await f.store.pcResult(f.pair.deviceId,job.id,job.lease,job.action==='inspect'?snapshot():{ok:true},null,f.time);
+ }});
+ const first=await tools.run('inspect',{});
+ assert.equal((await tools.run('inspect','{}')).jobId,first.jobId);
+ await tools.run('click',{elementId:'e2'});
+ assert.equal(lastWrite.args.snapshotId,first.result.snapshotId);
+ await assert.rejects(tools.run('click',{elementId:'e2'}),e=>e.code==='INVALID_PC_ACTION');
+ const next=await tools.run('inspect',{});
+ assert.equal(inspections,2);
+ assert.notEqual(next.result.snapshotId,first.result.snapshotId);
+});
+
+test('an explicit blank-tab request ignores the earlier Gmail goal and makes no model call',async()=>{
+ const answer=await ultraReply([{role:'user',content:'Write a Gmail message to a@example.com'},{role:'assistant',content:'Ready.'},{role:'user',content:'open 4 new tabs'}],{ultraKey:'test'},{fetcher:async()=>assert.fail('Blank tabs do not need the model'),cloud:{pc:{run:async(action,raw)=>{
+  assert.equal(action,'open_tabs');assert.deepEqual(JSON.parse(raw),{count:4});
+  return {status:'completed',result:{opened:4}};
+ }}}});
+ assert.match(answer.text,/Opened 4 blank tabs/);
+});
+
+test('PC tasks repair a rejected control and can continue beyond six tool calls',async()=>{
+ let modelRound=0,dispatched=0;
+ const actions=['navigate','inspect','click','inspect','click','inspect','type','inspect'];
+ const reply=await ultraReply([{role:'user',content:'Navigate and fill in the requested test page.'}],{ultraKey:'test'},{
+  cloud:{pc:{run:async action=>{
+   dispatched++;
+   if(dispatched===3)throw Object.assign(Error('Invalid target'),{code:'INVALID_PC_ACTION'});
+   return {status:'completed',result:{target:action,title:'Test page'}};
+  }}},
+  fetcher:async(_url,init)=>{
+   const body=JSON.parse(init.body);
+   if(modelRound===3)assert.match(body.messages.at(-1).content,/was not dispatched/);
+   const action=actions[modelRound++];
+   return Response.json({choices:[{message:action?{tool_calls:[{id:'call-'+modelRound,function:{name:'pc_browser',arguments:JSON.stringify({action,arguments:'{}'})}}]}:{content:'Finished the test page.'}}]});
+  }
+ });
+ assert.equal(dispatched,8);
+ assert.match(reply.text,/Finished/);
+});
