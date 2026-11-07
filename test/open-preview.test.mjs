@@ -64,3 +64,39 @@ test('Nebula Open requires a verified invite and stops at the UTC daily cap',asy
  assert.equal(body.resetAt,Date.UTC(2026,10,7));
  assert.equal(await store.consumeOpenCall(key,openResetAt(now)),true);
 });
+
+test('Nebula Open recovers bare PC tool JSON without displaying it as a reply',async()=>{
+ const actions=[];
+ let round=0;
+ const payload=(action,args)=>JSON.stringify({action,arguments:JSON.stringify(args)});
+ const reply=await openReply([{role:'user',content:'Write a message to friend@example.com on Gmail using browser control.'}],config,{
+  cloud:{pc:{run:async(action,args,options)=>{
+   actions.push({action,args:JSON.parse(args),options});
+   return action==='navigate'?{status:'completed',result:{tabId:9,readyState:'complete'}}:{status:'awaiting-approval',jobId:'a'.repeat(32)};
+  }}},
+  fetcher:async(_url,init)=>{
+   const body=JSON.parse(init.body);
+   if(round===1){
+    const tool=body.messages.at(-1),assistant=body.messages.at(-2);
+    assert.equal(assistant.content,'');
+    assert.equal(tool.tool_call_id,assistant.tool_calls[0].id);
+    assert.equal(assistant.tool_calls[0].function.name,'pc_browser');
+   }
+   const content=round++===0?payload('navigate',{url:'[https://mail.google.com/](https://mail.google.com/)',newTab:true}):payload('click',{snapshotId:'test',elementId:'e1'});
+   return Response.json({choices:[{message:{content,tool_calls:[]}}]});
+  }
+ });
+ assert.deepEqual(actions[0],{action:'navigate',args:{url:'https://mail.google.com/',newTab:true},options:{mailIntent:'draft'}});
+ assert.equal(actions[1].action,'click');
+ assert.match(reply.text,/waiting for your approval/);
+ assert.equal(reply.activity.at(-1).jobStatus,'awaiting-approval');
+});
+
+test('JSON requested as an example stays text in PC mode',async()=>{
+ const content=JSON.stringify({action:'navigate',arguments:JSON.stringify({url:'https://example.com/'})});
+ const reply=await openReply([{role:'user',content:'Show me a JSON example of how to open a tab.'}],config,{
+  cloud:{pc:{run:async()=>assert.fail('An example must never execute')}},
+  fetcher:async()=>Response.json({choices:[{message:{content}}]})
+ });
+ assert.equal(reply.text,content);
+});
