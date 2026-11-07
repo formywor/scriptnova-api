@@ -36,3 +36,9 @@ test('long browser followups fit without dropping recent control references or c
  const body={messages:[{role:'system',content:'Owner policy '+ 's'.repeat(7000)},...Array.from({length:10},(_,i)=>({role:i%2?'assistant':'user',content:'Previous draft conversation '+ 'm'.repeat(1200)})),{role:'user',content:latest},{role:'assistant',content:null,tool_calls:[{id:'read',function:{name:'pc_browser',arguments:'{}'}}]},{role:'tool',tool_call_id:'read',content:JSON.stringify(page)}],tools:[{type:'function',function:{name:'pc_browser',description:'Schema '+ 't'.repeat(4000)}}]};
  const fitted=fitProviderBody(body);assert.ok(Buffer.byteLength(JSON.stringify({messages:fitted.body.messages,tools:fitted.body.tools}))<=22000);assert.equal(fitted.body.messages.findLast(m=>m.role==='user').content,latest);const result=JSON.parse(fitted.body.messages.at(-1).content);assert.equal(result.result.snapshotId,page.result.snapshotId);assert.ok(result.result.elements.length);assert.equal(fitted.body.messages[0].content,body.messages[0].content);
 });
+
+
+test('compressed link and media views retain playable URLs and observed playback state',()=>{
+ const result=compactToolResult({status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,view:'media',media:[{paused:false,currentTime:12,duration:90}],text:'x'.repeat(10000),elements:[{id:'e1',label:'Song title',role:'a',url:'https://www.youtube.com/watch?v=realVideo123'}]}},2500);
+ assert.equal(result.result.elements[0].url,'https://www.youtube.com/watch?v=realVideo123');assert.equal(result.result.media[0].paused,false);assert.equal(result.result.view,'media');
+});

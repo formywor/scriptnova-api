@@ -250,3 +250,17 @@ test('an uncertain click is never automatically replayed',async()=>{
  }});
  assert.equal(actions,1);assert.equal(inferences,1);assert.match(reply.text,/outcome is unconfirmed/);
 });
+
+
+test('reading views require the new extension and distinct views never reuse stale snapshots',async()=>{
+ const f=await fixture();let captured=[];
+ const tools=pcTools(f.store,f.key,f.pair.deviceId,{now:()=>f.time,turnTag:'views:turn',wait:async()=>{const {job}=await f.store.pcPoll(f.pair.deviceId,f.time);captured.push(job);await f.store.pcResult(f.pair.deviceId,job.id,job.lease,{...snapshot(),view:job.args.view},null,f.time);}});
+ await assert.rejects(tools.run('inspect',{view:'links'}),e=>e.code==='PC_EXTENSION_UPDATE_REQUIRED');
+ await f.store.pcUpgrade(f.pair.deviceId,f.time,6);
+ const page=await tools.run('inspect',{view:'page'}),links=await tools.run('inspect',{view:'links'});
+ assert.notEqual(page.jobId,links.jobId);assert.equal(captured.length,2);assert.equal((await tools.run('inspect',{view:'links'})).jobId,links.jobId);
+ await tools.run('navigate',{url:'https://www.youtube.com/results?search_query=Kai+Cenat',newTab:true},{preferExistingTab:true});
+ assert.equal(captured.at(-1).args.newTab,false);assert.equal(captured.at(-1).args.reuseTab,true);
+ await tools.run('navigate',{url:'https://www.youtube.com/results?search_query=Kai+Cenat',newTab:true},{preferExistingTab:false});assert.equal(captured.at(-1).args.newTab,true);
+ assert.throws(()=>pcCommand('inspect',{view:'arbitrary-selector'}));
+});
