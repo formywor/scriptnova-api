@@ -194,3 +194,15 @@ test('computer selection follows the account across clients and rejects another 
  assert.equal((await request(client('stranger'),'/selection',{deviceId:f.pair.deviceId})).status,404);
  await f.store.pcRevoke(f.pair.deviceId,f.key,f.time);assert.equal((await (await request(client('owner'),'')).json()).selectedDeviceId,'');
 });
+
+test('tab closure requires a real recent tab observation and follows the approval mode',async()=>{
+ const f=await fixture();await f.store.pcUpgrade(f.pair.deviceId,f.time,5);const id='7'.repeat(32);
+ await f.store.pcQueue(f.pair.deviceId,f.key,pcCommand('tabs',{}),id,f.time);const j=(await f.store.pcPoll(f.pair.deviceId,f.time)).job;
+ await f.store.pcResult(f.pair.deviceId,j.id,j.lease,{tabs:[{tabId:7,title:'Example Domain',url:'https://example.com/'}]},null,f.time);
+ const tools=pcTools(f.store,f.key,f.pair.deviceId,{turnTag:'chat:close',now:()=>f.time});
+ const result=await tools.run('close_tab',{tabId:7});assert.equal(result.status,'awaiting-approval');const d=await f.store.pcDevice(f.pair.deviceId);assert.match(d.jobs[result.jobId].target.label,/Example Domain/);assert.equal(d.jobs[result.jobId].args.tabId,7);
+ await assert.rejects(tools.run('close_tab',{tabId:99}));assert.throws(()=>pcCommand('close_tab',{}));assert.throws(()=>pcCommand('reload',{tabId:7,url:'https://other.test'}));
+});
+test('tab capability questions do not close a tab or consume an inference',async()=>{
+ const reply=await ultraReply([{role:'user',content:'Can you close tabs?'}],{ultraKey:'fixture',pcContext:{features:['close_tab']}},{cloud:{pc:{run:()=>{throw Error('No task requested');}}},fetcher:()=>{throw Error('No inference needed');}});assert.match(reply.text,/Tell me which tab/);assert.equal(reply.activity.length,0);
+});

@@ -1,0 +1,8 @@
+{
+  "status": "Prepared; Firebase currently rejects template updates for this project",
+  "senderName": "Nebula by ScriptNovaa",
+  "sender": "noreply@scriptnovaa.com",
+  "customActionUrl": "https://scriptnovaa.com/verify/",
+  "verification": {"subject":"Confirm your email for Nebula", "html":"<p>Confirm your email to finish setting up your Nebula account.</p><p><a href=\"%LINK%\">Verify email address</a></p><p>If you did not request this, you can ignore this email. Never share this link.</p>"},
+  "passwordReset": {"subject":"Reset your Nebula password", "html":"<p>A password reset was requested for your Nebula account.</p><p><a href=\"%LINK%\">Choose a new password</a></p><p>If you did not request this, ignore this email. Your password will stay the same. Never share this link.</p>"}
+}
