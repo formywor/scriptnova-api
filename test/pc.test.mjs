@@ -137,7 +137,7 @@ test('send-it authorizes the existing email task and recovers a stale refusal',a
   const b=JSON.parse(init.body);const n=round++;if(n===1)return Response.json({choices:[{message:{content:'I cannot send the email for you.'}}]});
   assert.equal(b.tool_choice.function.name,'pc_browser');return Response.json({choices:[{message:{tool_calls:[{id:'s'+n,function:{name:'pc_browser',arguments:JSON.stringify({action:n===0?'inspect':'click',arguments:{tabId:7}})}}]}}]});
  }});
- assert.deepEqual(actions.map(x=>x.action),['inspect','click']);assert.equal(actions[1].options.mailIntent,'send');assert.match(reply.text,/approval/);
+ assert.deepEqual(actions.map(x=>x.action),['inspect','click']);assert.equal(actions[1].options.mailIntent,'send');assert.equal(actions[1].options.continueDraft,true);assert.match(reply.text,/approval/);
 });
 test('email continuation inspects the last same-chat Gmail tab instead of opening another',async()=>{
  const f=await fixture();const id='c'.repeat(32);
@@ -149,4 +149,12 @@ test('email continuation inspects the last same-chat Gmail tab instead of openin
  assert.equal(executed[0].action,'inspect');assert.equal(executed[0].args.tabId,7);
  await make('other-chat').run('navigate',{url:'https://mail.google.com/',newTab:true},{mailIntent:'send',preferExistingTab:true});assert.equal(executed[1].action,'navigate');
  await make('explicit-new').run('navigate',{url:'https://mail.google.com/',newTab:true},{mailIntent:'send',preferExistingTab:false});assert.equal(executed[2].action,'navigate');
+});
+
+test('sending an existing draft cannot click Compose again',async()=>{
+ const f=await fixture();const snap=await inspect(f);const tools=pcTools(f.store,f.key,f.pair.deviceId,{now:()=>f.time});
+ // This is a fresh observation with a real Gmail Compose control.
+ const id='d'.repeat(32);await f.store.pcQueue(f.pair.deviceId,f.key,pcCommand('inspect',{}),id,f.time);const j=(await f.store.pcPoll(f.pair.deviceId,f.time)).job;
+ const page={...snapshot(),url:'https://mail.google.com/',elements:[{id:'e1',label:'Compose',role:'button'}]};await f.store.pcResult(f.pair.deviceId,id,j.lease,page,null,f.time);
+ await assert.rejects(tools.run('click',{elementId:'e1',snapshotId:page.snapshotId},{mailIntent:'send',continueDraft:true}),e=>e.code==='INVALID_PC_ACTION'&&e.repair.includes('existing draft'));
 });

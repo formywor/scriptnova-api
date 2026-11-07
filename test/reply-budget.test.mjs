@@ -30,3 +30,9 @@ test('Ultra does not retry an authentication failure or repeatedly cycle through
   const first=compactToolResult(data),second=compactToolResult(first,2500);
   assert.equal(second.result.snapshotId,page.snapshotId);assert.equal(second.result.tabId,7);assert.equal(second.result.elements[0].id,'e1');assert.equal(second.status,'completed');assert.ok(Buffer.byteLength(JSON.stringify(second))<=2500);assert.equal(JSON.stringify(data),before);
  });
+
+test('long browser followups fit without dropping recent control references or current instruction',()=>{
+ const latest='send it',page={status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,elements:Array.from({length:24},(_,i)=>({id:'e'+(i+1),label:'Control '+i+' '+ 'x'.repeat(110),role:'button'}))}};
+ const body={messages:[{role:'system',content:'Owner policy '+ 's'.repeat(7000)},...Array.from({length:10},(_,i)=>({role:i%2?'assistant':'user',content:'Previous draft conversation '+ 'm'.repeat(1200)})),{role:'user',content:latest},{role:'assistant',content:null,tool_calls:[{id:'read',function:{name:'pc_browser',arguments:'{}'}}]},{role:'tool',tool_call_id:'read',content:JSON.stringify(page)}],tools:[{type:'function',function:{name:'pc_browser',description:'Schema '+ 't'.repeat(4000)}}]};
+ const fitted=fitProviderBody(body);assert.ok(Buffer.byteLength(JSON.stringify({messages:fitted.body.messages,tools:fitted.body.tools}))<=22000);assert.equal(fitted.body.messages.findLast(m=>m.role==='user').content,latest);const result=JSON.parse(fitted.body.messages.at(-1).content);assert.equal(result.result.snapshotId,page.result.snapshotId);assert.ok(result.result.elements.length);assert.equal(fitted.body.messages[0].content,body.messages[0].content);
+});
