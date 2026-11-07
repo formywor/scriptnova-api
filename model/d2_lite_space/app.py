@@ -54,7 +54,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
     gr.Markdown('Nebula D2 Lite — managed experimental checkpoint service')
     data=gr.JSON(visible=False);result=gr.JSON(visible=False)
     button=gr.Button('Managed service',visible=False)
-    button.click(generate,inputs=[data],outputs=[result],api_name='generate')
+    button.click(complete,inputs=[data],outputs=[result],api_name='generate')
 demo.queue(max_size=4,default_concurrency_limit=1)
 app=FastAPI(docs_url=None,redoc_url=None,openapi_url=None)
 @app.middleware('http')
@@ -70,6 +70,10 @@ def health():return {'model':'nebula-v-d2','checkpoint':CHECKPOINT,'updates':MAN
 app=gr.mount_gradio_app(app,demo,path='/worker',ssr_mode=False,show_error=False)
 if __name__=='__main__':
     import uvicorn
+    import spaces.zero
+    if hasattr(spaces.zero,'startup'):
+        spaces.zero.startup()
+        print('D2_LITE_GPU_REGISTERED',flush=True)
     port=int(os.environ.get('GRADIO_SERVER_PORT','7860'))
     print('D2_LITE_HTTP_PORT',port,flush=True)
     uvicorn.run(app,host='0.0.0.0',port=port,access_log=False)
