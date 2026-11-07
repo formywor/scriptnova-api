@@ -9,7 +9,7 @@ const init=()=>({method:'POST',signal:new AbortController().signal,headers:{Auth
 const ok=()=>Response.json({choices:[{message:{content:'OK'}}]});
 
 test('primary, four independent backups, then dedicated Groq; no implicit Ultra keys',()=>{
- assert.deepEqual(openProviders(config).map(x=>x.id),['cloudflare','gemini','cerebras','openrouter','mistral','groq-final']);
+ assert.deepEqual(openProviders(config).map(x=>x.id),['cloudflare','cerebras','openrouter','mistral','gemini','groq-final']);
  assert.deepEqual(openProviders({ultraKey:'never',d2Key:'never'}),[]);
  assert.equal(configFromEnv({NEBULA_OPEN_GROQ_FALLBACK_KEY:'last'}).openGroqKey,'last');
 });
@@ -28,7 +28,7 @@ test('every capacity failure falls through in order, using its own auth; one all
 });
 
 test('failover between tool rounds retains results and never reruns a completed action',async()=>{
- let toolRuns=0,cfCalls=0,geminiCalls=0;
+ let toolRuns=0,cfCalls=0,backupCalls=0;
  const reply=await openReply([{role:'user',content:'Calculate 5 times 6 with the calculator.'}],{...config,openKey:'round-tool-test'},{
   cloud:{calculate:async()=>{toolRuns++;return {value:30};}},
   fetcher:async(url,opts)=>{
@@ -36,13 +36,13 @@ test('failover between tool rounds retains results and never reruns a completed 
     if(cfCalls++===0)return Response.json({choices:[{message:{content:null,tool_calls:[{id:'original_call_id',type:'function',function:{name:'calculate',arguments:'{"expression":"5*6"}'}}]}}]});
     return new Response('',{status:503});
    }
-   geminiCalls++;const body=JSON.parse(opts.body);
+   backupCalls++;const body=JSON.parse(opts.body);
    assert.equal(body.messages.at(-1).tool_call_id,'original_call_id');
    assert.match(body.messages.at(-1).content,/30/);
    return Response.json({choices:[{message:{content:'30'}}]});
   }
  });
- assert.equal(reply.text,'30');assert.equal(toolRuns,1);assert.equal(geminiCalls,1);
+ assert.equal(reply.text,'30');assert.equal(toolRuns,1);assert.equal(backupCalls,1);
 });
 
 test('provider cooldown respects Retry-After and missing providers are skipped',async()=>{
@@ -61,7 +61,7 @@ test('successful backup stays preferred; Groq still remains last',async()=>{
   return step++===0?new Response('',{status:503}):ok();
  }});
  await transport('',init());await transport('',init());
- assert.deepEqual(calls,['cloudflare','gemini','gemini']);
+ assert.deepEqual(calls,['cloudflare','cerebras','cerebras']);
 });
 
 test('HTTP 200 refusals and invalid input do not trigger fallback',async()=>{
@@ -93,4 +93,15 @@ test('Mistral IDs are deterministic across assistant and tool messages without c
   const b=JSON.parse(opts.body),id=b.messages[0].tool_calls[0].id;assert.match(id,/^[a-z0-9]{9}$/);assert.equal(id,b.messages[1].tool_call_id);return ok();
  }});
  await transport('',request);assert.equal(JSON.parse(request.body).messages[1].tool_call_id,'call_long_123');
+});
+
+
+test('Gemini remains second-to-last even after answering an earlier tool round',async()=>{
+ let time=10000;const calls=[];
+ const transport=openTransport(config,{failures:new Map(),now:()=>time,fetcher:async url=>{
+  const id=openProviders(config).find(p=>p.url===url).id;calls.push(id);
+  return id==='gemini'?ok():new Response('',{status:503});
+ }});
+ await transport('',init());time+=60001;await transport('',init());
+ assert.deepEqual(calls,[...Array(2)].flatMap(()=>['cloudflare','cerebras','openrouter','mistral','gemini']));
 });

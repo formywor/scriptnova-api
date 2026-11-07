@@ -1,7 +1,7 @@
 # Nebula Open capacity routing (server operations)
 
-Order: Cloudflare primary, Gemini, Cerebras, OpenRouter free router, Mistral,
-then the dedicated final Groq credential. Missing credentials are skipped.
+Order: Cloudflare primary, Cerebras, OpenRouter free router, Mistral,
+Gemini, then the dedicated final Groq credential. Missing credentials are skipped.
 The four intermediate services require their own accounts and quotas. A wired
 route is not an activated account or a guarantee of free production capacity.
 
@@ -24,7 +24,7 @@ Hugging Face training/storage credentials are not reused for inference.
 
 Only inference is retried. Existing conversation, tool calls and observed tool
 results are sent to the next service; browser actions are not replayed. Successful
-backups remain preferred for subsequent tool rounds in that response, with Groq
+backups remain preferred for subsequent tool rounds in that response, with Gemini second-to-last and Groq
 always last. Capacity, transient network, malformed-response, missing-model,
 authentication and exhausted-credit failures can move to the next service.
 HTTP 200 refusals and ordinary HTTP 400 errors do not trigger failover.
