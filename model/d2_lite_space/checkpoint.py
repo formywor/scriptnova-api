@@ -19,7 +19,8 @@ def download(entry,manifest,directory):
     pending=target.with_suffix('.partial');total=0;combined=hashlib.sha256()
     try:
         with pending.open('wb') as output:
-            for part in entry.get('parts',[entry]):
+            parts=entry.get('parts',[entry])
+            for index,part in enumerate(parts):
                 path=part.get('path','');expected=part.get('bytes')
                 if not path.startswith('experiments/nebula-vd2-') or '..' in path.split('/') or type(expected)is not int or not 0<expected<=size:raise ValueError('Invalid artifact part')
                 url='https://huggingface.co/'+manifest['repo']+'/resolve/'+manifest['revision']+'/'+path
@@ -32,6 +33,7 @@ def download(entry,manifest,directory):
                         if seen>expected or total>size:raise ValueError('Artifact size mismatch')
                         checksum.update(chunk);combined.update(chunk);output.write(chunk)
                 if seen!=expected or checksum.hexdigest()!=part['sha256']:raise ValueError('Artifact checksum mismatch')
+                print('D2_LITE_PART_VERIFIED',index+1,len(parts),total,flush=True)
         if total!=size or combined.hexdigest()!=digest:raise ValueError('Combined artifact mismatch')
         pending.replace(target);return target
     except BaseException:

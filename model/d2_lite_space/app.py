@@ -1,7 +1,10 @@
+print('D2_LITE_BOOT',flush=True)
 import spaces
+print('D2_LITE_SPACES_IMPORTED',flush=True)
 import gc,json,os,time
 from pathlib import Path
 import torch
+print('D2_LITE_TORCH_IMPORTED',flush=True)
 import gradio as gr
 from fastapi import FastAPI,Request
 from fastapi.responses import JSONResponse
@@ -14,7 +17,9 @@ MANIFEST=json.loads((ROOT/'manifest.json').read_text())
 SECRET=os.environ.get('NEBULA_D2_LITE_WORKER_KEY','')
 CACHE=Path('/tmp/nebula-d2-lite-artifacts')
 torch.set_num_threads(2)
+print('D2_LITE_DOWNLOADING_WEIGHTS',flush=True)
 weights=download(MANIFEST['working'],MANIFEST,CACHE)
+print('D2_LITE_LOADING_WEIGHTS',flush=True)
 saved=torch.load(weights,map_location='cpu',weights_only=True,mmap=True)
 with torch.device('meta'):model=Model(Config(**MANIFEST['model']))
 model.load_state_dict(saved['model'],strict=True,assign=True)
@@ -22,6 +27,7 @@ model.output.weight=model.token.weight
 model.mask=torch.empty(0,dtype=torch.bool)
 del saved;gc.collect()
 model.to(device='cuda',dtype=torch.float16).eval()
+print('D2_LITE_MODEL_LOADED',flush=True)
 tokenizer=Tokenizer.from_file(str(download(MANIFEST['tokenizer'],MANIFEST,CACHE)))
 CHECKPOINT='sha256:'+MANIFEST['working']['sha256']
 
@@ -61,7 +67,9 @@ async def protect(request:Request,call_next):
 @app.get('/')
 @app.get('/healthz')
 def health():return {'model':'nebula-v-d2','checkpoint':CHECKPOINT,'updates':MANIFEST['updates'],'experimental':True,'weightsLoaded':True,'ready':len(SECRET)>=32}
-app=gr.mount_gradio_app(app,demo,path='/worker')
+app=gr.mount_gradio_app(app,demo,path='/worker',ssr_mode=False,show_error=False)
 if __name__=='__main__':
     import uvicorn
-    uvicorn.run(app,host='0.0.0.0',port=7860,access_log=False)
+    port=int(os.environ.get('GRADIO_SERVER_PORT','7860'))
+    print('D2_LITE_HTTP_PORT',port,flush=True)
+    uvicorn.run(app,host='0.0.0.0',port=port,access_log=False)
