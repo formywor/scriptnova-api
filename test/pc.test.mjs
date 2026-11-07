@@ -158,3 +158,20 @@ test('sending an existing draft cannot click Compose again',async()=>{
  const page={...snapshot(),url:'https://mail.google.com/',elements:[{id:'e1',label:'Compose',role:'button'}]};await f.store.pcResult(f.pair.deviceId,id,j.lease,page,null,f.time);
  await assert.rejects(tools.run('click',{elementId:'e1',snapshotId:page.snapshotId},{mailIntent:'send',continueDraft:true}),e=>e.code==='INVALID_PC_ACTION'&&e.repair.includes('existing draft'));
 });
+
+test('cursor task remains active between actions and old turns cannot finish a newer task',async()=>{
+ const f=await fixture();const device=f.pair.deviceId;
+ await f.store.pcQueue(device,f.key,{...pcCommand('inspect',{}),chatId:'chat',turnId:'one'},'1'.repeat(32),f.time);
+ let response=await f.store.pcPoll(device,f.time);assert.equal(response.task.status,'active');
+ const j=response.job;await f.store.pcResult(device,j.id,j.lease,{ok:true},null,f.time);
+ assert.equal((await f.store.pcPoll(device,f.time)).task.status,'active');
+ await f.store.pcTaskFinish(device,f.key,'chat:one','waiting',f.time);assert.equal((await f.store.pcPoll(device,f.time)).task.status,'waiting');
+ await f.store.pcQueue(device,f.key,{...pcCommand('inspect',{}),chatId:'chat',turnId:'two'},'2'.repeat(32),f.time);
+ await f.store.pcTaskFinish(device,f.key,'chat:one','finished',f.time);assert.equal((await f.store.pcPoll(device,f.time)).task.status,'active');
+ await f.store.pcTaskFinish(device,f.key,'chat:two','finished',f.time);assert.equal((await f.store.pcPoll(device,f.time)).task.status,'finished');
+});
+test('PC reply completion reports finished, waiting and canceled task states',async()=>{
+ const states=[];const c={ultraKey:'fixture',cloudTools:{pc:{finish:async s=>states.push(s)}}};
+ await ultraReply([{role:'user',content:'Hello'}],c,{fetcher:async()=>Response.json({choices:[{message:{content:'Hello'}}]})});assert.equal(states.pop(),'finished');
+ await assert.rejects(ultraReply([{role:'user',content:'Hello'}],c,{fetcher:async()=>{throw Error('interrupted');}}));assert.equal(states.pop(),'canceled');
+});
