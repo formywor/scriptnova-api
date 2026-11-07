@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {auditPublicSurface,testPublicApi,discoverSurface} from '../lib/site-diagnostics.mjs';
+import {auditPublicSurface,testPublicApi,discoverSurface,sourceIssues} from '../lib/site-diagnostics.mjs';
 import {pageInspector,executeCode,inspectPageWithFallback,inspectPage} from '../lib/cloud-environment.mjs';
 import {createCloudHandler} from '../lib/cloud.mjs';
 import {createStore} from '../lib/firebase.mjs';
@@ -58,4 +58,13 @@ test('Cloud diagnostics enforce owner/invite gates, meter results, persist repor
 });
 test('D2 can call the new diagnostic tools and receives evidence-specific reporting instructions',async()=>{
  let calls=0;const r=await d2Reply([{role:'user',content:'Review my API.'}],{d2Key:'fixture',securityReviewAuthorized:true},{cloud:{testApi:async()=>({mode:'public-api-contract-check',checks:[{method:'GET',status:401}]})},fetcher:async(_u,init)=>{const b=JSON.parse(init.body);assert.ok(b.tools.some(t=>t.function.name==='test_public_api'));assert.match(b.messages[0].content,/not proof of XSS/);if(calls++===0)return Response.json({choices:[{message:{tool_calls:[{id:'api',function:{name:'test_public_api',arguments:'{"url":"https://api.owned.test/status"}'}}]}}]});assert.match(b.messages.at(-1).content,/401/);return Response.json({choices:[{message:{content:'The endpoint requires authentication.'}}]});}});assert.equal(r.activity[0].tool,'test_public_api');assert.equal(r.activity[0].status,'completed');
+});
+
+
+test('source inspection decodes bounded source-map text and recognizes normal JS stack spacing',()=>{
+ const secret='sk-'+'q'.repeat(28);
+ const findings=sourceIssues(response('https://owned.test/app.js.map',JSON.stringify({version:3,sources:['app.ts'],sourcesContent:['const api_key = "'+secret+'";']})));
+ assert.ok(findings.some(f=>f.code==='POSSIBLE_EXPOSED_CREDENTIAL'&&f.evidence.includes('embedded-source-0')));assert.ok(!JSON.stringify(findings).includes(secret));
+ assert.ok(sourceIssues(response('https://owned.test/debug',JSON.stringify({trace:'Error: failure\n    at Record.load (/srv/app/record.js:42:9)'}))).some(f=>f.code==='PUBLIC_ERROR_TRACE'));
+ assert.deepEqual(sourceIssues(response('https://owned.test/map','{"version":3,"sources":[],"sourcesContent":[{}]}')),[]);
 });
