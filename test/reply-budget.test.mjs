@@ -42,3 +42,12 @@ test('compressed link and media views retain playable URLs and observed playback
  const result=compactToolResult({status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,view:'media',media:[{paused:false,currentTime:12,duration:90}],text:'x'.repeat(10000),elements:[{id:'e1',label:'Song title',role:'a',url:'https://www.youtube.com/watch?v=realVideo123'}]}},2500);
  assert.equal(result.result.elements[0].url,'https://www.youtube.com/watch?v=realVideo123');assert.equal(result.result.media[0].paused,false);assert.equal(result.result.view,'media');
 });
+
+
+test('PC history compaction keeps policies, current corrections and every tool exchange under budget',()=>{
+ const messages=[{role:'system',content:'Owner policy '+ 'x'.repeat(11000)},{role:'user',content:'Play a song on YouTube.'},...Array.from({length:16},(_,i)=>({role:i%2?'assistant':'user',content:'Earlier failure '+i+' '+ 'z'.repeat(800)})),{role:'user',content:'I meant Kai Cenat. Play EBK.'},{role:'assistant',content:null,tool_calls:[{id:'observed',function:{name:'pc_browser',arguments:'{}'}}]},{role:'tool',tool_call_id:'observed',content:JSON.stringify({status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,elements:[{id:'e1',label:'Play'}]}})}];
+ const tools=[{type:'function',function:{name:'pc_browser',description:'Detailed browser guidance '.repeat(400),parameters:{type:'object',properties:{action:{type:'string'}}}}}];
+ const result=fitProviderBody({messages,tools});assert.ok(Buffer.byteLength(JSON.stringify({messages:result.body.messages,tools:result.body.tools}))<=22000);
+ assert.equal(result.body.messages[0].content,messages[0].content);assert.equal(result.body.messages.findLast(m=>m.role==='user').content,'I meant Kai Cenat. Play EBK.');assert.ok(result.body.messages.some(m=>m.content==='Play a song on YouTube.'));
+ assert.equal(result.body.messages.at(-1).tool_call_id,'observed');assert.equal(result.body.messages.at(-2).tool_calls[0].id,'observed');assert.deepEqual(result.body.tools[0].function.parameters,tools[0].function.parameters);
+});
