@@ -35,7 +35,7 @@ test('Nebula Open sends a tool round trip only to the Cloudflare endpoint',async
  assert.ok(phases.length>0);
 });
 
-test('Nebula Open requires a verified invite and stops at the UTC daily cap',async()=>{
+test('Nebula Open accepts signed-in accounts without invites and stops at the tier daily cap',async()=>{
  const {db}=memoryDatabase(),store=createStore(db);
  let identity=null;
  const now=Date.UTC(2026,10,6,23,59);
@@ -49,18 +49,17 @@ test('Nebula Open requires a verified invite and stops at the UTC daily cap',asy
   return [res.status,await res.json()];
  };
  const chat={chatId:'open-chat',turnId:'open-turn',modelId:'nebula-open',messages:question};
- assert.ok((await request('/models'))[1].models.some(model=>model.id==='nebula-open'&&model.invitationRequired));
- assert.equal((await request('/chat','POST',chat))[1].code,'OPEN_INVITE_REQUIRED');
- identity={uid:'open-test',email:'invite@example.com',email_verified:true};
- assert.equal((await request('/chat','POST',chat))[1].code,'OPEN_INVITE_REQUIRED');
- await store.developerSetGrant(identity.email,{tier:'invite',status:'active',reason:'Preview test',by:'owner',at:now});
+ assert.ok((await request('/models'))[1].models.some(model=>model.id==='nebula-open'&&model.accountRequired&&!model.invitationRequired));
+ assert.equal((await request('/chat','POST',chat))[1].code,'OPEN_ACCOUNT_REQUIRED');
+ identity={uid:'open-test',email:'regular@example.com',email_verified:false};
+ const signedUsage=(await request('/usage'))[1];assert.equal(signedUsage.openUsage.limit,120);assert.ok(signedUsage.plan.models.includes('nebula-open'));
  assert.deepEqual((await request('/usage'))[1].previewModels,['nebula-open']);
  assert.equal((await request('/chats/open-chat','PUT',{revision:0,title:'Open',messages:[{id:'open-turn',...question[0],trainingEligible:false}]}))[0],200);
  const {accountKey}=await import('../lib/accounts.mjs'),key=accountKey(identity.uid);
- for(let count=0;count<24;count++)assert.equal(await store.consumeOpenCall(key,now),true);
+ for(let count=0;count<120;count++)assert.equal(await store.consumeOpenCall(key,now),true);
  const [status,body]=await request('/chat','POST',chat);
  assert.equal(status,429);
- assert.equal(body.code,'OPEN_DAILY_LIMIT');
+ assert.equal(body.code,'OPEN_DAILY_LIMIT');assert.equal(body.openUsage.limit,120);assert.equal(body.openUsage.remaining,0);
  assert.equal(body.resetAt,Date.UTC(2026,10,7));
  assert.equal(await store.consumeOpenCall(key,openResetAt(now)),true);
 });
@@ -99,4 +98,18 @@ test('JSON requested as an example stays text in PC mode',async()=>{
   fetcher:async()=>Response.json({choices:[{message:{content}}]})
  });
  assert.equal(reply.text,content);
+});
+
+
+test('Open allowances share usage across tier changes, enforce each cap atomically and reset at UTC midnight',async()=>{
+ const {db}=memoryDatabase(),store=createStore(db),time=Date.UTC(2026,10,7,12),key='tier-test';
+ await db.ref('nebulaOpenUsage/v1/'+key).set({day:Math.floor(time/86400000),calls:119});
+ const concurrent=await Promise.all(Array.from({length:8},()=>store.consumeOpenCall(key,time,'normal')));
+ assert.equal(concurrent.filter(Boolean).length,1);assert.equal((await store.openUsage(key,time,'normal')).remaining,0);
+ const medium=await store.openUsage(key,time,'medium');assert.equal(medium.limit,300);assert.equal(medium.remaining,180);
+ assert.equal(await store.consumeOpenCall(key,time,'medium'),true);
+ const high=await store.openUsage(key,time,'high');assert.equal(high.limit,750);assert.equal(high.used,121);assert.equal(high.remaining,629);
+ assert.equal(await store.consumeOpenCall(key,time,'normal'),false);
+ assert.equal((await store.openUsage(key,openResetAt(time),'high')).remaining,750);
+ assert.equal(await store.consumeOpenCall(key,openResetAt(time),'normal'),true);
 });

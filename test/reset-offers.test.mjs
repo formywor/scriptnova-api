@@ -40,7 +40,7 @@ test('owner offers by verified email, users claim once, and expiry never restore
  f.user(alice);
  const usage=await f.call('/usage');
  assert.equal(usage.body.limits.short.remaining,60);
- assert.deepEqual(usage.body.resetGifts,[{id,expiresAt,scopes:['website']}]);
+ assert.deepEqual(usage.body.resetGifts,[{id,expiresAt,scopes:['website','open']}]);
  await Promise.all([f.call('/reset-gifts',{id}),f.call('/reset-gifts',{id})]).then(results=>assert.ok(results.every(r=>r.status===200)));
  assert.equal((await f.store.planUsage(key,time,'normal')).short.remaining,150);
  assert.equal((await f.store.reservePlan(key,'new',time,'normal','nebula-ultra')).allowed,true);
@@ -57,12 +57,12 @@ test('group offers follow current tier and optional Open reset leaves shared API
  await f.store.setPublicGrant(key,{tier:'medium',status:'active',reason:'Test grant',at:time,by:'owner'});
  await f.store.developerSetGrant(alice.email,{tier:'invite',status:'active',reason:'Preview test',by:'owner',at:time});
  await f.db.ref('nebulaDeveloperApi/v1/usage/'+key).set({day:Math.floor(time/day),minute:Math.floor(time/60000),requests:27,tokens:1033,minuteRequests:2,pending:{},metrics:{},logs:[]});
- for(let i=0;i<24;i++)assert.equal(await f.store.consumeOpenCall(key,time),true);
+ for(let i=0;i<120;i++)assert.equal(await f.store.consumeOpenCall(key,time),true);
  assert.equal(await f.store.consumeOpenCall(key,time),false);
  const {body:{gift}}=await f.call('/developer-platform/reset-offers',{audience:'medium-high',scopes:['api','open'],expiresAt});
  const {body:{gift:open}}=await f.call('/developer-platform/reset-offers',{audience:'all',scopes:['open'],expiresAt});
  f.user(bob);
- assert.deepEqual((await f.call('/usage')).body.resetGifts,[]);
+ assert.deepEqual((await f.call('/usage')).body.resetGifts,[{id:open.id,expiresAt,scopes:['open']}]);
  f.user(alice);
  assert.equal((await f.call('/usage')).body.resetGifts.length,2);
  assert.equal((await f.call('/reset-gifts',{id:gift.id})).status,200);

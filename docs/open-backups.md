@@ -30,8 +30,12 @@ HTTP 200 refusals and ordinary HTTP 400 errors do not trigger failover.
 
 Each inference attempt has a seven-second timeout within a maximum sixty-second
 inference-round deadline and the existing whole-answer deadline. Cancellation
-stops the chain. One logical inference counts once toward Open's existing daily
-preview cap; switching services does not reset usage or grant unlimited access.
+stops the chain. One logical inference counts once toward the signed-in account's
+daily cap: Normal 120, Medium 300, High 750. Sign-in is required; invitation and
+email verification are not required for Open chat. PC control retains its separate
+verified-email requirement. The cap resets at midnight UTC, keeps existing counts
+across tier changes and remains compatible with gifted Open resets. Switching
+services does not reset usage or grant unlimited access.
 
 Warm instances remember provider cooldowns, honoring Retry-After up to one hour.
 This is best-effort process-local protection, not a globally coordinated circuit
