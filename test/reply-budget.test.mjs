@@ -51,3 +51,12 @@ test('PC history compaction keeps policies, current corrections and every tool e
  assert.equal(result.body.messages[0].content,messages[0].content);assert.equal(result.body.messages.findLast(m=>m.role==='user').content,'I meant Kai Cenat. Play EBK.');assert.ok(result.body.messages.some(m=>m.content==='Play a song on YouTube.'));
  assert.equal(result.body.messages.at(-1).tool_call_id,'observed');assert.equal(result.body.messages.at(-2).tool_calls[0].id,'observed');assert.deepEqual(result.body.tools[0].function.parameters,tools[0].function.parameters);
 });
+
+
+test('Cloud audits fit long descriptions and prior chat without losing policy or findings',()=>{
+ const policy='Trusted owner policy '+ 'p'.repeat(9000),latest='Repeat the authorized site review.';
+ const diagnostic={url:'https://owned.test',summary:{requests:20},findings:[{code:'PUBLIC_ERROR_TRACE',evidence:'Observed trace',fix:'Generic public error'}],pages:Array.from({length:20},()=>({text:'x'.repeat(20000)}))};
+ const messages=[{role:'system',content:policy},{role:'user',content:'Review my website.'},...Array.from({length:12},(_,i)=>({role:i%2?'assistant':'user',content:'Earlier discussion '+ 'x'.repeat(1600)})),{role:'user',content:latest},{role:'assistant',content:null,tool_calls:[{id:'audit',function:{name:'audit_public_surface',arguments:'{}'}}]},{role:'tool',tool_call_id:'audit',content:JSON.stringify(diagnostic)}];
+ const tools=Array.from({length:10},(_,i)=>({type:'function',function:{name:'cloud_'+i,description:'Long tool prose '.repeat(200),parameters:{type:'object',properties:{url:{type:'string'}}}}}));
+ const result=fitProviderBody({messages,tools});assert.equal(result.body.messages[0].content,policy);assert.equal(result.body.messages.findLast(m=>m.role==='user').content,latest);assert.equal(result.body.messages.at(-1).tool_call_id,'audit');assert.equal(JSON.parse(result.body.messages.at(-1).content).findings[0].code,'PUBLIC_ERROR_TRACE');assert.deepEqual(result.body.tools[0].function.parameters,tools[0].function.parameters);assert.ok(Buffer.byteLength(JSON.stringify({messages:result.body.messages,tools:result.body.tools}))<=22000);
+});
