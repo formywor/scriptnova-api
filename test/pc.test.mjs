@@ -285,3 +285,8 @@ test('Open never dispatches malformed XML or a requested XML explanation',async(
   assert.equal(actions,0);assert.doesNotMatch(result.text,/<tool_call>/);
  }
 });
+
+
+test('D2 independently hosted PC fallback payloads use normal command validation',async()=>{
+ let round=0,actions=0;const r=await ultraReply([{role:'user',content:'Inspect the current tab.'}],{ultraKey:'fixture',selectedModel:'nebula-d2'},{cloud:{pc:{run:async action=>{assert.equal(action,'inspect');actions++;return {status:'completed',result:{title:'Example Domain'}};}}},fetcher:async()=>Response.json({choices:[{message:round++===0?{content:'<tool_call><function=pc_browser><parameter=action>inspect</parameter><parameter=arguments>{}</parameter></function></tool_call>'}:{content:'The observed title is Example Domain.'}}]})});assert.equal(actions,1);assert.doesNotMatch(r.text,/<tool_call>/);
+});

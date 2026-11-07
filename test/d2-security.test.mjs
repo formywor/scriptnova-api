@@ -75,3 +75,16 @@ test('D2 cooldown retries are bounded and respect provider delay and cancellatio
  let longWait=false;const long=d2Transport({},async()=>new Response('busy',{status:429,headers:{'Retry-After':'60'}}),async()=>{longWait=true;});await long('https://test.invalid',init);assert.equal(longWait,false);
  const controller=new AbortController();const canceled=d2Transport({},async()=>new Response('busy',{status:429,headers:{'Retry-After':'3'}}),async()=>controller.abort());await assert.rejects(canceled('https://test.invalid',{...init,signal:controller.signal}),e=>e.name==='AbortError');
 });
+
+
+test('D2 independent backups keep task evidence, identity and permissions without using Open allowance',async()=>{
+ let calls=0,toolRuns=0;const services=[];
+ const result=await d2Reply([{role:'user',content:'Calculate 3+4.'}],{d2Key:'dedicated',openCerebrasKey:'separate',consumeOpenCall:()=>{throw Error('Must not charge Open');}},{cloud:{calculate:async()=>{toolRuns++;return {result:7};}},fetcher:async(url,init)=>{services.push(new URL(url).hostname);const body=JSON.parse(init.body);if(url.includes('groq.com'))return new Response('busy',{status:429});assert.equal(init.headers.Authorization,'Bearer separate');assert.match(body.messages[0].content,/Nebula D2 Preview/);if(calls++===0)return Response.json({choices:[{message:{tool_calls:[{id:'math',function:{name:'calculate',arguments:'{"expression":"3+4"}'}}]}}]});assert.ok(body.messages.some(m=>m.role==='tool'&&m.content.includes('7')));return answer('7');}});
+ assert.equal(result.text,'7');assert.equal(toolRuns,1);assert.deepEqual(services,['api.groq.com','api.groq.com','api.cerebras.ai','api.cerebras.ai']);
+});
+
+
+test('D2 can exhaust capacity across four independent services without using another Groq key',async()=>{
+ const hosts=[];const result=await d2Reply([{role:'user',content:'Help explain a code review.'}],{d2Key:'primary',openKey:'cf-d2-test',openAccountId:'a'.repeat(32),openCerebrasKey:'cerebras-d2-test',openRouterKey:'router-d2-test',sparkKey:'gemini-d2-test',openGroqKey:'must-not-use'},{fetcher:async(url,init)=>{hosts.push(new URL(url).hostname);assert.notEqual(init.headers.Authorization,'Bearer must-not-use');return url.includes('googleapis.com')?answer('Available through backup.'):new Response('busy',{status:429});}});
+ assert.equal(result.text,'Available through backup.');assert.deepEqual(hosts,['api.groq.com','api.groq.com','api.cerebras.ai','api.cloudflare.com','openrouter.ai','generativelanguage.googleapis.com']);
+});
