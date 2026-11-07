@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {securityAccess,scanSecurity} from '../lib/security-review.mjs';
-import {d2Reply} from '../lib/assistants.mjs';
+import {d2Reply,d2Transport} from '../lib/assistants.mjs';
 import {createApp} from '../lib/app.mjs';
 import {createStore} from '../lib/firebase.mjs';
 import {memoryDatabase} from './helpers/database.mjs';
@@ -60,4 +60,17 @@ test('D2 page excerpts reduce token load without changing full saved inspection 
  const page={url:'https://example.com/',source:'s'.repeat(18000),text:'t'.repeat(14000),network:Array.from({length:50},()=>({status:200})),console:[]};let calls=0;
  const r=await d2Reply([{role:'user',content:'Inspect example.com.'}],{d2Key:'test'},{cloud:{inspect:async()=>page},fetcher:async(_,init)=>{const body=JSON.parse(init.body);if(++calls===1)return Response.json({choices:[{message:{tool_calls:[{id:'page',function:{name:'open_live_page',arguments:'{"url":"https://example.com/"}'}}]}}]});const observed=JSON.parse(body.messages.find(m=>m.role==='tool').content);assert.ok(observed.source.length>0&&observed.source.length<=3500);assert.ok(observed.text.length>0&&observed.text.length<=3000);assert.ok(observed.network.length>0&&observed.network.length<=15);assert.equal(observed.modelViewTruncated,true);return answer('Read the excerpt.');}});
  assert.ok(r.text);assert.equal(page.source.length,18000);assert.equal(page.network.length,50);
+});
+
+
+test('D2 honors one short provider cooldown and never replays completed tools',async()=>{
+ let calls=0,runs=0;const progress=[];
+ const r=await d2Reply([{role:'user',content:'Calculate 2+2.'}],{d2Key:'fixture',onProgress:s=>progress.push(s)},{cloud:{calculate:async()=>{runs++;return {result:4};}},fetcher:async()=>{calls++;if(calls===1)return Response.json({choices:[{message:{tool_calls:[{id:'calc',function:{name:'calculate',arguments:'{"expression":"2+2"}'}}]}}]});if(calls===2)return new Response('busy',{status:429,headers:{'Retry-After':'0.001'}});return answer('4');}});
+ assert.equal(r.text,'4');assert.equal(runs,1);assert.equal(calls,3);assert.match(progress[0],/Waiting briefly/);
+});
+test('D2 cooldown retries are bounded and respect provider delay and cancellation',async()=>{
+ let calls=0;const waits=[];const send=d2Transport({d2Key:'fixture'},async()=>{calls++;return new Response('busy',{status:429,headers:{'Retry-After':'3'}});},async ms=>waits.push(ms));
+ const init={method:'POST',body:'{"model":"primary","messages":[]}',headers:{}};assert.equal((await send('https://test.invalid',init)).status,429);assert.equal(calls,3);assert.deepEqual(waits,[3000]);
+ let longWait=false;const long=d2Transport({},async()=>new Response('busy',{status:429,headers:{'Retry-After':'60'}}),async()=>{longWait=true;});await long('https://test.invalid',init);assert.equal(longWait,false);
+ const controller=new AbortController();const canceled=d2Transport({},async()=>new Response('busy',{status:429,headers:{'Retry-After':'3'}}),async()=>controller.abort());await assert.rejects(canceled('https://test.invalid',{...init,signal:controller.signal}),e=>e.name==='AbortError');
 });
