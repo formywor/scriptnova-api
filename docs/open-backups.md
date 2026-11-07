@@ -44,3 +44,19 @@ Before enabling each new credential, test a harmless response and a calculator
 tool round-trip on that provider's actual account. Unit tests cover forced
 fallback through all six routes, credential separation, cooldowns, cancellation,
 quota counting and retaining a completed tool result across service failures.
+
+## Account activation check — November 7, 2026
+
+All three new accounts use the owner's requested massattackforall@gmail.com address.
+OpenRouter's free router completed a live calculator round trip and its credential
+is stored as a production-only Vercel secret. The automatically issued key is
+named Nebula Open fallback and expires May 6, 2027; rotate it before expiry.
+Do not enable strict provider parameter matching for openrouter/free: the live
+router rejected tool requests with require_parameters=true, while its documented
+automatic tool-capability routing succeeded without that setting.
+
+Cerebras created a default key but requires a payment method to activate even its
+one-time promotional credits. Mistral disables API-key creation on this new Free
+account and asks for a paid upgrade. Neither is enabled in Nebula, and no payment
+method or subscription was added. Their adapters remain ready for a future
+separately authorized activation; these accounts are not active free backups.

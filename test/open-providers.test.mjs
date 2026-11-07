@@ -20,7 +20,7 @@ test('every capacity failure falls through in order, using its own auth; one all
   const p=openProviders(config)[calls.length];calls.push(p.id);
   assert.equal(url,p.url);assert.equal(opts.headers.Authorization,'Bearer '+p.key);
   const body=JSON.parse(opts.body);assert.equal(body.model,p.model);
-  if(p.id==='openrouter'){assert.equal(body.model,'openrouter/free');assert.deepEqual(body.provider.ignore,['Groq']);}
+  if(p.id==='openrouter'){assert.equal(body.model,'openrouter/free');assert.deepEqual(body.provider.ignore,['Groq']);assert.equal(body.provider.require_parameters,undefined);assert.equal(body.parallel_tool_calls,undefined);}
   return p.id==='groq-final'?ok():Response.json({error:{message:'capacity'}},{status:429});
  }});
  assert.equal((await transport('',init())).status,200);
