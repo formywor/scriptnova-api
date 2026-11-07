@@ -15,8 +15,8 @@ test('primary, four independent backups, then dedicated Groq; no implicit Ultra 
 });
 
 test('every capacity failure falls through in order, using its own auth; one allowance',async()=>{
- const calls=[];let charges=0;
- const transport=openTransport({...config,consumeOpenCall:async()=>charges++},{failures:new Map(),fetcher:async(url,opts)=>{
+ const calls=[],fallbackState={used:false};let charges=0;
+ const transport=openTransport({...config,fallbackState,consumeOpenCall:async()=>charges++},{failures:new Map(),fetcher:async(url,opts)=>{
   const p=openProviders(config)[calls.length];calls.push(p.id);
   assert.equal(url,p.url);assert.equal(opts.headers.Authorization,'Bearer '+p.key);
   const body=JSON.parse(opts.body);assert.equal(body.model,p.model);
@@ -24,7 +24,7 @@ test('every capacity failure falls through in order, using its own auth; one all
   return p.id==='groq-final'?ok():Response.json({error:{message:'capacity'}},{status:429});
  }});
  assert.equal((await transport('',init())).status,200);
- assert.deepEqual(calls,openProviders(config).map(x=>x.id));assert.equal(charges,1);
+ assert.deepEqual(calls,openProviders(config).map(x=>x.id));assert.equal(charges,1);assert.equal(fallbackState.used,true);
 });
 
 test('failover between tool rounds retains results and never reruns a completed action',async()=>{
