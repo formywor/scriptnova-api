@@ -68,3 +68,9 @@ test('source inspection decodes bounded source-map text and recognizes normal JS
  assert.ok(sourceIssues(response('https://owned.test/debug',JSON.stringify({trace:'Error: failure\n    at Record.load (/srv/app/record.js:42:9)'}))).some(f=>f.code==='PUBLIC_ERROR_TRACE'));
  assert.deepEqual(sourceIssues(response('https://owned.test/map','{"version":3,"sources":[],"sourcesContent":[{}]}')),[]);
 });
+
+
+test('D2 API summaries cannot turn a root-only check into a no-endpoints assurance',async()=>{
+ let round=0;const r=await d2Reply([{role:'user',content:'Review https://api.owned.test for flaws.'}],{d2Key:'fixture'},{cloud:{testApi:async()=>({url:'https://api.owned.test/',findings:[]})},fetcher:async()=>Response.json({choices:[{message:round++===0?{tool_calls:[{id:'api',function:{name:'test_public_api',arguments:'{"url":"https://api.owned.test/"}'}}]}:{content:'No public endpoints exposed to unauthenticated callers. The API surface appears benign.'}}]})});
+ assert.doesNotMatch(r.text,/No public endpoints exposed|surface appears benign/);assert.match(r.text,/other endpoints and access controls remain unverified/);
+});
