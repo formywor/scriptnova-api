@@ -28,7 +28,11 @@ test('HTTPS redirects are followed with separately validated pinned DNS and no c
 test('redirects cannot reach private addresses, non-HTTPS destinations, credentials or loops',async()=>{
  for(const target of ['https://internal.test/','http://owned.test/','https://user:pass@owned.test/','https://owned.test/']){
   const f=fixture({'https://owned.test/':{status:302,headers:{location:target}}});
-  await assert.rejects(fetchPublic('https://owned.test/',{request:f.request,lookup:async host=>[{address:host==='internal.test'?'169.254.169.254':'93.184.216.34',family:4}]}),e=>['PUBLIC_URL_BLOCKED','INVALID_PUBLIC_URL','REDIRECT_LOOP'].includes(e.code));
+  await assert.rejects(fetchPublic('https://owned.test/',{request:f.request,lookup:async host=>[{address:host==='internal.test'?'169.254.169.254':'93.184.216.34',family:4}]}),e=>{
+   assert.ok(['PUBLIC_URL_BLOCKED','INVALID_PUBLIC_URL','REDIRECT_LOOP'].includes(e.code));
+   if(e.code==='REDIRECT_LOOP'){assert.equal(e.loopUrl,'https://owned.test/');assert.deepEqual(e.redirects,[{from:'https://owned.test/',to:'https://owned.test/',status:302},{to:'https://owned.test/',loop:true}]);}
+   return true;
+  });
   assert.equal(f.seen.length,1);
  }
 });

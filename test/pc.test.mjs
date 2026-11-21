@@ -258,11 +258,16 @@ test('reading views require the new extension and distinct views never reuse sta
  await assert.rejects(tools.run('inspect',{view:'links'}),e=>e.code==='PC_EXTENSION_UPDATE_REQUIRED');
  await f.store.pcUpgrade(f.pair.deviceId,f.time,6);
  const page=await tools.run('inspect',{view:'page'}),links=await tools.run('inspect',{view:'links'});
- assert.notEqual(page.jobId,links.jobId);assert.equal(captured.length,2);assert.equal((await tools.run('inspect',{view:'links'})).jobId,links.jobId);
+ assert.notEqual(page.jobId,links.jobId);assert.equal((await tools.run('inspect',{view:'links'})).jobId,links.jobId);const network=await tools.run('inspect',{view:'network'});assert.notEqual(links.jobId,network.jobId);assert.equal(captured.length,3);assert.equal(captured.at(-1).args.view,'network');
  await tools.run('navigate',{url:'https://www.youtube.com/results?search_query=Kai+Cenat',newTab:true},{preferExistingTab:true});
  assert.equal(captured.at(-1).args.newTab,false);assert.equal(captured.at(-1).args.reuseTab,true);
  await tools.run('navigate',{url:'https://www.youtube.com/results?search_query=Kai+Cenat',newTab:true},{preferExistingTab:false});assert.equal(captured.at(-1).args.newTab,true);
  assert.throws(()=>pcCommand('inspect',{view:'arbitrary-selector'}));
+});
+
+test('network inspection requests a focused read when PC mode is asked for DevTools traffic',async()=>{
+ let round=0,observed;const result=await ultraReply([{role:'user',content:'Use inspect element/dev tools call network and more'}],{ultraKey:'test',selectedModel:'nebula-d2',pcContext:{features:['inspect_views']}},{cloud:{pc:{run:async(action,args)=>{observed={action,args};return {status:'completed',result:{snapshotId:randomUUID(),tabId:7,url:'https://owned.test/',view:'network',network:[{url:'https://owned.test/api/public',method:'GET',status:200}],networkNotice:'No headers or bodies.'}};}}},fetcher:async(_url,init)=>{const body=JSON.parse(init.body);if(round++===0){assert.equal(body.tool_choice.function.name,'pc_browser');assert.equal(body.tools.find(t=>t.function.name==='pc_browser').function.parameters.properties.arguments.properties.view.enum.includes('network'),true);return Response.json({choices:[{message:{tool_calls:[{id:'network',function:{name:'pc_browser',arguments:JSON.stringify({action:'inspect',arguments:{view:'network'}})}}]}}]});}assert.deepEqual(observed,{action:'inspect',args:{view:'network'}});assert.ok(body.messages.some(m=>m.role==='system'&&/Use pc_browser inspect with arguments.view="network"/.test(m.content)));assert.match(body.messages.at(-1).content,/owned.test\/api\/public/);return Response.json({choices:[{message:{content:'The connected browser observed a GET request to the public API route.'}}]});}});
+ assert.match(result.text,/observed a GET request/);
 });
 
 

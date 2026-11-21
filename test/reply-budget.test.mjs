@@ -28,7 +28,7 @@ test('Ultra does not retry an authentication failure or repeatedly cycle through
   const page={elements:[{id:'e1',role:'button',label:'Compose'}],network:Array.from({length:40},()=>({url:'https://example.com/'+ 'x'.repeat(1700)})),snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,url:'https://example.com/'};
   const data={jobId:'a'.repeat(32),status:'completed',result:page},before=JSON.stringify(data);
   const first=compactToolResult(data),second=compactToolResult(first,2500);
-  assert.equal(second.result.snapshotId,page.snapshotId);assert.equal(second.result.tabId,7);assert.equal(second.result.elements[0].id,'e1');assert.equal(second.status,'completed');assert.ok(Buffer.byteLength(JSON.stringify(second))<=2500);assert.equal(JSON.stringify(data),before);
+  assert.equal(second.result.snapshotId,page.snapshotId);assert.equal(second.result.tabId,7);assert.equal(second.result.elements[0].id,'e1');assert.equal(second.result.network.length,2);assert.ok(second.result.network[0].url.length<=260);assert.equal(second.status,'completed');assert.ok(Buffer.byteLength(JSON.stringify(second))<=2500);assert.equal(JSON.stringify(data),before);
  });
 
 test('long browser followups fit without dropping recent control references or current instruction',()=>{
@@ -41,6 +41,12 @@ test('long browser followups fit without dropping recent control references or c
 test('compressed link and media views retain playable URLs and observed playback state',()=>{
  const result=compactToolResult({status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,view:'media',media:[{paused:false,currentTime:12,duration:90}],text:'x'.repeat(10000),elements:[{id:'e1',label:'Song title',role:'a',url:'https://www.youtube.com/watch?v=realVideo123'}]}},2500);
  assert.equal(result.result.elements[0].url,'https://www.youtube.com/watch?v=realVideo123');assert.equal(result.result.media[0].paused,false);assert.equal(result.result.view,'media');
+});
+
+test('compressed page inspection retains recent network rows and their scope notice',()=>{
+ const network=Array.from({length:30},(_,i)=>({url:'https://example.com/api/'+i,method:'GET',status:200}));
+ const result=compactToolResult({status:'completed',result:{snapshotId:'97cfdf7e-96fa-40e0-ba7a-a63892d111b3',tabId:7,view:'network',text:'x'.repeat(12000),elements:[],network,networkNotice:'Observed in this approved tab only; no headers or bodies.'}},1800);
+ assert.equal(result.result.network.length,2);assert.equal(result.result.network.at(-1).url,'https://example.com/api/29');assert.match(result.result.networkNotice,/no headers or bodies/);assert.equal(result.result.view,'network');
 });
 
 
