@@ -72,6 +72,11 @@ test('D2 API discovery continues with a scoped public search when the homepage f
  assert.equal(searched,'site:guns.lol (API OR "API documentation" OR OpenAPI OR Swagger)');assert.match(r.text,/could not verify a public API endpoint/);assert.match(r.text,/homepage retrieval failed/i);assert.match(r.text,/REDIRECT_LOOP/);
 });
 
+test('D2 does not call a third-party API or docs source official without first-party support',async()=>{
+ let round=0;const r=await d2Reply([{role:'user',content:'Find the API for https://guns.lol/'}],{d2Key:'fixture',selectedModel:'nebula-d2'},{cloud:{search:async()=>({results:[{title:'GunsLol API',url:'https://docs.drain.lat/api-reference/gunslol'}]})},fetcher:async(_u,init)=>{const b=JSON.parse(init.body);if(round++===0)return Response.json({choices:[{message:{tool_calls:[{id:'search',function:{name:'search_web',arguments:'{"query":"guns.lol API"}'}}]}}]});return Response.json({choices:[{message:{content:'The publicly documented API is https://drain.lat/api/v1/gunslol, published by the guns.lol developers.'}}]});}});
+ assert.match(r.text,/can’t verify that API or documentation as belonging to the site/i);assert.match(r.text,/third-party/);assert.ok(r.sources.some(s=>s.url==='https://docs.drain.lat/api-reference/gunslol'));
+});
+
 
 test('source inspection decodes bounded source-map text and recognizes normal JS stack spacing',()=>{
  const secret='sk-'+'q'.repeat(28);
