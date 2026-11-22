@@ -1,6 +1,23 @@
 {
   "rules": {
     ".read": false,
-    ".write": false
+    ".write": false,
+    "nebulaTtsOverlay": {
+      "v1": {
+        "$token": {
+          ".read": true,
+          ".write": false
+        }
+      }
+    },
+    "nebulaTtsSafety": {
+      "v1": {
+        "events": {
+          "$session": {
+            ".indexOn": ["expiresAt"]
+          }
+        }
+      }
+    }
   }
 }

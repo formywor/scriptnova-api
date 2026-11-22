@@ -8,6 +8,7 @@
         "maxDuration": 120,
         "includeFiles": [
           "nebula-rules.json",
+          "lib/data-en-US.txt",
           "model-assets/**",
           "node_modules/onnxruntime-node/bin/napi-v6/linux/x64/**"
         ],
