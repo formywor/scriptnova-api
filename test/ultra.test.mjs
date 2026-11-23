@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {ultraReply,appearancePatch,appearanceRequested} from '../lib/ultra.mjs';
+import {dailyReply} from '../lib/assistants.mjs';
 import {createApp,configFromEnv} from '../lib/app.mjs';
 import {modelCatalog} from '../lib/personalization.mjs';
 import {createStore} from '../lib/firebase.mjs';
@@ -8,11 +9,16 @@ import {accountKey} from '../lib/accounts.mjs';
 import {memoryDatabase} from './helpers/database.mjs';
 
 const json=value=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
+test('Nebula Daily preserves safety rules, trims old chat context, caps output and reports provider tokens',async()=>{
+ const messages=[{role:'system',content:'Keep privacy first.'},...Array.from({length:12},(_,i)=>({role:i%2?'assistant':'user',content:'turn '+i+' '+('x'.repeat(1000))})),{role:'user',content:'latest question'}];let sent,usage;
+ const answer=await dailyReply(messages,{ultraKey:'server-key',dailyModel:'openai/gpt-oss-20b',onTokenUsage:value=>usage=value},{fetcher:async(_,init)=>{sent=JSON.parse(init.body);return json({usage:{prompt_tokens:321,completion_tokens:14},choices:[{message:{content:'A short answer.'}}]});}});
+ assert.equal(sent.model,'openai/gpt-oss-20b');assert.ok(sent.max_completion_tokens<=512);assert.ok(sent.messages.some(m=>m.content==='Keep privacy first.'));assert.ok(sent.messages.some(m=>m.content==='latest question'));assert.ok(!sent.messages.some(m=>m.content?.includes('turn 0')));assert.equal(answer.text,'A short answer.');assert.deepEqual(usage,{inputTokens:321,outputTokens:14,model:'openai/gpt-oss-20b'});
+});
 test('catalog can explicitly disable legacy models and exposes no credentials',()=>{
  const config=configFromEnv({GROQ_API_KEY:'private-test-key',NEBULA_ENABLE_LEGACY_MODELS:'false'}),catalog=modelCatalog(config);
  assert.equal(catalog.defaultModel,'nebula-ultra');assert.equal(catalog.models[0].available,true);
- assert.equal(catalog.models.filter(m=>m.available).length,1);
- for(const m of catalog.models.filter(m=>!['nebula-d2','nebula-d2-lite','nebula-ultra','nebula-spark','nebula-duo'].includes(m.id))){assert.equal(m.available,false);assert.equal(m.unavailableReason,'disabled_by_configuration');}
+ assert.equal(catalog.models.filter(m=>m.available).length,2);
+ for(const m of catalog.models.filter(m=>!['nebula-d2','nebula-d2-lite','nebula-ultra','nebula-spark','nebula-duo','nebula-daily'].includes(m.id))){assert.equal(m.available,false);assert.equal(m.unavailableReason,'disabled_by_configuration');}
  assert.ok(!JSON.stringify(catalog).includes('private-test-key'));
  assert.equal(modelCatalog(configFromEnv({})).models[0].available,false);
 });

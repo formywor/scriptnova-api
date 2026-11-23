@@ -23,8 +23,8 @@ test('stale device writes conflict and deleted chats cannot be resurrected',asyn
 test('model receives stored account conversation; reply survives opening another device',async()=>{
  const f=fixture();await f.request('/chats/chat-1','PUT',chat('Stored message'));const response=await f.request('/chat','POST',ask());assert.equal(response.status,200);assert.equal(f.calls[0].at(-1).content,'Stored message');const remote=await f.request('/chats/chat-1');assert.equal(remote.body.chat.messages.at(-1).content,'Answer');assert.equal(response.body.usage.questions,1);const again=await f.request('/chat','POST',ask());assert.equal(again.status,200);assert.equal(f.calls.length,1);
 });
-test('default sharing is on for new accounts; explicit opt-out persists',async()=>{
- const f=fixture();assert.equal((await f.request('/account')).body.account.improve,true);await f.request('/account','PATCH',{improve:false});assert.equal((await f.request('/account')).body.account.improve,false);
+test('sharing is opt-in for new accounts; an explicit preference persists',async()=>{
+ const f=fixture();assert.equal((await f.request('/account')).body.account.improve,false);await f.request('/account','PATCH',{improve:true});assert.equal((await f.request('/account')).body.account.improve,true);
 });
 test('a turn saved with sharing off cannot be contributed by enabling it later',async()=>{
  const f=fixture();const body=chat();body.messages[0].trainingEligible=false;await f.request('/chats/chat-1','PUT',body);const r=await f.request('/chat','POST',ask());assert.equal(r.status,200);assert.equal(r.body.trainingSaved,false);

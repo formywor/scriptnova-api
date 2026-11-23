@@ -18,25 +18,23 @@ function fixture({review}={}){
  return {store,records,request,turn,advance(ms=301000){time+=ms;},get calls(){return calls;},get selected(){return selected;}};
 }
 test('model choices and response budgets are allowlisted and server credentials stay private',async()=>{
- const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,9);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
+ const f=fixture(),catalog=await f.request('/models');assert.equal(catalog.status,200);assert.equal(catalog.body.models.length,10);assert.equal(catalog.body.reasoningAvailable,false);assert.equal(catalog.body.externalReviewAvailable,true);assert.ok(!JSON.stringify(catalog).includes('server-only-test-key'));
  assert.equal((await f.turn('chat',true,'nebula-classic')).status,200);assert.equal(f.selected.config.selectedModel,'nebula-ultra');assert.equal(f.selected.config.responseLength,'standard');
  assert.equal((await f.request('/chat','POST',{modelId:'private-provider-model',messages:[{role:'user',content:'Hi'}]},null)).status,400);
 });
 test('personalization synchronizes with the account and is excluded when disabled',async()=>{
  const f=fixture();const value={interests:'Drawing',answerStyle:'concise',customInstructions:'Use simple words.',personalizedQuestions:true,compactChat:true,defaultModel:'nebula-classic',textSize:'large'};
- const result=await f.request('/account','PATCH',value);assert.equal(result.status,200);assert.equal(result.body.account.interests,'Drawing');assert.equal(result.body.account.externalReview,true);
+ const result=await f.request('/account','PATCH',value);assert.equal(result.status,200);assert.equal(result.body.account.interests,'Drawing');assert.equal(result.body.account.externalReview,false);
  await f.turn();assert.ok(f.selected.messages.some(m=>m.role==='system'&&m.content.includes('Drawing')));
  await f.request('/account','PATCH',{personalizationEnabled:false});await f.turn('second');assert.ok(!f.selected.messages.some(m=>m.content.includes('Drawing')));
  assert.equal((await f.request('/account','PATCH',{textSize:'enormous'})).status,400);
 });
-test('review settings default on, remain independent, and preserve a manual choice',async()=>{
- const f=fixture();const a=await f.request('/account');assert.equal(a.body.account.improve,true);assert.equal(a.body.account.externalReview,true);
- await f.request('/account','PATCH',{externalReview:false});await f.request('/account','PATCH',{improve:true});assert.equal((await f.request('/account')).body.account.externalReview,false);
- await f.turn();f.advance();assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).status,403);assert.equal(f.calls,0);
- await f.request('/account','PATCH',{externalReview:true,improve:false});assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.reviewSaved,true);assert.equal(f.calls,1);
- assert.equal((await f.store.reviewCandidate(accountOwner('alice',0),'chat','turn')).review,undefined);
+test('review settings default off, remain independent, and preserve a manual choice',async()=>{
+ const f=fixture();const a=await f.request('/account');assert.equal(a.body.account.improve,false);assert.equal(a.body.account.externalReview,false);
+ await f.request('/account','PATCH',{improve:true});assert.equal((await f.request('/account')).body.account.externalReview,false);
+ await f.request('/account','PATCH',{externalReview:true,improve:false});const saved=await f.request('/account');assert.equal(saved.body.account.improve,false);assert.equal(saved.body.account.externalReview,true);
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'},null)).status,401);
- assert.equal((await f.request('/reviews','POST',{chatId:'chat'},'other.user.token')).status,404);
+ assert.equal((await f.request('/reviews','POST',{chatId:'chat'},'other.user.token')).status,403);
 });
 
 test('a review redacts contacts and exports corrected answers as pending candidates, never automatic approvals',async()=>{
@@ -50,7 +48,7 @@ test('a review redacts contacts and exports corrected answers as pending candida
 test('withdrawing review consent during a provider request prevents saving its result',async()=>{
  let begin,finish;const ready=new Promise(r=>begin=r),wait=new Promise(r=>finish=r);const f=fixture({review:async()=>{begin();await wait;return {verdict:'needs_correction',correctedReply:'Corrected'};}});
  await f.request('/account','PATCH',{externalReview:true});await f.turn();f.advance();const pending=f.request('/reviews','POST',{chatId:'chat',turnId:'turn'});await ready;await f.request('/account','PATCH',{externalReview:false});finish();assert.equal((await pending).status,409);
- assert.equal((await f.store.reviewCandidate(accountOwner('alice',0),'chat','turn')).review,undefined);
+ assert.equal((await f.store.reviewCandidate(accountOwner('alice',0),'chat','turn')),null);
 });
 test('review attempts are bounded and the transport uses a server header, fixed host, and validated output',async()=>{
  const f=fixture();assert.equal(await f.store.claimReview('account','chat',1000,500),true);assert.equal(await f.store.claimReview('account','chat',1001,500),false);await f.store.finishReview('account','chat',1000,500,true);assert.equal((await f.store.reviewState('account','chat')).reviewedThrough,500);
@@ -67,7 +65,7 @@ async function appendTurn(f,n){
 }
 test('reviews batch the whole eligible dialogue, defer rapid chats and deduplicate after success',async()=>{
  let sent;const f=fixture({review:async args=>{sent=args.messages;return {verdict:'acceptable',correctedReply:''};}});
- await f.turn();assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,0);
+ await f.request('/account','PATCH',{externalReview:true,improve:true});await f.turn();assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,0);
  await appendTurn(f,2);await appendTurn(f,3);assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.reviewSaved,true);assert.equal(sent.length,6);
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.skipped,true);assert.equal(f.calls,1);
  for(let n=4;n<=8;n++)await appendTurn(f,n);
@@ -76,12 +74,12 @@ test('reviews batch the whole eligible dialogue, defer rapid chats and deduplica
 });
 test('provider failures defer quietly and retry later without a 48-hour review lockout',async()=>{
  let fail=true;const f=fixture({review:async()=>{if(fail)throw Object.assign(Error('private'),{code:'REVIEW_RATE_LIMITED'});return {verdict:'uncertain',correctedReply:''};}});
- await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.status,200);assert.equal(first.body.deferred,true);
+ await f.request('/account','PATCH',{externalReview:true});await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.status,200);assert.equal(first.body.deferred,true);
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,1);
  fail=false;f.advance(601000);assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.reviewSaved,true);assert.equal(f.calls,2);
 });
 test('idle reviews skip classic, unversioned, previous checkpoints and turns sent with review off',async()=>{
- const f=fixture();await f.turn('classic',true,'nebula-classic');await f.turn('no-consent',false);await f.turn('chat');f.advance();
+ const f=fixture();await f.request('/account','PATCH',{externalReview:true,improve:true});await f.turn('classic',true,'nebula-classic');await f.request('/account','PATCH',{externalReview:false});await f.turn('no-consent',false);await f.request('/account','PATCH',{externalReview:true});await f.turn('chat');f.advance();
  f.records.get('nebulaChats/v1/'+accountKey('alice')+'/classic').messages.at(-1).modelId='nebula-classic';
  for(const id of ['classic','no-consent'])assert.equal((await f.request('/reviews','POST',{chatId:id})).body.skipped,true);
  const path='nebulaChats/v1/'+accountKey('alice')+'/chat',chat=f.records.get(path);chat.messages.at(-1).modelRevision='previous-release';
@@ -90,7 +88,7 @@ test('idle reviews skip classic, unversioned, previous checkpoints and turns sen
 });
 test('simultaneous devices claim only one provider review per chat',async()=>{
  let finish,start;const ready=new Promise(r=>start=r),wait=new Promise(r=>finish=r);const f=fixture({review:async()=>{start();await wait;return {verdict:'acceptable',correctedReply:''};}});
- await f.turn();f.advance();const first=f.request('/reviews','POST',{chatId:'chat'});await ready;
+ await f.request('/account','PATCH',{externalReview:true});await f.turn();f.advance();const first=f.request('/reviews','POST',{chatId:'chat'});await ready;
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);finish();assert.equal((await first).body.reviewSaved,true);assert.equal(f.calls,1);
 });
 
@@ -102,13 +100,13 @@ test('legacy manual review opt-outs survive switching training on, and deleted t
 });
 
 test('legacy imports cannot forge server checkpoint stamps to trigger a review',async()=>{
- const f=fixture();await f.request('/chats/imported','PUT',{title:'Old',revision:0,importLegacy:true,messages:[{id:'user',role:'user',content:'Hi',reviewEligible:true},{id:'assistant',role:'assistant',content:'Old answer',replyTo:'user',modelId:'nebula-v4',modelRevision:'forged',reviewGeneration:0,createdAt:1000}]});
+ const f=fixture();await f.request('/account','PATCH',{externalReview:true});await f.request('/chats/imported','PUT',{title:'Old',revision:0,importLegacy:true,messages:[{id:'user',role:'user',content:'Hi',reviewEligible:true},{id:'assistant',role:'assistant',content:'Old answer',replyTo:'user',modelId:'nebula-v4',modelRevision:'forged',reviewGeneration:0,createdAt:1000}]});
  const chat=await f.store.getChat(accountKey('alice'),'imported');assert.equal(chat.messages[0].reviewEligible,false);assert.equal(chat.messages[1].modelRevision,undefined);f.advance();assert.equal((await f.request('/reviews','POST',{chatId:'imported'})).body.skipped,true);assert.equal(f.calls,0);
 });
 
 test('two-pass checked corrections reach the private training feed; consent withdrawal excludes them immediately',async()=>{
  let calls=0;const f=fixture({review:async()=>++calls===1?{verdict:'needs_correction',correctedReply:'2 + 2 = 4.',trainingQuestion:'What is 2 + 2?'}:{verdict:'acceptable',correctedReply:'2 + 2 = 4.'}});
- await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.trainingEligible,true);assert.equal(calls,2);
+ await f.request('/account','PATCH',{externalReview:true,improve:true});await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.trainingEligible,true);assert.equal(calls,2);
  const owner=accountOwner('alice',0),key=accountKey('alice'),index=f.records.get('nebulaReviewTraining/v1/'+owner),profile=await f.store.account(key,Date.now());
  const rows=reviewTrainingRows({[owner]:index},{[key]:profile},1800000301000);assert.equal(rows.length,1);assert.equal(rows[0].messages[1].content,'2 + 2 = 4.');assert.equal(rows[0].source.validation,'two-pass-review-v1');assert.equal(rows[0].source.trainingAllowed,true);assert.ok(!JSON.stringify(rows).includes(key));assert.ok(!JSON.stringify(rows).includes('alex@example.test'));
  assert.equal(reviewTrainingRows({[owner]:index},{[key]:{...profile,externalReview:false}},1800000301000).length,0);
@@ -120,12 +118,12 @@ test('disagreed, personal or arithmetically wrong reviews never become automatic
  assert.equal(checkedTeachingPair('My name is Private. What is my name?','Your name is Private.'),null);
  assert.equal(checkedTeachingPair('Email [email removed] for help.','Use the email.'),null);
  let calls=0;const f=fixture({review:async()=>++calls===1?{verdict:'needs_correction',correctedReply:'Ice is solid water.',trainingQuestion:'What is ice?'}:{verdict:'uncertain',correctedReply:''}});
- await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.reviewSaved,true);assert.equal(response.body.trainingEligible,false);assert.equal(calls,2);assert.equal(f.records.get('nebulaReviewTraining/v1/'+accountOwner('alice',0)),undefined);
+ await f.request('/account','PATCH',{externalReview:true,improve:true});await f.turn();f.advance();const response=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(response.body.reviewSaved,true);assert.equal(response.body.trainingEligible,false);assert.equal(calls,2);assert.equal(f.records.get('nebulaReviewTraining/v1/'+accountOwner('alice',0)),undefined);
 });
 
 test('an unavailable confirmation retries later without admitting an unchecked correction',async()=>{
  let calls=0;const f=fixture({review:async()=>{if(++calls===1)return {verdict:'needs_correction',correctedReply:'Ice is solid water.',trainingQuestion:'What is ice?'};throw Error('upstream unavailable');}});
- await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.body.reviewSaved,true);assert.equal(first.body.trainingEligible,false);assert.ok(first.body.retryAt);assert.equal(f.calls,2);
+ await f.request('/account','PATCH',{externalReview:true,improve:true});await f.turn();f.advance();const first=await f.request('/reviews','POST',{chatId:'chat'});assert.equal(first.body.reviewSaved,true);assert.equal(first.body.trainingEligible,false);assert.ok(first.body.retryAt);assert.equal(f.calls,2);
  assert.equal((await f.request('/reviews','POST',{chatId:'chat'})).body.deferred,true);assert.equal(f.calls,2);
  assert.equal((await f.store.reviewState(accountKey('alice'),'chat')).reviewedThrough,undefined);
 });

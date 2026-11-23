@@ -57,7 +57,7 @@ test('the real API router can produce checked Groq teaching examples without a G
  });
  const app=createApp({getStore:async()=>store,verifyToken:async()=>({uid:'alice'}),config:{ultraKey:'unit-test-only-key',origins:[],rateSecret:'x'.repeat(40),modelMode:'embedded',training:true,reviewEnabled:true,reviewGroqKey:'groq-test-only',reviewGroqModel:'openai/gpt-oss-20b'},now:()=>time,generate:async()=> '2 + 2 = 44.',log:()=>{}});
  const request=async(path,body)=>{const response=await app(new Request('https://api.test/api/nebula'+path,{method:path.startsWith('/chats/')?'PUT':'POST',headers:{Authorization:'Bearer alice.test.token','Content-Type':'application/json'},body:JSON.stringify(body)}));assert.equal(response.status,200);return response.json();};
- await request('/chats/chat',{title:'Practice',revision:0,messages:[{id:'turn',role:'user',content:'What is 2 + 2?',trainingEligible:true,reviewEligible:true}]});
+ await store.preferences(accountKey('alice'),{improve:true,externalReview:true},time);await request('/chats/chat',{title:'Practice',revision:0,messages:[{id:'turn',role:'user',content:'What is 2 + 2?',trainingEligible:true,reviewEligible:true}]});
  await request('/chat',{chatId:'chat',turnId:'turn',messages:[{role:'user',content:'Hi'}],training:{enabled:true,token:'a'.repeat(64),consentVersion:1,chatId:'chat',turnId:'turn'}});time+=301000;
  const result=await request('/reviews',{chatId:'chat'});assert.equal(result.trainingEligible,true);assert.equal(calls,2);
  const sample=await store.reviewCandidate(accountOwner('alice',0),'chat','turn');assert.equal(sample.review.provider,'groq');assert.equal(sample.review.qualityChecked,true);assert.ok(records.get('nebulaReviewTraining/v1/'+accountOwner('alice',0)));
